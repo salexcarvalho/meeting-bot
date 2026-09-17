@@ -43,7 +43,11 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
    - Cadastro manual também entra na agenda.
    - O projeto é sugerido por palavra-chave.
 2. **Gravação**
-   - O scheduler decide a gravação desejada e o host-agent converge a partir do heartbeat.
+   - No horário, o scheduler põe o **assistente** (`bot/autoJoin.ts`) em toda reunião da agenda com link
+     do Teams/Meet e sem "Não gravar": a reunião passa a `joining` e segue o Modo Agente (canal misto).
+     A admissão espera até o fim previsto; limite de `MAX_CONCURRENT_BOTS` e um assistente por link.
+   - O PC não grava sozinho (`AUTO_LOCAL_RECORDING=false`); a gravação local vem de **Gravar agora**.
+   - Na gravação local, o scheduler decide a gravação desejada e o host-agent converge a partir do heartbeat.
    - O áudio é PCM s16le 16 kHz por canal, alinhado ao relógio de parede (lacunas viram zeros).
    - O envio é retomável pelo `offset`.
    - A parada acontece com o fim previsto + 180 s sem fala, com **Parar** ou em 4 h.
@@ -64,6 +68,7 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
      `POST /meetings/:id/adrs/generate` gera os ADRs (todos ou um `itemId`) sem mudar o status da reunião.
 5. **Ata**
    - É renderizada na leitura (`ata/render.ts`) a partir da narrativa e do estado atual dos itens.
+   - O resumo para enviar (`GET /meetings/:id/resumo`, `renderResumo`) sai dos mesmos dados, só com itens aprovados.
    - Rejeitados são omitidos e propostos aparecem marcados.
 
 O detalhamento do agente arquiteto (prompts, janelas, validação, deduplicação, schemas e onde alterar)
@@ -99,8 +104,13 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - com `ALLOW_EXTERNAL_LLM=true`, também `/api/v1/chat/completions`;
   - bloqueios e envios externos vão para `audit_log`, sem conteúdo.
 - LLM local por padrão (`LLM_PROVIDER=ollama`; outros nomes são recusados e auditados).
-  - Exceção opt-in (constituição 1.3.0): ata e ADRs podem ir ao OpenRouter
-    (`llm/openrouter.ts`), escolhido a cada pedido ou por `LLM_GENERATION_PROVIDER`.
+  - Exceção opt-in (constituição 1.4.0): ata e ADRs podem ir ao OpenRouter
+    (`llm/openrouter.ts`) ou à assinatura pessoal do dono (`llm/hostCli.ts`), escolhido a cada
+    pedido ou por `LLM_GENERATION_PROVIDER`.
+  - Assinatura: o backend põe o pedido numa fila em memória (`llm/hostJobs.ts`); o host-agent
+    busca por long-poll (`GET /api/agent/llm/next`), roda `claude -p` ou `codex exec` isolado
+    (`host_agent/llm_runner.py`) e devolve o JSON (`POST /api/agent/llm/:id/result`). O backend
+    nunca vê credenciais, e só as reuniões do `AGENT_OWNER` usam a assinatura.
   - A análise ao vivo é sempre local; a geração externa não entra na fila da GPU.
 - Caminhos de áudio montados a partir de UUID e canal validados; o worker recusa caminhos fora
   de `/data/audio`.

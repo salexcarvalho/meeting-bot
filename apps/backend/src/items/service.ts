@@ -198,6 +198,7 @@ export async function createAiItems(
 // Consolidação: move a evidência dos removidos para o mantido e apaga os removidos.
 export async function mergeInto(meetingId: string, keepId: string, removeIds: string[]): Promise<string[]> {
   const removed: string[] = [];
+  let keptRejected = false;
   await withTransaction(async (client) => {
     const { rows } = await client.query(
       `SELECT id, type, description, review_status FROM meeting_items
@@ -205,26 +206,53 @@ export async function mergeInto(meetingId: string, keepId: string, removeIds: st
       [meetingId, [keepId, ...removeIds]],
     );
     const keep = rows.find((r) => r.id === keepId);
-    if (!keep || keep.review_status !== "proposto") return;
+    if (!keep) return;
+    // Repetido de um rejeitado só some; de um proposto ou aprovado, leva a evidência junto.
+    keptRejected = keep.review_status === "rejeitado";
     for (const r of rows) {
       if (r.id === keepId || r.type !== keep.type || r.review_status !== "proposto") continue;
-      const ev = await client.query(
-        `SELECT segment_id AS "segmentId", start_seconds::float AS start, end_seconds::float AS "end", channel, quote
-         FROM item_evidence WHERE item_id = $1`,
-        [r.id],
-      );
-      await insertEvidence(client, keepId, ev.rows);
-      await addHistory(client, keepId, "merged", null, { description: r.description, mergedItem: r.id }, null);
+      if (!keptRejected) {
+        const ev = await client.query(
+          `SELECT segment_id AS "segmentId", start_seconds::float AS start, end_seconds::float AS "end", channel, quote
+           FROM item_evidence WHERE item_id = $1`,
+          [r.id],
+        );
+        await insertEvidence(client, keepId, ev.rows);
+        await addHistory(client, keepId, "merged", null, { description: r.description, mergedItem: r.id }, null);
+      }
       await client.query(`DELETE FROM meeting_items WHERE id = $1`, [r.id]);
       removed.push(r.id);
     }
-    if (removed.length) await client.query(`UPDATE meeting_items SET updated_at = now() WHERE id = $1`, [keepId]);
+    if (removed.length && !keptRejected) {
+      await client.query(`UPDATE meeting_items SET updated_at = now() WHERE id = $1`, [keepId]);
+    }
   });
   if (removed.length) {
     hub.publishToMeeting(meetingId, { type: "items_removed", meetingId, ids: removed });
-    publishItems(meetingId, await getItemsByIds([keepId]));
+    if (!keptRejected) publishItems(meetingId, await getItemsByIds([keepId]));
   }
   return removed;
+}
+
+/**
+ * Gerar a ata de novo: apaga o que a IA propôs e ninguém tocou (com os ADRs sugeridos ligados).
+ * Ficam aprovados, rejeitados, itens manuais, itens editados ou reabertos e decisões com ADR revisado.
+ */
+export async function clearUnreviewedAiItems(meetingId: string): Promise<string[]> {
+  const { rows } = await pool.query(
+    `DELETE FROM meeting_items i
+      WHERE i.meeting_id = $1 AND i.review_status = 'proposto' AND i.origin IN ('live', 'final')
+        AND NOT EXISTS (
+          SELECT 1 FROM item_history h
+           WHERE h.item_id = i.id AND (h.actor_id IS NOT NULL OR h.action IN ('edited', 'reopened', 'adr_edited'))
+        )
+        AND NOT EXISTS (SELECT 1 FROM adrs a WHERE a.item_id = i.id AND a.status <> 'proposto')
+      RETURNING i.id`,
+    [meetingId],
+  );
+  const ids = rows.map((r) => r.id as string);
+  if (ids.length) hub.publishToMeeting(meetingId, { type: "items_removed", meetingId, ids });
+  return ids;
 }
 
 // ---------- revisão humana ----------

@@ -42,9 +42,13 @@ const env = {
   AGENT_OWNER: "",
   // OpenRouter ligado só para a opção aparecer; a URL aponta para uma porta fechada local.
   ALLOW_EXTERNAL_LLM: "true",
+  // sem Chromium de bot no E2E: o assistente não entra sozinho
+  AUTO_ASSISTANT: "false",
   LLM_GENERATION_PROVIDER: "local",
   OPENROUTER_API_KEY: `e2e-${randomUUID()}`,
   OPENROUTER_URL: "https://127.0.0.1:9/api/v1",
+  // Assinatura ligada: a Ana não é dona do host-agent, então a opção aparece desabilitada.
+  CLAUDE_CLI_ENABLED: "true",
   PATH: `${fakeBin}:${process.env.PATH}`,
 };
 

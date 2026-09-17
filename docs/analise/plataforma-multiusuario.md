@@ -378,11 +378,12 @@ Rota/Job ──► AIOrchestrator.run(purpose, meeting, user)
 
 | Suíte | Resultado |
 |---|---|
-| Unitários (`npm test`) | 151 |
-| Banco (`npm run test:db`, inclui `multiusuario.test.ts` e a migração sobre cópia do banco real) | 35 |
-| E2E Playwright (`npm run test:e2e`, desktop + celular, backend real e Postgres descartável) | 9 |
+| Unitários (`npm test`) | 169 |
+| Banco (`npm run test:db`, inclui `multiusuario.test.ts` e a migração sobre cópia do banco real) | 41 |
+| Host-agent (`uv run pytest`) | 30 |
+| E2E Playwright (`npm run test:e2e`, desktop + celular, backend real e Postgres descartável) | 11 |
 
-(Números atualizados em 2026-09-17, com a geração de ata e ADR.)
+(Números atualizados em 2026-09-17, com a geração de ata e ADR, as assinaturas, a nova geração limpa e o resumo para enviar.)
 
 Typecheck e build também passaram.
 
@@ -407,6 +408,23 @@ Typecheck e build também passaram.
 - Rota `POST /meetings/:id/adrs/generate`, só do dono; `reprocess` aceita `llm`; os pedidos vão para `generation_requested`.
 - Quem gerou fica gravado (`analysis_provider`, `generated_by`) e aparece na interface.
 - Correção de UX: o aviso "Gerando…" não cobre mais o resultado quando a geração termina antes da resposta.
+
+**2026-09-17 — assinatura pessoal (Claude Code e Codex):**
+
+- Decisões do usuário: os dois; nos botões e na geração automática; aceita os termos de consumidor.
+- O host-agent executa o CLI oficial isolado; o backend só troca pedidos e respostas com ele.
+- Vale só para as reuniões do `AGENT_OWNER`. Sem a assinatura disponível, a geração automática usa o modelo local.
+- Teste real com reunião fictícia: Claude em 76 s e Codex em 63 s, ambos com itens, ata e ADRs válidos.
+
+**2026-09-17 — gerar de novo sem duplicar e resumo para enviar:**
+
+- Problema real: cada "Gerar ata" somava itens (uma reunião chegou a 162 propostos) e a consolidação só via os últimos 60.
+- Decisões do usuário: gerar de novo apaga e refaz do zero o que não foi revisado; rejeitados ficam; repetidos são mesclados sozinhos; resumo curto só com aprovados.
+- Nova geração apaga os propostos da IA sem ação humana; a consolidação roda em lotes por tipo, com os revisados como âncora.
+- Botão **Resumo para enviar** (aba Ata): objetivo, resumo, decisões, pendências com responsável e prazo e riscos, para colar no Teams ou no e-mail.
+- Reinício no meio de "Gerar ata" retoma só a análise (antes refazia a transcrição).
+- Aba Ata refeita (ficha no topo, índice, seções vazias numa linha, ações num só cabeçalho) e histórico do item em linha do tempo, com rótulos em português e antes/depois.
+- Aba ADRs refeita: filtros por status, cartões recolhíveis, seções em duas colunas, link para a decisão de origem. Corrigido o "rejeitado em <data>", que mostrava a data da aprovação.
 
 **Ainda não feito:**
 

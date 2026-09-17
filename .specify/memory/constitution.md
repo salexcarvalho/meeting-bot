@@ -1,5 +1,25 @@
 <!--
 Sync Impact Report
+- Versão: 1.4.0 → 1.5.0 (MINOR: regra operacional de gravação — quem grava no horário é o assistente
+  convidado, de dentro da chamada; decisão do usuário em 2026-09-17)
+- Seção modificada: Regras Operacionais → "Gravação", "Canais de áudio" e "Agente do desktop":
+  - no horário, o assistente entra em toda reunião da agenda com link do Teams/Meet, exceto as
+    marcadas "Não gravar", e grava de dentro da chamada;
+  - o computador não grava sozinho (o usuário nem sempre entra na reunião); reunião sem link só
+    grava por ação manual ("Gravar agora").
+- Artefatos dependentes: README.md, CLAUDE.md, .env.example, docs/ARCHITECTURE.md
+- TODOs adiados: nenhum
+
+Histórico anterior (1.3.0 → 1.4.0)
+- Versão: 1.3.0 → 1.4.0 (MINOR: a exceção de LLM externo ganha a assinatura pessoal do dono
+  — Claude Code e Codex — executada pelo host-agent; decisão do usuário em 2026-09-17)
+- Princípio modificado: I. Local-first e Privacidade — exceção "LLM externo opcional" passa a
+  aceitar `claude`/`codex` (CLI oficial com o login do dono), nos botões e na geração automática.
+- Artefatos dependentes: README.md, CLAUDE.md, .env.example, docs/ARCHITECTURE.md,
+  docs/agente-arquiteto.md, docs/analise/plataforma-multiusuario.md, apps/host-agent
+- TODOs adiados: nenhum
+
+Histórico anterior (1.2.0 → 1.3.0)
 - Versão: 1.2.0 → 1.3.0 (MINOR: a exceção de LLM externo passa a cobrir a geração automática
   pós-reunião quando escolhida no `.env`, e a chave pode vir do `.env` até existir o cadastro de
   provedores)
@@ -84,6 +104,16 @@ Histórico
   - cada chamada é registrada com uso e custo, sem conteúdo;
   - a UI MUST avisar antes de enviar um pedido e marcar o que foi gerado fora;
   - toda saída continua proposta (Princípio III).
+
+  **Assinatura pessoal (Claude Code / Codex):** com `CLAUDE_CLI_ENABLED`/`CODEX_CLI_ENABLED`
+  (além da flag acima), a geração pode usar a assinatura do dono da máquina. Requisitos:
+  - quem executa é o host-agent nativo, com o CLI oficial sem modificação e o login feito pelo
+    fluxo do próprio fornecedor; o backend nunca lê, guarda ou repassa credenciais;
+  - vale só para as reuniões do dono do host-agent (`AGENT_OWNER`); reunião de outra pessoa
+    nunca usa essa assinatura (a geração automática volta para o modelo local);
+  - o CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
+    temporária, com o conteúdo por stdin;
+  - a UI MUST avisar que planos pessoais seguem os termos de consumidor.
 
   Sem a flag, qualquer tentativa é recusada e auditada.
 - Saídas de rede permitidas: download inicial de imagens e modelos, e integrações
@@ -190,15 +220,19 @@ Racional: aproveita o código validado e a stack principal do usuário.
 
 ## Regras Operacionais
 
-- **Gravação**: inicia automaticamente no horário da reunião; para quando o horário previsto
-  de término passou e houve 3 minutos sem fala, ou por comando manual; limite de segurança de
-  4 horas.
+- **Gravação**: no horário, o assistente convidado entra em toda reunião da agenda com link do
+  Teams/Meet (exceto as marcadas "Não gravar") e grava de dentro da chamada; espera a admissão
+  até o fim previsto e sai quando a chamada acaba ou quando fica sozinho depois do fim previsto.
+  O computador MUST NOT gravar sozinho: reunião sem link só grava por ação manual ("Gravar
+  agora"), que para quando o horário previsto passou e houve 3 minutos sem fala, ou por comando.
+  Limite de segurança de 4 horas nos dois casos.
 - **Retenção**: o áudio de cada canal é guardado indefinidamente; exclusão só por ação do
   usuário.
 - **Calendário (MVP)**: importação de convites `.ics` e cadastro manual; Microsoft Graph apenas
   após aprovação da TI.
-- **Canais de áudio**: microfone do usuário e áudio remoto são capturados separadamente; o canal
-  do microfone é atribuído ao usuário sem diarização.
+- **Canais de áudio**: na gravação pelo computador, microfone do usuário e áudio remoto são
+  capturados separadamente, e o canal do microfone é atribuído ao usuário sem diarização; na
+  gravação pelo assistente, o áudio da chamada vem num canal só, com diarização.
 - **Transcrição**: dois passes — ao vivo (VAD + trechos de 10–30 s) e final no áudio completo com
   diarização do canal remoto. O passe final e os uploads podem, por escolha explícita, usar o
   ASR externo de teste (Princípio I).
@@ -208,8 +242,8 @@ Racional: aproveita o código validado e a stack principal do usuário.
   - cada usuário vê só as próprias reuniões e as compartilhadas com ele;
   - administradores gerenciam contas, mas não leem o conteúdo de terceiros;
   - ações administrativas vão para a auditoria.
-- **Agente do desktop**: cada host-agent grava só as reuniões do seu dono (`AGENT_OWNER`). Por
-  enquanto há um só; host-agent por usuário fica para depois.
+- **Agente do desktop**: cada host-agent emite os alertas e, quando pedido, grava só as reuniões
+  do seu dono (`AGENT_OWNER`). Por enquanto há um só; host-agent por usuário fica para depois.
 
 ## Fluxo de Desenvolvimento e Quality Gates
 
@@ -236,4 +270,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 1.3.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-17
+**Version**: 1.5.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-17

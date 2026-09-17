@@ -32,9 +32,9 @@ async function main() {
   await migrate(pool);
   meetingEvents.on("changed", (id: string) => void notifyMeeting(id));
   onBotProgress((meetingId, progress) => hub.publishBoth(meetingId, { type: "bot", meetingId, progress }));
-  for (const id of await recoverInterruptedMeetings()) {
-    console.log(`[boot] retomando processamento da reunião ${id}`);
-    enqueueProcessing(id);
+  for (const { id, step } of await recoverInterruptedMeetings()) {
+    console.log(`[boot] retomando processamento da reunião ${id} (${step === "analysis" ? "só a análise" : "completo"})`);
+    enqueueProcessing(id, step);
   }
   setInterval(() => purgeExpiredSessions().catch(console.error), 3600_000).unref();
 

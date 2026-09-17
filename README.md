@@ -4,7 +4,7 @@ Agente **local** de reuniões e arquitetura de software. Ele:
 
 - traz a agenda do dia por convites `.ics` ou cadastro manual;
 - avisa no desktop 15, 5 e 1 minuto antes de cada reunião;
-- grava no horário o **microfone** e o **áudio da reunião** em canais separados;
+- no horário, manda o **assistente** para dentro da chamada (Teams/Meet), que grava mesmo se você não entrar;
 - transcreve ao vivo e, no fim, faz uma transcrição final melhor, com separação de falantes;
 - extrai durante a reunião decisões, pendências, riscos e requisitos, sempre com o trecho de origem;
 - gera a ata (template de 19 seções) e sugestões de ADR;
@@ -41,7 +41,7 @@ convidado entra no Meet/Teams.
 | `apps/backend` | API, WebSockets, agendador de gravação, agente arquiteto, ata, Modo Agente (Playwright) |
 | `apps/frontend` | UI React (Hoje, Reuniões, Reunião, Projetos) |
 | `apps/worker-gpu` | FastAPI com faster-whisper e pyannote |
-| `apps/host-agent` | Serviço do desktop: alertas, captura PipeWire e envio do áudio |
+| `apps/host-agent` | Serviço do desktop: alertas, captura PipeWire, envio do áudio e geração com a sua assinatura (Claude Code/Codex) |
 | `packages/contracts` | Tipos e schemas compartilhados |
 
 ## Requisitos
@@ -109,14 +109,22 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   **Hoje**. Reimportar atualiza a reunião sem duplicar; um cancelamento a marca como cancelada.
 - **Nova reunião**: cadastro manual com título, início, duração, link e projeto.
 - O projeto é **sugerido** pelas palavras-chave do título. Confirme-o em **Editar**.
-- **Não gravar**: disponível na tela ou no alerta do desktop.
-- **Gravar agora**: inicia a gravação fora do horário.
+- **Não gravar**: disponível na tela ou no alerta do desktop; o assistente não entra.
+- **Enviar assistente agora**: manda o assistente antes do horário ou de novo depois de uma falha.
+- **Gravar agora**: só em reunião sem link; grava pelo computador (microfone e áudio do PC).
 
 ### Durante a reunião
 
-- A gravação começa sozinha no horário (com o host-agent ativo).
-- Ela para quando o horário previsto passou e houve 3 min sem fala, ao clicar em **Parar**,
-  ou ao atingir 4 h.
+- No horário, o **assistente** entra em toda reunião com link do Teams/Meet que não esteja marcada
+  "Não gravar", com o nome configurado e o sufixo "assistente gravando". Admita-o na sala de espera.
+  - Ele espera a admissão até o fim previsto e não sai por estar sozinho antes dele.
+  - Sai quando a chamada acaba, quando fica sozinho (5 min) depois do fim previsto, em **Parar**
+    ou em 4 h.
+  - Se o backend reiniciar no meio e ainda for horário, ele entra de novo.
+  - O computador não grava sozinho (`AUTO_LOCAL_RECORDING=false`); reunião sem link não é gravada,
+    a não ser por **Gravar agora**.
+- A gravação pelo computador para quando o horário previsto passou e houve 3 min sem fala, ao
+  clicar em **Parar**, ou ao atingir 4 h.
 - A aba **Ao vivo** mostra a transcrição (alguns segundos de atraso), o estado dos canais, a GPU,
   o resumo corrente e os painéis de itens.
 - Clicar num horário ou na evidência de um item leva ao trecho e toca o áudio.
@@ -126,17 +134,31 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 - A transcrição final substitui a ao vivo. As evidências dos itens são remapeadas.
 - O agente reanalisa a reunião, consolida os itens e gera a ata e os ADRs sugeridos.
 - **Itens**: aprovar, rejeitar, reabrir, editar e ver o histórico. Itens criados à mão já
-  nascem aprovados.
+  nascem aprovados. O histórico é uma linha do tempo: quem fez o quê e quando, com o texto de antes
+  riscado nas edições.
 - **Ata**: sempre montada com o estado atual dos itens. Rejeitados somem e propostos aparecem
   marcados. Dá para copiar ou baixar em `.md`.
+  - Na tela, data, horário, duração, projeto e participantes ficam numa ficha no topo; há um índice
+    das seções e as seções vazias aparecem numa linha só. O `.md` copiado ou baixado mantém as 19 seções.
+- **Resumo para enviar** (aba Ata): texto curto para colar no Teams ou no e-mail, com objetivo,
+  resumo, decisões, decisões arquiteturais, pendências abertas (responsável e prazo) e riscos.
+  Só entram itens aprovados; o diálogo avisa quantos ainda não revisados ficaram de fora.
 - **ADRs**: editar e aprovar. O número definitivo (`ADR-001`…) só é atribuído na aprovação.
+  - Filtros Ativos, Propostos, Aprovados e Rejeitados; os propostos vêm primeiro.
+  - Os cartões ficam recolhidos, mostrando o começo da decisão ("Expandir todos" abre todos).
+  - O link da decisão de origem abre a aba Itens já no cartão dela.
 - **Falantes**: renomeie "Speaker 1" etc. na aba Transcrição.
 - **Reprocessar**: refaz a transcrição final e a análise.
 - **Gerar ata** (aba Ata): refaz só a análise sobre a transcrição final, sem transcrever de novo.
+  - Gerar de novo começa do zero: apaga os itens propostos pela IA que ninguém tocou (e os ADRs
+    sugeridos deles). Ficam os aprovados, os rejeitados, os editados e os criados à mão.
+  - Itens repetidos são mesclados sozinhos. Se um novo repete um já revisado, ele é absorvido pelo
+    revisado (a evidência passa para o aprovado; repetido de um rejeitado é descartado).
 - **Gerar ADRs** (aba ADRs) e **Gerar ADR** (em cada decisão arquitetural, na aba Itens): geram ou
   refazem os ADRs sugeridos. ADRs aprovados, rejeitados ou editados à mão não são sobrescritos.
-- Cada botão pergunta onde gerar: **modelo local** ou **OpenRouter** (quando habilitado). O que
-  foi gerado fora aparece marcado ("OpenRouter" no item, no ADR e na ata).
+- Cada botão pergunta onde gerar: **modelo local**, **OpenRouter** ou **sua assinatura**
+  (Claude Code ou Codex), conforme o que estiver habilitado. O que foi gerado fora aparece marcado
+  ("OpenRouter", "Claude" ou "Codex" no item, no ADR e na ata).
 
 ### Upload e Modo Agente
 
@@ -225,7 +247,7 @@ OPENROUTER_API_KEY=sk-or-...                    # a mesma chave do ASR externo
 OPENROUTER_LLM_MODEL=anthropic/claude-sonnet-5  # qualquer modelo com structured outputs
 LLM_GENERATION_PROVIDER=local                   # "openrouter" = análise automática pós-reunião também externa
 OPENROUTER_LLM_TIMEOUT_SECONDS=180
-OPENROUTER_LLM_MAX_TOKENS=8192
+OPENROUTER_LLM_MAX_TOKENS=32000             # modelos que raciocinam gastam parte disso
 ```
 
 Depois, `docker --context default compose up -d backend`.
@@ -240,6 +262,43 @@ Depois, `docker --context default compose up -d backend`.
   pela interface fica em `generation_requested`.
 - O egress libera apenas `https://openrouter.ai/api/v1/chat/completions`.
 - Só o dono da reunião gera documentos (quem recebeu compartilhamento não gera).
+
+### Sua assinatura: Claude Code ou Codex (opcional)
+
+Em vez de pagar por uso no OpenRouter, a ata e os ADRs podem sair da **sua assinatura** do Claude
+(Pro/Max) ou do ChatGPT (Codex). Quem executa é o **host-agent**, com o `claude` ou o `codex`
+instalados na sua máquina e o seu login; o backend nunca vê credenciais.
+
+> **Atenção:** a transcrição sai da máquina e vai para a Anthropic ou a OpenAI pelo seu plano
+> pessoal, que segue os termos de consumidor. Confira na sua conta se as conversas podem ser usadas
+> para treino. Use só com conteúdo que a política da organização permite enviar.
+
+```bash
+# .env (também precisa de ALLOW_EXTERNAL_LLM=true)
+CLAUDE_CLI_ENABLED=true
+CLAUDE_CLI_MODEL=sonnet          # sonnet, opus ou o nome completo do modelo
+CODEX_CLI_ENABLED=true
+CODEX_CLI_MODEL=                 # vazio = padrão do Codex
+LLM_GENERATION_PROVIDER=claude   # opcional: análise automática pela assinatura
+```
+
+1. Instale o host-agent (`apps/host-agent/install.sh`); ele precisa estar rodando.
+2. **Claude:** usa o login normal do Claude Code (`claude` → `/login`).
+3. **Codex:** usa uma pasta própria, sem as suas configurações e skills. Faça login uma vez:
+   `CODEX_HOME=~/.config/agente-reunioes/codex codex login --device-auth`
+4. `docker --context default compose up -d backend`
+
+Regras:
+
+- Vale só para as reuniões do dono do host-agent (`AGENT_OWNER`). A assinatura é pessoal: as
+  reuniões de outra pessoa nunca usam o seu plano.
+- O diálogo mostra por que a opção está indisponível (host-agent desligado, CLI sem login,
+  reunião de outra pessoa).
+- Na análise automática, se a assinatura não estiver disponível, a ata sai do modelo local e o
+  aviso final diz o motivo.
+- O CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
+  temporária, com o texto por stdin. Consome o limite do seu plano (não tem custo por uso).
+- Cada chamada fica em `audit_log` (`external_llm`, com tokens), sem conteúdo.
 
 ## Publicar em rede (HTTPS)
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Circle, ExternalLink, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Circle, ExternalLink, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
 import {
   IDLE_STATUSES,
   type Adr,
@@ -17,7 +17,7 @@ import { api, ApiError, errorMessage } from "../api";
 import { AdrList } from "../components/AdrList";
 import { AtaView } from "../components/AtaView";
 import { AudioPlayers, type AudioPlayersHandle } from "../components/AudioPlayers";
-import { ItemsBoard } from "../components/ItemsBoard";
+import { ItemsBoard, type ItemFocus } from "../components/ItemsBoard";
 import { Speakers } from "../components/Speakers";
 import { ConfirmDialog, Dialog } from "../components/Dialog";
 import { LivePanel, type ProcessingState } from "../components/LivePanel";
@@ -27,7 +27,13 @@ import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { Transcript } from "../components/Transcript";
 import { BotProgress } from "../components/BotProgress";
-import { GenerateDialog, type GenerateRequest } from "../components/GenerateDialog";
+import {
+  defaultChoice,
+  GenerateDialog,
+  llmChoiceOptions,
+  useLlmOptions,
+  type GenerateRequest,
+} from "../components/GenerateDialog";
 import { sendBot } from "../bot";
 import { SkeletonLines } from "../components/ui";
 import { formatDateTime, formatTime, minutesBetween } from "../format";
@@ -35,9 +41,8 @@ import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
 import {
   asrLabel,
-  EXTERNAL_ADR_WARNING,
   EXTERNAL_ASR_WARNING,
-  EXTERNAL_LLM_WARNING,
+  generationWarning,
   isExternal,
   llmLabel,
   useCan,
@@ -53,19 +58,19 @@ const GENERATION_TEXT: Record<Generation["kind"], GenerateRequest> = {
     title: "Gerar ata",
     message: "Refaz a análise sobre a transcrição final: itens, resumo, ata e ADRs sugeridos. Itens e ADRs já revisados são mantidos.",
     confirmLabel: "Gerar ata",
-    externalWarning: EXTERNAL_LLM_WARNING,
+    scope: "ata",
   },
   adrs: {
     title: "Gerar ADRs",
     message: "Gera um ADR sugerido para cada decisão arquitetural não rejeitada. ADRs aprovados, rejeitados ou editados à mão ficam como estão.",
     confirmLabel: "Gerar ADRs",
-    externalWarning: EXTERNAL_ADR_WARNING,
+    scope: "adr",
   },
   adr: {
     title: "Gerar ADR",
     message: "Gera (ou refaz) o ADR sugerido desta decisão arquitetural.",
     confirmLabel: "Gerar ADR",
-    externalWarning: EXTERNAL_ADR_WARNING,
+    scope: "adr",
   },
 };
 
@@ -73,19 +78,25 @@ const PROCESSING_STATUSES = ["queued", "transcribing", "generating_ata"];
 const LIVE_STATUSES = ["recording", "stopping"];
 
 const WAITING_TEXT: Partial<Record<string, string>> = {
-  scheduled: "A gravação começa automaticamente no horário.",
+  scheduled: "No horário, o assistente entra na chamada e grava de dentro dela.",
   skipped: "Esta reunião foi marcada para não ser gravada.",
   missed: "A reunião não foi gravada.",
   cancelled: "Reunião cancelada.",
-  joining: "O bot está entrando na reunião…",
-  waiting_admission: "O bot está na sala de espera. Admita-o na reunião.",
-  in_call: "O bot está gravando. A ata é gerada quando a reunião terminar.",
+  joining: "O assistente está entrando na reunião…",
+  waiting_admission: "O assistente está na sala de espera. Admita-o na reunião.",
+  in_call: "O assistente está gravando. A ata é gerada quando a reunião terminar.",
   recording: "Gravando. A ata é gerada quando a reunião terminar.",
   stopping: "Finalizando a gravação…",
   queued: "Aguardando a vez para a transcrição final…",
   transcribing: "Transcrição final em andamento…",
   generating_ata: "Gerando a ata…",
 };
+
+// Sem link do Teams/Meet o assistente não tem onde entrar, e o PC não grava sozinho.
+function waitingText(m: MeetingSummary): string | undefined {
+  if (m.status === "scheduled" && !m.url) return "Sem link do Teams/Meet: nada é gravado sozinho. Use Gravar agora se precisar.";
+  return WAITING_TEXT[m.status];
+}
 
 export function Reuniao() {
   const { id = "" } = useParams();
@@ -94,13 +105,15 @@ export function Reuniao() {
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("transcricao");
+  const [itemFocus, setItemFocus] = useState<ItemFocus | null>(null);
   const [recording, setRecording] = useState<RecordingEvent | null>(null);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
   const [gpu, setGpu] = useState<GpuStats | null>(null);
   const [confirm, setConfirm] = useState<null | "delete" | "reprocess" | "stop">(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const { asr, llm } = useSession();
+  const { asr } = useSession();
+  const llm = useLlmOptions(id, confirm === "reprocess");
   const can = useCan();
   const resending = useRef(false);
   // Conta os fins de processamento: sem GPU a falha pode chegar antes da resposta do pedido.
@@ -265,6 +278,8 @@ export function Reuniao() {
   // gravar, parar, reenviar, reprocessar e editar a agenda são do dono (o backend confere igual)
   const ownerActions = detail.access === "owner" && can("meetings.manage");
   const hasFinal = detail.segments.some((s) => s.pass === "final");
+  const reprocessOptions = llmChoiceOptions(llm);
+  const reprocessWarning = generationWarning(reprocessLlm, "ata");
   const readyToGenerate =
     ownerActions && can("documents.generate") && ["done", "error"].includes(m.status) && !m.botActive && !processing?.step;
   const canGenerateAta = readyToGenerate && (hasFinal || hasAudio);
@@ -272,7 +287,11 @@ export function Reuniao() {
   const archDecisions = items.filter((i) => i.type === "decisao_arquitetural" && i.reviewStatus !== "rejeitado").length;
   const onGenerateAdr = canGenerateAdrs ? (item: Item) => setGeneration({ kind: "adr", item }) : undefined;
   const canDelete = detail.access === "owner" && can("meetings.manage") && can("transcripts.delete");
-  const showBotProgress = m.source === "bot" && (Boolean(m.botProgress) || (m.botActive && m.status === "in_call"));
+  const showBotProgress = Boolean(m.botProgress) || (m.botActive && m.status === "in_call");
+  // Reunião da agenda com link: quem grava é o assistente (o PC só com "Gravar agora", sem link).
+  const canSendAssistant =
+    ownerActions && local && Boolean(m.url) && !m.botActive &&
+    (["scheduled", "skipped", "missed"].includes(m.status) || (m.status === "error" && !hasAudio));
 
   async function resendBot() {
     if (resending.current || !m.url) return;
@@ -351,7 +370,17 @@ export function Reuniao() {
                 <ExternalLink aria-hidden="true" /> Entrar
               </a>
             )}
-            {ownerActions && local && ["scheduled", "skipped", "missed"].includes(m.status) && (
+            {canSendAssistant && (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => action(`/meetings/${m.id}/assistant`, undefined, "Assistente a caminho da reunião.")}
+              >
+                <Bot aria-hidden="true" /> {m.status === "error" ? "Enviar assistente de novo" : "Enviar assistente agora"}
+              </button>
+            )}
+            {ownerActions && local && !m.url && ["scheduled", "skipped", "missed"].includes(m.status) && (
               <button type="button" className="primary" disabled={busy} onClick={() => action(`/meetings/${m.id}/record`, undefined, "Gravação iniciada.")}>
                 <Circle aria-hidden="true" /> Gravar agora
               </button>
@@ -372,7 +401,7 @@ export function Reuniao() {
                 disabled={busy}
                 onClick={() => {
                   setReprocessAsr(detail.asrProvider ?? (asr.external?.isDefault ? "openrouter" : "local"));
-                  setReprocessLlm(llm.default === "openrouter" && llm.external?.available ? "openrouter" : "local");
+                  setReprocessLlm(defaultChoice(llm));
                   setConfirm("reprocess");
                 }}
               >
@@ -433,7 +462,7 @@ export function Reuniao() {
               full={!isLive}
               onSeek={seek}
               highlight={highlight}
-              emptyText={isLive ? "Aguardando fala… o texto aparece alguns segundos depois." : WAITING_TEXT[m.status] ?? "Sem transcrição."}
+              emptyText={isLive ? "Aguardando fala… o texto aparece alguns segundos depois." : waitingText(m) ?? "Sem transcrição."}
             />
           </section>
           {isLive ? (
@@ -477,26 +506,24 @@ export function Reuniao() {
 
       {tab === "itens" && (
         <ItemsBoard
-                meetingId={m.id}
-                items={items}
-                readOnly={!writable}
-                onChange={upsertItem}
-                onEvidence={showEvidence}
-                onGenerateAdr={onGenerateAdr}
-              />
+          meetingId={m.id}
+          items={items}
+          readOnly={!writable}
+          onChange={upsertItem}
+          onEvidence={showEvidence}
+          onGenerateAdr={onGenerateAdr}
+          focus={itemFocus}
+        />
       )}
 
       {tab === "ata" && (
         <section className="card">
-          <GenerationBar
-            provider={detail.analysisProvider}
-            providerText="Análise gerada por"
-            action={canGenerateAta ? { label: "Gerar ata", onClick: () => setGeneration({ kind: "ata" }) } : null}
-          />
           <AtaView
             meetingId={m.id}
             version={`${m.status}:${ataVersion}`}
-            waitingText={WAITING_TEXT[m.status] ?? (m.status === "error" ? "A ata não foi gerada. Use Reprocessar." : "A ata ainda não foi gerada.")}
+            waitingText={waitingText(m) ?? (m.status === "error" ? "A ata não foi gerada. Use Reprocessar." : "A ata ainda não foi gerada.")}
+            provider={detail.analysisProvider}
+            generate={canGenerateAta ? { label: "Gerar ata", onClick: () => setGeneration({ kind: "ata" }) } : null}
           />
         </section>
       )}
@@ -512,7 +539,16 @@ export function Reuniao() {
                 : null
             }
           />
-          <AdrList adrs={adrs} readOnly={!writable} onChange={upsertAdr} />
+          <AdrList
+            adrs={adrs}
+            items={items}
+            readOnly={!writable}
+            onChange={upsertAdr}
+            onShowItem={(itemId) => {
+              setTab("itens");
+              setItemFocus({ id: itemId, seq: Date.now() });
+            }}
+          />
         </section>
       )}
 
@@ -520,9 +556,9 @@ export function Reuniao() {
         <section className="card">
           <h2>Áudio gravado</h2>
           <AudioPlayers ref={players} meetingId={m.id} audio={detail.audio} version={m.status} />
-          {m.source === "bot" && (
+          {(m.source === "bot" || detail.hasScreenshot) && (
             <>
-              <h3 style={{ marginTop: 16 }}>Tela do bot</h3>
+              <h3 style={{ marginTop: 16 }}>Tela do assistente</h3>
               {detail.hasScreenshot ? (
                 <img className="shot" src={`/api/meetings/${m.id}/screenshot?t=${Date.now()}`} alt="Última captura da tela do bot" />
               ) : (
@@ -558,18 +594,19 @@ export function Reuniao() {
           </label>
         )}
         {reprocessAsr === "openrouter" && <p className="banner warn small">{EXTERNAL_ASR_WARNING}</p>}
-        {llm.external && (
+        {reprocessOptions.length > 1 && (
           <label>
             Análise (itens, ata e ADRs)
             <select value={reprocessLlm} onChange={(e) => setReprocessLlm(e.target.value as LlmChoice)}>
-              <option value="local">{llm.local.model} (local)</option>
-              <option value="openrouter" disabled={!llm.external.available}>
-                {llm.external.model} via OpenRouter (externo){llm.external.available ? "" : " — falta OPENROUTER_API_KEY"}
-              </option>
+              {reprocessOptions.map((o) => (
+                <option key={o.value} value={o.value} disabled={!o.available}>
+                  {o.title} — {o.detail}
+                </option>
+              ))}
             </select>
           </label>
         )}
-        {reprocessLlm === "openrouter" && <p className="banner warn small">{EXTERNAL_LLM_WARNING}</p>}
+        {reprocessWarning && <p className="banner warn small">{reprocessWarning}</p>}
         <div className="dialog-actions">
           <button type="button" onClick={() => setConfirm(null)}>Cancelar</button>
           <button
@@ -584,7 +621,7 @@ export function Reuniao() {
                 {
                   step: "all",
                   ...(asr.external ? { asr: reprocessAsr } : {}),
-                  ...(llm.external ? { llm: reprocessLlm } : {}),
+                  ...(reprocessOptions.length > 1 ? { llm: reprocessLlm } : {}),
                 },
                 () => (finishedRuns.current === before ? "Reunião na fila." : null),
               ).then((ok) => ok && load());
@@ -595,6 +632,7 @@ export function Reuniao() {
         </div>
       </Dialog>
       <GenerateDialog
+        meetingId={m.id}
         request={generation ? GENERATION_TEXT[generation.kind] : null}
         onClose={() => setGeneration(null)}
         onConfirm={(choice) => {

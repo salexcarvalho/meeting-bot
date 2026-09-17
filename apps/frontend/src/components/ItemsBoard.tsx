@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Channel, Item, ItemType, ReviewStatus } from "@meeting-bot/contracts";
 import { ItemCard } from "./ItemCard";
 import { NewItemForm } from "./NewItemForm";
@@ -14,15 +14,20 @@ const PANELS: { title: string; types: ItemType[] }[] = [
 
 type Filter = "todos" | ReviewStatus;
 
+/** Item a mostrar (vindo de outra aba); `seq` repete o foco no mesmo item. */
+export type ItemFocus = { id: string; seq: number };
+
 export function ItemsBoard({
   meetingId,
   items,
   onChange,
   onEvidence,
   onGenerateAdr,
+  focus = null,
   readOnly = false,
 }: {
   meetingId: string;
+  focus?: ItemFocus | null;
   readOnly?: boolean;
   items: Item[];
   onChange: (item: Item) => void;
@@ -31,6 +36,29 @@ export function ItemsBoard({
 }) {
   const [filter, setFilter] = useState<Filter>("todos");
   const [creating, setCreating] = useState(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  useEffect(() => {
+    if (!focus) return;
+    const target = itemsRef.current.find((i) => i.id === focus.id);
+    if (!target) return;
+    const rejected = target.reviewStatus === "rejeitado";
+    setFilter((f) => (f === target.reviewStatus || (f === "todos" && !rejected) ? f : rejected ? "rejeitado" : "todos"));
+    let clear = 0;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`item-${focus.id}`);
+      if (!el) return;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+      el.classList.add("flash");
+      clear = window.setTimeout(() => el.classList.remove("flash"), 1800);
+    }, 50);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(clear);
+    };
+  }, [focus]);
   const counts = useMemo(() => {
     const c: Record<Filter, number> = { todos: 0, proposto: 0, aprovado: 0, rejeitado: 0 };
     for (const i of items) {

@@ -1,6 +1,6 @@
 import type { AdrSugerido, LlmChoice, Narrativa } from "@meeting-bot/contracts";
 import { getMeeting, pool } from "../db";
-import { createAiItems, listAdrs, listItems, mergeInto, upsertSuggestedAdr } from "../items/service";
+import { clearUnreviewedAiItems, createAiItems, listAdrs, listItems, mergeInto, upsertSuggestedAdr } from "../items/service";
 import { generate, generationLabel } from "../llm";
 import { hub } from "../live/hub";
 import { setAdrGeneration, setEvidenceRemapper, setPostAnalysis } from "../pipeline";
@@ -12,6 +12,7 @@ import { remapEvidence } from "./remap";
 
 // Modelos externos têm contexto grande: trechos maiores, menos chamadas e mais coerência.
 const EXTERNAL_CHUNK_TOKENS = 12_000;
+const EXTERNAL_CONSOLIDATION_ITEMS = 200;
 
 function depsFor(provider: LlmChoice): PostAnalysisDeps {
   const label = generationLabel(provider);
@@ -26,21 +27,28 @@ function depsFor(provider: LlmChoice): PostAnalysisDeps {
         .map((a) => a.name || a.email || "")
         .filter(Boolean);
       const analysis = meeting.analysis as { resumo_executivo?: unknown } | null;
+      const previous = await pool.query(
+        `SELECT EXISTS (SELECT 1 FROM meeting_items WHERE meeting_id = $1 AND origin = 'final') AS any`,
+        [meetingId],
+      );
       return {
         title: meeting.title,
         project: meeting.project_name,
         participants: [...new Set([...labels.map((l) => nameOf(l) ?? l), ...attendees])],
         liveSummary: meeting.live_summary,
         analysisSummary: typeof analysis?.resumo_executivo === "string" ? analysis.resumo_executivo : null,
+        regenerating: meeting.analyzed_at !== null || Boolean(previous.rows[0].any),
         segments: segments.map((s) => ({ ...s, speakerName: nameOf(s.speaker) })),
       };
     },
     generate: (req) => generate("post", req, provider),
-    chunkTokens: provider === "openrouter" ? EXTERNAL_CHUNK_TOKENS : undefined,
+    chunkTokens: provider === "local" ? undefined : EXTERNAL_CHUNK_TOKENS,
+    consolidationItems: provider === "local" ? undefined : EXTERNAL_CONSOLIDATION_ITEMS,
     listItems,
     listAdrs,
     createAiItems: (meetingId, items, origin) => createAiItems(meetingId, items, origin, label),
     mergeInto,
+    clearUnreviewed: async (meetingId) => (await clearUnreviewedAiItems(meetingId)).length,
     async resetChunkNotes(meetingId) {
       await pool.query(`DELETE FROM meeting_notes WHERE meeting_id = $1 AND kind = 'chunk'`, [meetingId]);
     },

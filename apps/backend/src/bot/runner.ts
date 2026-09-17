@@ -26,6 +26,10 @@ export interface BotLaunch {
   urlKey: string;
   /** Date.now() de quando o pedido chegou, para medir cada etapa */
   requestedAt: number;
+  /** reunião da agenda: espera a admissão ao menos até aqui (o fim previsto) */
+  admitUntil?: Date | null;
+  /** reunião da agenda: não sai por estar sozinho antes disto */
+  stayUntil?: Date | null;
 }
 
 export function startBot(meetingId: string, url: string, platform: "meet" | "teams", launch: BotLaunch): void {
@@ -40,7 +44,7 @@ export function startBot(meetingId: string, url: string, platform: "meet" | "tea
     stageAt: launch.requestedAt,
   };
   active.set(meetingId, entry);
-  entry.done = runBot(meetingId, url, platform, launch.displayName, abort.signal)
+  entry.done = runBot(meetingId, url, platform, launch, abort.signal)
     .catch((err) => console.error(`[bot ${meetingId}] erro inesperado:`, err))
     .finally(() => removeBot(meetingId));
 }
@@ -82,9 +86,10 @@ async function runBot(
   meetingId: string,
   url: string,
   platform: "meet" | "teams",
-  displayName: string,
+  launch: BotLaunch,
   signal: AbortSignal,
 ) {
+  const { displayName } = launch;
   const driver = drivers[platform];
   const log = (msg: string) => console.log(`[bot ${meetingId}] ${msg}`);
   const sinkName = `mb_${meetingId.replace(/-/g, "").slice(0, 16)}`;
@@ -136,7 +141,8 @@ async function runBot(
     setBotStage(meetingId, "waiting_admission");
     await setMeetingStatus(meetingId, "waiting_admission");
     log("aguardando admissão");
-    const admissionDeadline = Date.now() + config.admissionTimeoutMs;
+    const admissionDeadline = Math.max(Date.now() + config.admissionTimeoutMs, launch.admitUntil?.getTime() ?? 0);
+    const admissionMinutes = Math.round((admissionDeadline - Date.now()) / 60_000);
     let lastShot = 0;
     while (!(await driver.isInCall(page))) {
       if (signal.aborted) throw new BotError("Cancelado antes de o bot ser admitido na reunião.");
@@ -147,7 +153,7 @@ async function runBot(
       if (Date.now() > admissionDeadline) {
         await screenshot(page, meetingId);
         throw new BotError(
-          `Não fui admitido em ${config.admissionTimeoutMs / 60_000} min. Veja o screenshot de debug.`
+          `Não fui admitido em ${admissionMinutes} min. Veja o screenshot de debug.`
         );
       }
       if (Date.now() - lastShot > 15_000) {
@@ -195,7 +201,8 @@ async function runBot(
 
       if (await driver.isAlone(page)) {
         aloneSince ??= Date.now();
-        if (Date.now() - aloneSince > config.aloneTimeoutMs) {
+        const mayLeave = Date.now() >= (launch.stayUntil?.getTime() ?? 0);
+        if (mayLeave && Date.now() - aloneSince > config.aloneTimeoutMs) {
           log("sozinho na call, saindo");
           break;
         }

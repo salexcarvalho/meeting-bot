@@ -30,7 +30,10 @@ export function AgendaItem({
   const start = meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt;
   const end = meeting.scheduledEnd ?? meeting.endedAt;
   const canSkip = local && (meeting.status === "scheduled" || meeting.status === "skipped");
-  const canRecord = local && ["scheduled", "skipped", "missed"].includes(meeting.status);
+  // Com link, quem grava é o assistente; "Gravar agora" (PC) fica para reunião sem link.
+  const canRecord = local && !meeting.url && ["scheduled", "skipped", "missed"].includes(meeting.status);
+  const canSendAssistant =
+    local && Boolean(meeting.url) && !meeting.botActive && ["scheduled", "skipped", "missed", "error"].includes(meeting.status);
   const canStop = manage && (meeting.status === "recording" || (meeting.botActive && meeting.status !== "stopping"));
   const canJoin = Boolean(meeting.url) && ["scheduled", "skipped", "recording", "missed"].includes(meeting.status);
   const canEdit = local && ["scheduled", "skipped", "missed", "cancelled"].includes(meeting.status);
@@ -68,6 +71,9 @@ export function AgendaItem({
           )}
           {PLATFORM[meeting.platform] && <span className="muted">{PLATFORM[meeting.platform]}</span>}
           {meeting.skipRecording && meeting.status !== "skipped" && <span className="muted">sem gravação</span>}
+          {meeting.status === "scheduled" && !meeting.skipRecording && (
+            <span className="muted">{meeting.url ? "assistente entra no horário" : "sem link: não grava sozinho"}</span>
+          )}
           {meeting.organizer && <span className="muted">org.: {meeting.organizer}</span>}
           {meeting.attendees.length > 0 && <span className="muted">{meeting.attendees.length} participante(s)</span>}
         </div>
@@ -78,6 +84,16 @@ export function AgendaItem({
           <a className="button small primary" href={meeting.url!} target="_blank" rel="noopener noreferrer">
             Entrar
           </a>
+        )}
+        {canSendAssistant && (
+          <button
+            type="button"
+            className="small"
+            disabled={busy}
+            onClick={() => act(`/meetings/${meeting.id}/assistant`, undefined, "Assistente a caminho da reunião.")}
+          >
+            {meeting.status === "error" ? "Enviar assistente de novo" : "Enviar assistente agora"}
+          </button>
         )}
         {canRecord && (
           <button

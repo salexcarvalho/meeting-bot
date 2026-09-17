@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { ChannelLiveState, RecordingEvent } from "@meeting-bot/contracts";
 import { hostAgentOwner } from "./owner";
+import { tickAutoAssistant } from "../bot/autoJoin";
 import { config } from "../config";
 import { emitMeetingChanged, pool, withTransaction } from "../db";
 import { hub } from "../live/hub";
@@ -63,6 +64,7 @@ const SELECT_COLUMNS = `id, status, scheduled_start, scheduled_end, skip_recordi
   stop_requested, last_speech_at, created_by`;
 
 // Reunião de outro usuário nunca é gravada nesta máquina (vira "não gravada" depois do horário).
+// Com AUTO_LOCAL_RECORDING=false o PC não começa a gravar sozinho: quem grava é o assistente.
 function toSched(r: Record<string, any>, ownerId: string | null): SchedMeeting {
   const rt = peekRuntime(r.id);
   const dbSpeech: Date | null = r.last_speech_at;
@@ -72,7 +74,7 @@ function toSched(r: Record<string, any>, ownerId: string | null): SchedMeeting {
     status: r.status,
     scheduledStart: r.scheduled_start,
     scheduledEnd: r.scheduled_end,
-    skipRecording: r.skip_recording || !ownerId || r.created_by !== ownerId,
+    skipRecording: r.skip_recording || !config.autoLocalRecording || !ownerId || r.created_by !== ownerId,
     startedAt: r.started_at,
     stopRequested: r.stop_requested,
     lastSpeechAt: dbSpeech && memSpeech ? (dbSpeech > memSpeech ? dbSpeech : memSpeech) : (dbSpeech ?? memSpeech),
@@ -109,6 +111,8 @@ export async function tick(): Promise<void> {
   try {
     checkHostAgentTimeout();
     const now = new Date();
+    // Antes das decisões locais: a reunião que o assistente pega sai de `scheduled`.
+    await tickAutoAssistant(now);
     const owner = await hostAgentOwner();
     const applied = await withTransaction(async (client) => {
       const lock = await client.query(`SELECT pg_try_advisory_xact_lock($1) AS locked`, [LOCK_KEY]);

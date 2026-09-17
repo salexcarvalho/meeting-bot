@@ -211,4 +211,76 @@ describe.skipIf(!enabled)("revisão de itens e ADRs (Postgres)", async () => {
     const left = await pool.query(`SELECT count(*)::int AS n FROM transcript_segments WHERE meeting_id = $1 AND pass = 'live'`, [id]);
     expect(left.rows[0].n).toBe(0);
   });
+
+  it("gerar de novo apaga só o que a IA propôs e ninguém tocou; repetido de revisado é absorvido", async () => {
+    const m = await pool.query(
+      `INSERT INTO meetings (title, platform, status, source) VALUES ('Regerar', 'none', 'done', 'manual') RETURNING id`,
+    );
+    const id = m.rows[0].id;
+    const texts = {
+      intocado: "Publicar o portal na nuvem pública",
+      editado: "Criptografar os backups semanais",
+      aprovado: "Adotar mensageria entre os módulos",
+      rejeitado: "Trocar o banco por um NoSQL",
+      reaberto: "Congelar escopo até a homologação",
+      comAdr: "Separar leitura e escrita no cadastro",
+      dupAprovado: "Usar mensageria para integrar módulos distintos",
+      dupRejeitado: "Migrar o banco para NoSQL em breve",
+    };
+    await service.createAiItems(
+      id,
+      Object.entries(texts).map(([k, d]) => aiItem(d, { type: k === "comAdr" ? "decisao_arquitetural" : "decisao" })),
+      "final",
+    );
+    const byText = async () => new Map((await service.listItems(id)).map((i) => [i.description, i]));
+    let items = await byText();
+    expect(items.size).toBe(8);
+    const get = (key: keyof typeof texts) => items.get(texts[key])!;
+    await service.editItem(get("editado").id, { owner: "Ana" }, userId);
+    await service.reviewItem(get("aprovado").id, "approve", userId);
+    await service.reviewItem(get("rejeitado").id, "reject", userId);
+    await service.reviewItem(get("reaberto").id, "approve", userId);
+    await service.reviewItem(get("reaberto").id, "reopen", userId);
+    const cqrs = await service.upsertSuggestedAdr(id, get("comAdr").id, {
+      title: "CQRS", context: "", problem: "", alternatives: [], decision: "", consequences: "", risks: [],
+    });
+    await service.reviewAdr(cqrs!.id, "approve", userId);
+    const manual = await service.createManualItem(id, { type: "decisao", description: "Revisar o contrato com o fornecedor" }, userId);
+    const semTocar = await service.createAiItems(id, [aiItem("Rodar testes de carga antes da entrega", { type: "decisao_arquitetural" })], "live");
+    expect(semTocar.created).toBe(1);
+    items = await byText();
+    await service.upsertSuggestedAdr(id, items.get("Rodar testes de carga antes da entrega")!.id, {
+      title: "Carga", context: "", problem: "", alternatives: [], decision: "", consequences: "", risks: [],
+    });
+
+    const removed = await service.clearUnreviewedAiItems(id);
+    const left = await byText();
+    expect(removed).toHaveLength(4);
+    expect([...left.keys()].sort()).toEqual(
+      [texts.editado, texts.aprovado, texts.rejeitado, texts.reaberto, texts.comAdr, manual.description].sort(),
+    );
+    // ADR sugerido do item apagado sai junto; o aprovado fica
+    const adrs = await service.listAdrs(id);
+    expect(adrs.map((a) => a.title)).toEqual(["CQRS"]);
+
+    // nova geração: repetidos de revisados
+    const later = { segmentId: null, start: 50, end: 55, channel: "remote" as const, quote: null };
+    await service.createAiItems(
+      id,
+      [aiItem(texts.dupAprovado, { evidence: [later] }), aiItem(texts.dupRejeitado, { evidence: [later] })],
+      "final",
+    );
+    const fresh = await byText();
+    const aprovado = fresh.get(texts.aprovado)!;
+    expect(await service.mergeInto(id, aprovado.id, [fresh.get(texts.dupAprovado)!.id])).toHaveLength(1);
+    expect(await service.mergeInto(id, fresh.get(texts.rejeitado)!.id, [fresh.get(texts.dupRejeitado)!.id])).toHaveLength(1);
+    // revisado nunca é removido
+    expect(await service.mergeInto(id, fresh.get(texts.editado)!.id, [aprovado.id])).toEqual([]);
+    const after = await byText();
+    expect(after.has(texts.dupAprovado)).toBe(false);
+    expect(after.has(texts.dupRejeitado)).toBe(false);
+    expect(after.get(texts.aprovado)!.evidence).toHaveLength(2);
+    expect(after.get(texts.rejeitado)!.evidence).toHaveLength(1);
+    expect((await history(aprovado.id)).map((h) => h.action)).toContain("merged");
+  });
 });

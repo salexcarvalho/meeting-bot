@@ -12,6 +12,7 @@ import {
   MEETING_STATUSES,
   IdentityChoice,
   type AsrOptions,
+  type LlmChoice,
   type MeetingDetail,
   type MeetingStatus,
 } from "@meeting-bot/contracts";
@@ -41,9 +42,11 @@ import {
 } from "./db";
 import { enqueueProcessing, isProcessing } from "./pipeline";
 import { adrLockReason, getItem, listItems } from "./items/service";
-import { generationLabel, llmOptions, parseLlmChoice } from "./llm";
+import { generationLabel, isSubscription, llmOptions, parseLlmChoice, subscriptionUnavailable } from "./llm";
 import { audit } from "./security/audit";
 import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBot } from "./bot/runner";
+import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
+import { detectPlatform } from "./bot/link";
 import { botForUrl, botUrlKey, releaseBotUrl, reserveBotUrl } from "./bot/state";
 import { meetingAccess, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
 import { resolveBotDisplayName } from "./users/identity";
@@ -56,22 +59,6 @@ import { EXTERNAL_ASR_ID, externalAsrStatus } from "./asr/openrouter";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function detectPlatform(raw: unknown): { platform: "meet" | "teams"; url: string } | null {
-  if (typeof raw !== "string") return null;
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:") return null;
-  const host = url.hostname.toLowerCase();
-  if (host === "meet.google.com") return { platform: "meet", url: url.toString() };
-  if (host === "teams.microsoft.com" || host === "teams.live.com" || host.endsWith(".teams.microsoft.com")) {
-    return { platform: "teams", url: url.toString() };
-  }
-  return null;
-}
 
 function cleanTitle(raw: unknown, fallback: string): string {
   const title = typeof raw === "string" ? raw.trim().slice(0, 200) : "";
@@ -118,8 +105,22 @@ export async function sessionPayload(user: User) {
     roles: user.roles,
     permissions: user.permissions,
     asr,
-    llm: llmOptions(),
+    llm: await llmOptions(user.id),
   };
+}
+
+/** Escolha de LLM de um pedido: valida a configuração e, na assinatura, se vale para esta reunião agora. */
+async function requestedLlm(
+  value: unknown,
+  meetingOwnerId: string | null,
+): Promise<{ ok: true; value: LlmChoice } | { ok: false; status: number; error: string }> {
+  const llm = parseLlmChoice(value);
+  if (!llm.ok) return { ok: false, status: 400, error: llm.error };
+  if (isSubscription(llm.value)) {
+    const reason = await subscriptionUnavailable(llm.value, meetingOwnerId);
+    if (reason) return { ok: false, status: 409, error: reason };
+  }
+  return llm;
 }
 
 export async function loadMeetingDetail(meetingId: string, user: User): Promise<MeetingDetail | null> {
@@ -158,6 +159,7 @@ const OWNER_ONLY_ROUTES = new Set([
   "/meetings/:id",
   "/meetings/:id/record",
   "/meetings/:id/end",
+  "/meetings/:id/assistant",
   "/meetings/:id/reprocess",
   "/meetings/:id/skip",
   "/meetings/:id/adrs/generate",
@@ -324,6 +326,23 @@ export function buildRouter(): Router {
     }),
   );
 
+  // Reunião da agenda: manda o assistente agora (fora do horário ou depois de uma falha).
+  router.post(
+    "/meetings/:id/assistant",
+    requirePermission("meetings.manage"),
+    wrap(async (req, res) => {
+      const id = String(req.params.id);
+      try {
+        await sendAssistantNow(id);
+      } catch (err) {
+        if (err instanceof AssistantError) return res.status(err.status).json({ error: err.message });
+        throw err;
+      }
+      const meeting = await getMeeting(id);
+      res.status(202).json(toMeetingSummary(meeting!));
+    }),
+  );
+
   const uploadTmp = path.join(config.dataDir, "uploads");
   const upload = multer({
     dest: uploadTmp,
@@ -402,8 +421,8 @@ export function buildRouter(): Router {
       if (step === "all" && !audio.some((a) => a.format !== "pcm_s16le_16k")) {
         return res.status(409).json({ error: "Esta reunião não tem áudio gravado." });
       }
-      const llm = parseLlmChoice(req.body?.llm);
-      if (!llm.ok) return res.status(400).json({ error: llm.error });
+      const llm = await requestedLlm(req.body?.llm, meeting.created_by);
+      if (!llm.ok) return res.status(llm.status).json({ error: llm.error });
       if (step === "all" && req.body?.asr !== undefined) {
         const asr = parseAsrChoice(req.body.asr);
         if (!asr.ok) return res.status(400).json({ error: asr.error });
@@ -414,6 +433,16 @@ export function buildRouter(): Router {
       }
       audit("generation_requested", { meetingId: meeting.id, step, provider: generationLabel(llm.value) }, req.user!.id);
       res.status(202).json({ status: "queued", provider: generationLabel(llm.value) });
+    }),
+  );
+
+  // Onde dá para gerar agora (a assinatura depende do dono da reunião e do host-agent).
+  router.get(
+    "/meetings/:id/llm-options",
+    wrap(async (req, res) => {
+      const meeting = await getMeeting(String(req.params.id));
+      if (!meeting) return res.status(404).json({ error: "Reunião não encontrada." });
+      res.json(await llmOptions(meeting.created_by));
     }),
   );
 
@@ -432,8 +461,8 @@ export function buildRouter(): Router {
       if ((await countFinalSegments(meeting.id)) === 0) {
         return res.status(409).json({ error: "Esta reunião ainda não tem transcrição final. Gere a ata primeiro." });
       }
-      const llm = parseLlmChoice(body.llm);
-      if (!llm.ok) return res.status(400).json({ error: llm.error });
+      const llm = await requestedLlm(body.llm, meeting.created_by);
+      if (!llm.ok) return res.status(llm.status).json({ error: llm.error });
       if (body.itemId) {
         const item = await getItem(body.itemId);
         if (!item || item.meetingId !== meeting.id) {

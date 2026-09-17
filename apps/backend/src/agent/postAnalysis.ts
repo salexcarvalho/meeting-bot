@@ -33,6 +33,8 @@ export interface PostContext {
   liveSummary: string | null;
   /** resumo executivo da última análise (contexto dos ADRs gerados sob demanda) */
   analysisSummary: string | null;
+  /** já houve análise pós-reunião: gerar de novo substitui o que ninguém revisou */
+  regenerating: boolean;
   segments: WindowSegment[];
 }
 
@@ -46,6 +48,10 @@ export interface PostAnalysisDeps {
   listAdrs(meetingId: string): Promise<Adr[]>;
   createAiItems(meetingId: string, items: ValidItem[], origin: "final"): Promise<{ created: number; merged: number }>;
   mergeInto(meetingId: string, keepId: string, removeIds: string[]): Promise<string[]>;
+  /** apaga os itens propostos pela IA que ninguém revisou; devolve quantos */
+  clearUnreviewed(meetingId: string): Promise<number>;
+  /** itens por chamada de consolidação; modelos externos aguentam mais */
+  consolidationItems?: number;
   resetChunkNotes(meetingId: string): Promise<void>;
   saveChunkNote(meetingId: string, start: number, end: number, text: string): Promise<void>;
   saveSummary(meetingId: string, summary: string): Promise<void>;
@@ -65,6 +71,7 @@ const CHUNK_TOKENS = 2_000;
 const CHUNK_OVERLAP = 2;
 const MAX_NARRATIVE_ITEMS = 80;
 const MAX_CONSOLIDATION_ITEMS = 60;
+const MAX_REVIEWED_ANCHORS = 40;
 const ADR_CONTEXT_S = 60;
 
 type Report = (step: ProcessingStep, progress?: number) => void;
@@ -75,6 +82,12 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
   const ctx = await deps.loadContext(meetingId);
   if (!ctx) return;
   const tag = meetingId.slice(0, 8);
+
+  // 0. Gerar de novo começa do zero: sai o que a IA propôs e ninguém revisou.
+  if (ctx.regenerating) {
+    const removed = await deps.clearUnreviewed(meetingId);
+    if (removed) console.log(`[pós ${tag}] ${removed} itens não revisados substituídos pela nova geração`);
+  }
 
   // 1. Extração por chunk (itens `final`; os ao vivo prevalecem na deduplicação).
   await deps.resetChunkNotes(meetingId);
@@ -107,26 +120,38 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
   }
   report("analisando", 1);
 
-  // 2. Consolidação final dos propostos.
+  // 2. Consolidação final: junta propostos repetidos (entre si e com os já revisados), por lotes de tipo.
   let summary = ctx.liveSummary;
-  const proposed = (await deps.listItems(meetingId)).filter((i) => i.reviewStatus === "proposto").slice(-MAX_CONSOLIDATION_ITEMS);
-  if (proposed.length || summaries.length) {
-    const refs = new Map(proposed.map((item, i) => [`I${i + 1}`, item]));
+  const current = await deps.listItems(meetingId);
+  const proposed = current.filter((i) => i.reviewStatus === "proposto");
+  const reviewed = current.filter((i) => i.reviewStatus !== "proposto").slice(-MAX_REVIEWED_ANCHORS);
+  const batches = batchByType(proposed, deps.consolidationItems ?? MAX_CONSOLIDATION_ITEMS);
+  if (!batches.length && summaries.length) batches.push([]);
+  for (const [n, batch] of batches.entries()) {
+    const types = new Set(batch.map((i) => i.type));
+    const anchors = reviewed.filter((i) => types.has(i.type));
+    const refs = new Map<string, Item>([
+      ...batch.map((item, i) => [`I${i + 1}`, item] as const),
+      ...anchors.map((item, i) => [`R${i + 1}`, item] as const),
+    ]);
+    const describe = (ref: string, item: Item) => ({ ref, type: item.type, description: item.description });
     try {
       const result = await deps.generate({
         system: SYSTEM_CONSOLIDACAO,
         user: consolidationUser({
           title: ctx.title,
           summary: ctx.liveSummary,
-          windowSummaries: summaries,
-          items: [...refs].map(([ref, item]) => ({ ref, type: item.type, description: item.description })),
+          // o resumo sai do primeiro lote; os demais só procuram repetidos
+          windowSummaries: n === 0 ? summaries : [],
+          items: [...refs].filter(([ref]) => ref.startsWith("I")).map(([ref, item]) => describe(ref, item)),
+          reviewed: [...refs].filter(([ref]) => ref.startsWith("R")).map(([ref, item]) => describe(ref, item)),
         }),
         schema: Consolidacao,
         numCtx: POST_NUM_CTX,
-        label: `consolidação final ${tag}`,
+        label: `consolidação final ${tag}${batches.length > 1 ? ` ${n + 1}/${batches.length}` : ""}`,
         meetingId,
       });
-      if (result.resumo.trim()) {
+      if (n === 0 && result.resumo.trim()) {
         summary = result.resumo.trim().slice(0, 1200);
         await deps.saveSummary(meetingId, summary);
       }
@@ -135,7 +160,10 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
         if (!keep) continue;
         const remove = group.remover
           .map((r) => refs.get(r.trim().toUpperCase()))
-          .filter((i): i is Item => Boolean(i) && i!.id !== keep.id && i!.type === keep.type);
+          .filter(
+            (i): i is Item =>
+              Boolean(i) && i!.id !== keep.id && i!.type === keep.type && i!.reviewStatus === "proposto",
+          );
         if (remove.length) await deps.mergeInto(meetingId, keep.id, remove.map((i) => i.id));
       }
     } catch (err) {
@@ -216,6 +244,26 @@ export async function runAdrGeneration(
   }
   report("adrs", 1);
   return result;
+}
+
+/** Lotes de até `limit` itens sem separar um tipo (repetidos são sempre do mesmo tipo). */
+export function batchByType(items: Item[], limit: number): Item[][] {
+  const groups = new Map<string, Item[]>();
+  for (const item of items) groups.set(item.type, [...(groups.get(item.type) ?? []), item]);
+  const batches: Item[][] = [];
+  let batch: Item[] = [];
+  for (const group of groups.values()) {
+    for (let start = 0; start < group.length; start += limit) {
+      const part = group.slice(start, start + limit);
+      if (batch.length + part.length > limit) {
+        batches.push(batch);
+        batch = [];
+      }
+      batch.push(...part);
+    }
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
 }
 
 // Segmentos das evidências com ±60 s de contexto.

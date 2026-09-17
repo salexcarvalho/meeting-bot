@@ -7,6 +7,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .llm_runner import PROVIDERS, LlmCliConfig
+
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "agente-reunioes"
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "agente-reunioes"
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "agente-reunioes"
@@ -19,6 +21,7 @@ class Config:
     spool_dir: Path
     state_dir: Path
     env_file: Path
+    llm: LlmCliConfig = LlmCliConfig()
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -37,6 +40,23 @@ def read_env_file(path: Path) -> dict[str, str]:
             value = value[1:-1]
         values[key.strip()] = value
     return values
+
+
+def _path(value: str | None) -> Path | None:
+    return Path(os.path.expanduser(value)) if value else None
+
+
+def load_llm_config(data: dict) -> LlmCliConfig:
+    """Seção [llm] do config.toml (assinaturas pessoais: claude/codex)."""
+    section = data.get("llm", {})
+    enabled = tuple(p for p in section.get("enabled", PROVIDERS) if p in PROVIDERS)
+    return LlmCliConfig(
+        enabled=enabled,
+        claude_bin=section.get("claude_bin", ""),
+        codex_bin=section.get("codex_bin", ""),
+        claude_config_dir=_path(section.get("claude_config_dir")),
+        codex_home=_path(section.get("codex_home")) or CONFIG_DIR / "codex",
+    )
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -65,4 +85,5 @@ def load_config(path: Path | None = None) -> Config:
         spool_dir=Path(os.path.expanduser(data.get("spool_dir", DATA_DIR / "spool"))),
         state_dir=Path(os.path.expanduser(data.get("state_dir", STATE_DIR))),
         env_file=env_file or Path(),
+        llm=load_llm_config(data),
     )

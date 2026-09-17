@@ -11,7 +11,7 @@ import {
 } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
 import { formatClock } from "../format";
-import { isExternal, llmLabel } from "../session";
+import { externalName, isExternal, llmLabel } from "../session";
 import { ItemHistory } from "./ItemHistory";
 import { useToast } from "./Toast";
 
@@ -75,7 +75,7 @@ export function ItemCard({
   const quote = item.evidence.find((e) => e.quote)?.quote;
 
   return (
-    <article className={`item ${item.reviewStatus}`}>
+    <article id={`item-${item.id}`} className={`item ${item.reviewStatus}`}>
       {editing ? (
         <form className="item-form" onSubmit={save}>
           <select value={type} onChange={(e) => setType(e.target.value as ItemType)} aria-label="Tipo">
@@ -116,7 +116,9 @@ export function ItemCard({
             <span className="muted small">
               {ORIGIN_TEXT[item.origin]}
               {isExternal(item.generatedBy) && (
-                <span className="badge warn chip-external" title={`Gerado por ${llmLabel(item.generatedBy)}`}>OpenRouter</span>
+                <span className="badge warn chip-external" title={`Gerado por ${llmLabel(item.generatedBy)}`}>
+                  {externalName(item.generatedBy)}
+                </span>
               )}
             </span>
           </div>
@@ -167,7 +169,7 @@ export function ItemCard({
           </div>
         </>
       )}
-      <ItemHistory itemId={item.id} open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <ItemHistory itemId={item.id} description={item.description} open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </article>
   );
 }

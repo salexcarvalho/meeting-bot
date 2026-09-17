@@ -1,7 +1,19 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 // <dialog> nativo controlado por estado (sem window.confirm/alert).
-export function Dialog({ open, onClose, children, label }: { open: boolean; onClose: () => void; children: ReactNode; label: string }) {
+export function Dialog({
+  open,
+  onClose,
+  children,
+  label,
+  className,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: ReactNode;
+  label: string;
+  className?: string;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -10,7 +22,7 @@ export function Dialog({ open, onClose, children, label }: { open: boolean; onCl
     if (!open && el.open) el.close();
   }, [open]);
   return (
-    <dialog ref={ref} aria-label={label} onClose={onClose} onCancel={onClose}>
+    <dialog ref={ref} aria-label={label} className={className} onClose={onClose} onCancel={onClose}>
       {open && children}
     </dialog>
   );

@@ -185,3 +185,57 @@ export function renderAta(input: AtaInput): string {
   }
   return parts.join("\n");
 }
+
+export interface ResumoOutput {
+  text: string;
+  /** itens aprovados no resumo */
+  approved: number;
+  /** itens ainda propostos, que ficaram de fora */
+  pending: number;
+}
+
+/**
+ * Resumo curto para colar no Teams ou no e-mail: objetivo, resumo, decisões, pendências e riscos.
+ * Só entram itens aprovados; texto simples (lê bem com ou sem Markdown).
+ */
+export function renderResumo(input: AtaInput): ResumoOutput {
+  const { meeting: m, timezone, analysis } = input;
+  const approved = input.items.filter((i) => i.reviewStatus === "aprovado");
+  const pending = input.items.filter((i) => i.reviewStatus === "proposto").length;
+  const byType = (type: ItemType) => approved.filter((i) => i.type === type);
+  const adrByItem = new Map(input.adrs.filter((a) => a.status === "aprovado" && a.code).map((a) => [a.itemId, a.code!]));
+  const start = m.startedAt ?? m.scheduledStart ?? m.createdAt;
+  const bullet = (text: string, extra: string[] = []) => {
+    const details = extra.filter(Boolean);
+    return `- ${oneLine(text)}${details.length ? ` (${details.join("; ")})` : ""}`;
+  };
+
+  const lines: string[] = [`Resumo da reunião: ${oneLine(m.title)}`];
+  const header = [
+    formatDate(start, timezone, { dateStyle: "short", timeStyle: "short" }),
+    m.project ? `Projeto: ${m.project.name}` : "",
+  ].filter(Boolean);
+  lines.push(header.join(" · "), "");
+  if (analysis?.objetivo) lines.push(`Objetivo: ${oneLine(analysis.objetivo)}`, "");
+  if (analysis?.resumo_executivo) lines.push(analysis.resumo_executivo.trim(), "");
+
+  const blocks: [string, string[]][] = [
+    ["Decisões", byType("decisao").map((i) => bullet(i.description))],
+    ["Decisões arquiteturais", byType("decisao_arquitetural").map((i) => bullet(i.description, [adrByItem.get(i.id) ?? ""]))],
+    [
+      "Pendências",
+      byType("pendencia")
+        .filter((i) => i.attributes.status_acao !== "concluida")
+        .map((i) => bullet(i.description, [`responsável: ${i.owner ?? "a definir"}`, i.due ? `prazo: ${i.due}` : "sem prazo"])),
+    ],
+    [
+      "Riscos",
+      byType("risco").map((i) => bullet(i.description, [i.attributes.categoria ? RISK_CATEGORY_LABELS[i.attributes.categoria] : ""])),
+    ],
+  ];
+  for (const [title, entries] of blocks) {
+    if (entries.length) lines.push(title, ...entries, "");
+  }
+  if (!blocks.some(([, entries]) => entries.length)) lines.push("Nenhum item aprovado ainda.", "");
+  return { text: `${lines.join("\n").trim()}\n`, approved: approved.length, pending };
+}

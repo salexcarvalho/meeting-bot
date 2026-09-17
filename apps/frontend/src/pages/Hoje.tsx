@@ -114,7 +114,8 @@ export function Hoje() {
 
       {agenda && !agenda.hostAgent.online && (
         <div className="banner warn" role="status">
-          O agente do desktop não está ativo: <strong>alertas e gravação automática estão indisponíveis</strong>. Inicie
+          O agente do desktop não está ativo: <strong>sem alertas no computador</strong> (o assistente continua entrando
+          nas reuniões com link). Inicie
           com <code>systemctl --user start agente-host</code> (instalação: <code>apps/host-agent/install.sh</code>).
         </div>
       )}
@@ -173,7 +174,7 @@ export function Hoje() {
                   {agenda.hostAgent.online ? "Ativo" : "Offline"}
                 </span>
                 <span className="small muted">
-                  {agenda.hostAgent.online ? "Alertas e gravação automática disponíveis." : "Sem alertas nem gravação automática."}
+                  {agenda.hostAgent.online ? "Alertas no computador ativos." : "Sem alertas no computador."}
                 </span>
               </div>
             </section>

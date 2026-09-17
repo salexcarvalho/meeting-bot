@@ -37,6 +37,15 @@ if [ ! -f "$CONF/config.toml" ]; then
 # O AGENT_TOKEN, BIND_ADDRESS e HOST_PORT são lidos deste .env:
 env_file = "$REPO/.env"
 # backend_url = "http://127.0.0.1:3000"
+
+# Assinatura pessoal para ata/ADR (CLAUDE_CLI_ENABLED/CODEX_CLI_ENABLED no .env).
+# O Codex usa uma pasta própria; faça login uma vez:
+#   CODEX_HOME=$CONF/codex codex login --device-auth
+# [llm]
+# enabled = ["claude", "codex"]
+# claude_bin = "~/.local/bin/claude"
+# codex_bin = "~/.local/bin/codex"
+# codex_home = "$CONF/codex"
 TOML
   chmod 600 "$CONF/config.toml"
   echo "==> config criada em $CONF/config.toml"

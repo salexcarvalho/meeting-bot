@@ -1,8 +1,8 @@
 import { Fragment, type ReactNode } from "react";
 
 // Markdown mínimo (títulos, listas, negrito, itálico, código) renderizado como
-// elementos React — nunca como HTML cru.
-const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|(?<![\w*])[*_]([^*_]+)[*_](?![\w*])/g;
+// elementos React — nunca como HTML cru. "[mm:ss]" (momento na gravação) vira marcador discreto.
+const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|(?<![\w*])[*_]([^*_]+)[*_](?![\w*])|\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
 
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -13,7 +13,8 @@ function inline(text: string): ReactNode[] {
     if (index > last) out.push(text.slice(last, index));
     if (m[1] !== undefined) out.push(<code key={key++}>{m[1]}</code>);
     else if (m[2] !== undefined) out.push(<strong key={key++}>{m[2]}</strong>);
-    else out.push(<em key={key++}>{m[3]}</em>);
+    else if (m[3] !== undefined) out.push(<em key={key++}>{m[3]}</em>);
+    else out.push(<span key={key++} className="ts" title="Momento na gravação">{m[4]}</span>);
     last = index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));

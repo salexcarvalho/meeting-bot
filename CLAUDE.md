@@ -14,11 +14,11 @@ agente arquiteto, memória pesquisável.
 ## Regras do projeto (decididas pelo usuário)
 
 - `LOCAL_ONLY=true` sempre: nenhum áudio, transcrição ou documento sai da máquina; LLM só local (Ollama).
-  - Exceção (constituição 1.3.0): LLM externo opcional (OpenRouter, `ALLOW_EXTERNAL_LLM=true`) para ata e ADR — escolhido a cada clique em "Gerar ata/ADR" ou, para a análise automática pós-reunião, com `LLM_GENERATION_PROVIDER=openrouter` no `.env`; Ollama continua padrão; ao vivo sempre local.
+  - Exceção (constituição 1.4.0): LLM externo opcional (`ALLOW_EXTERNAL_LLM=true`) para ata e ADR — OpenRouter ou a assinatura pessoal do dono (Claude Code/Codex, executados pelo host-agent, só nas reuniões do `AGENT_OWNER`); escolhido a cada clique em "Gerar ata/ADR" ou, na análise automática, por `LLM_GENERATION_PROVIDER`; Ollama continua padrão; ao vivo sempre local.
   - Exceção (constituição 1.1.0): ASR externo de teste (Deepgram nova-3 via OpenRouter), só com `ALLOW_EXTERNAL_ASR=true`, só no passe final/upload, escolhido por `.env` ou por reunião. Whisper local continua padrão; ao vivo sempre local.
 - Nunca contornar políticas da organização (sem scraping de Outlook/Teams para burlar bloqueio de app).
 - Calendário: importação `.ics` + cadastro manual (tenant bloqueia Graph e acesso por e-mail).
-- Gravação começa automaticamente no horário; para após o fim previsto com 3 min sem fala, ou manualmente.
+- Gravação (constituição 1.5.0): no horário, o assistente convidado entra em toda reunião da agenda com link Teams/Meet (exceto "Não gravar") e grava de dentro da chamada. O PC não grava sozinho (o usuário nem sempre entra); sem link, só "Gravar agora", que para após o fim previsto com 3 min sem fala, ou manualmente.
 - Áudio é guardado sempre.
 - ADR e itens da IA só viram definitivos com aprovação humana.
 - Multiusuário (plano em `docs/analise/plataforma-multiusuario.md`):

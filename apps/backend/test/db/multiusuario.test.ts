@@ -185,6 +185,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
         ["GET", `/meetings/${anaMeeting}`],
         ["GET", `/meetings/${anaMeeting}/items`],
         ["GET", `/meetings/${anaMeeting}/ata`],
+        ["GET", `/meetings/${anaMeeting}/resumo`],
         ["GET", `/meetings/${anaMeeting}/audio`],
         ["PATCH", `/meetings/${anaMeeting}`, { title: "hack" }],
         ["POST", `/meetings/${anaMeeting}/skip`, { skip: true }],
@@ -210,6 +211,11 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       // nem o super administrador lê conteúdo alheio por padrão (Q2)
       expect((await call("mu-super", "GET", `/meetings/${anaMeeting}`)).status).toBe(404);
       expect((await call("mu-ana", "GET", `/meetings/${anaMeeting}`)).status).toBe(200);
+      const resumo = await call("mu-ana", "GET", `/meetings/${anaMeeting}/resumo`);
+      expect(resumo.status).toBe(200);
+      // item manual nasce aprovado: entra no resumo
+      expect(resumo.json).toMatchObject({ approved: 1, pending: 0 });
+      expect(resumo.json.text).toContain("Decisões\n- Usar filas na integração");
     });
 
     it("compartilhamento de leitura libera só a leitura", async () => {
@@ -639,6 +645,19 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       ]);
       const { rows: status } = await pool.query(`SELECT status FROM meetings WHERE id = $1`, [id]);
       expect(status[0].status).toBe("done");
+    });
+
+    it("reinício: quem estava gerando a ata retoma só a análise", async () => {
+      const { recoverInterruptedMeetings } = await import("../../src/db");
+      const transcribing = await meeting("mu-ana", "Transcrição interrompida");
+      await pool.query(`UPDATE meetings SET status = 'generating_ata' WHERE id = $1`, [id]);
+      await pool.query(`UPDATE meetings SET status = 'transcribing' WHERE id = $1`, [transcribing]);
+      try {
+        const resumed = await recoverInterruptedMeetings();
+        expect(resumed).toEqual(expect.arrayContaining([{ id, step: "analysis" }, { id: transcribing, step: "all" }]));
+      } finally {
+        await pool.query(`UPDATE meetings SET status = 'done' WHERE id = ANY($1)`, [[id, transcribing]]);
+      }
     });
   });
 });

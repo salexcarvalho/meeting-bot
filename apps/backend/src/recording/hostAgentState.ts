@@ -1,4 +1,4 @@
-import type { HeartbeatInput, HostAgentCapture, HostAgentStatus } from "@meeting-bot/contracts";
+import type { CliStatus, HeartbeatInput, HostAgentCapture, HostAgentStatus, SubscriptionLlm } from "@meeting-bot/contracts";
 import { visibleMeetingId } from "../authz";
 import { hub } from "../live/hub";
 import type { User } from "../types";
@@ -9,6 +9,7 @@ const ONLINE_WINDOW_MS = 15_000;
 let lastSeenAt: Date | null = null;
 let version: string | null = null;
 let capture: HostAgentCapture | null = null;
+let cliStatus: Partial<Record<SubscriptionLlm, CliStatus>> = {};
 let lastPublishedOnline = false;
 
 export function isHostAgentOnline(now = Date.now()): boolean {
@@ -37,6 +38,12 @@ export async function hostAgentStatusFor(user: User): Promise<HostAgentStatus> {
   return { ...status, capture: visible ? status.capture : null };
 }
 
+/** CLI de assinatura informado no último heartbeat; null com o host-agent desligado. */
+export function hostAgentCli(provider: SubscriptionLlm): CliStatus | null {
+  if (!isHostAgentOnline()) return null;
+  return cliStatus[provider] ?? { available: false, reason: "host-agent sem suporte a CLI (atualize o host-agent)", version: null };
+}
+
 export function hostAgentCapture(): HostAgentCapture | null {
   return isHostAgentOnline() ? capture : null;
 }
@@ -52,6 +59,7 @@ export function recordHeartbeat(input: HeartbeatInput): void {
   lastSeenAt = new Date();
   version = input.version;
   capture = input.capture;
+  cliStatus = input.llm ?? {};
   publishIfChanged();
 }
 

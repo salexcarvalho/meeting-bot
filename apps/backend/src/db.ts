@@ -371,25 +371,38 @@ export async function setAudioBytes(meetingId: string, channel: Channel, bytes: 
 
 // ---------- recuperação no boot ----------
 
-// Após restart não há navegador/ffmpeg vivos. Reuniões do bot sem áudio viram erro;
-// processamentos interrompidos voltam pra fila. Gravações locais (recording/stopping)
-// continuam: o host-agent reconecta e retoma do offset gravado.
-export async function recoverInterruptedMeetings(): Promise<string[]> {
+// Após restart não há navegador/ffmpeg vivos. Assistente sem áudio: na agenda, ainda no horário,
+// volta a `scheduled` e entra de novo; nos demais casos vira erro. Processamentos interrompidos
+// voltam pra fila. Gravações locais (recording/stopping) continuam: o host-agent reconecta.
+/**
+ * Reuniões a retomar depois de um reinício. Quem já estava gerando a ata (transcrição final
+ * pronta) retoma só a análise; o provedor é o automático (a escolha feita na tela não sobrevive).
+ */
+export async function recoverInterruptedMeetings(): Promise<{ id: string; step: "all" | "analysis" }[]> {
   await pool.query(
-    `UPDATE meetings SET status = 'error', error_message = 'Serviço reiniciado antes de o bot gravar a reunião.'
-     WHERE source = 'bot' AND status IN ('joining', 'waiting_admission', 'in_call') AND audio_path IS NULL`,
+    `UPDATE meetings SET status = 'scheduled', started_at = NULL, error_message = NULL
+     WHERE source IN ('ics', 'manual') AND status IN ('joining', 'waiting_admission', 'in_call')
+       AND audio_path IS NULL AND NOT skip_recording AND scheduled_end > now()`,
+  );
+  await pool.query(
+    `UPDATE meetings SET status = 'error', error_message = 'Serviço reiniciado antes de o assistente gravar a reunião.'
+     WHERE status IN ('joining', 'waiting_admission', 'in_call') AND audio_path IS NULL`,
   );
   await pool.query(
     `UPDATE meetings SET ended_at = now()
-     WHERE source = 'bot' AND started_at IS NOT NULL AND ended_at IS NULL`,
+     WHERE status IN ('joining', 'waiting_admission', 'in_call') AND started_at IS NOT NULL AND ended_at IS NULL`,
   );
   const { rows } = await pool.query(
-    `SELECT id FROM meetings
-     WHERE status IN ('queued', 'transcribing', 'generating_ata')
-        OR (source = 'bot' AND status IN ('joining', 'waiting_admission', 'in_call'))
-     ORDER BY created_at`,
+    `SELECT m.id,
+            m.status = 'generating_ata' AND EXISTS (
+              SELECT 1 FROM transcript_segments s WHERE s.meeting_id = m.id AND s.pass = 'final'
+            ) AS analysis_only
+       FROM meetings m
+      WHERE m.status IN ('queued', 'transcribing', 'generating_ata')
+         OR m.status IN ('joining', 'waiting_admission', 'in_call')
+      ORDER BY m.created_at`,
   );
-  return rows.map((r) => r.id);
+  return rows.map((r) => ({ id: r.id, step: r.analysis_only ? "analysis" : "all" }));
 }
 
 export function isItemType(value: unknown, types: readonly ItemType[]): value is ItemType {

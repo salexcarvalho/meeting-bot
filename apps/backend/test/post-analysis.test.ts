@@ -9,7 +9,7 @@ import {
 } from "@meeting-bot/contracts";
 import { planAiItems } from "../src/agent/dedup";
 import type { ValidItem } from "../src/agent/evidence";
-import { runAdrGeneration, runPostAnalysis, type PostAnalysisDeps } from "../src/agent/postAnalysis";
+import { batchByType, runAdrGeneration, runPostAnalysis, type PostAnalysisDeps } from "../src/agent/postAnalysis";
 import type { WindowSegment } from "../src/agent/prompts";
 import type { GenerateRequest } from "../src/llm/provider";
 
@@ -88,11 +88,19 @@ const liveItem = (over: Partial<Item>): Item => ({
   ...over,
 });
 
-function setup(initial: Item[]) {
+function setup(initial: Item[], opts: { regenerating?: boolean } = {}) {
   const store = fakeStore(initial);
   const calls: { label: string; user: string; meetingId?: string }[] = [];
   const deps: PostAnalysisDeps = {
-    loadContext: async () => ({ title: "Reunião", project: null, participants: ["Sérgio"], liveSummary: null, analysisSummary: null, segments }),
+    loadContext: async () => ({
+      title: "Reunião",
+      project: null,
+      participants: ["Sérgio"],
+      liveSummary: null,
+      analysisSummary: null,
+      regenerating: Boolean(opts.regenerating),
+      segments,
+    }),
     async generate<T>(req: GenerateRequest<T>): Promise<T> {
       calls.push({ label: req.label, user: req.user, meetingId: req.meetingId });
       if (req.schema === (Extracao as unknown)) {
@@ -129,6 +137,12 @@ function setup(initial: Item[]) {
     listAdrs: async () => store.adrs,
     createAiItems: store.createAiItems,
     mergeInto: async () => [],
+    async clearUnreviewed() {
+      calls.push({ label: "limpeza", user: "" });
+      const before = store.items.length;
+      store.items.splice(0, store.items.length, ...store.items.filter((i) => i.reviewStatus !== "proposto" || i.origin === "manual"));
+      return before - store.items.length;
+    },
     resetChunkNotes: async () => {},
     saveChunkNote: async () => {},
     saveSummary: async () => {},
@@ -198,6 +212,61 @@ describe("runPostAnalysis", () => {
     expect(count(small.calls)).toBeGreaterThan(count(big.calls));
     expect(big.calls.every((c) => c.meetingId === "m")).toBe(true);
   });
+
+  it("gerar de novo apaga os propostos da IA antes de extrair; na primeira vez não", async () => {
+    const old = { id: "velho", description: "Sugestão antiga do modelo anterior", reviewStatus: "proposto" as const };
+    const first = setup([liveItem(old)]);
+    await runPostAnalysis("m", () => {}, first.deps);
+    expect(first.calls.some((c) => c.label === "limpeza")).toBe(false);
+    expect(first.store.items.some((i) => i.id === "velho")).toBe(true);
+
+    const again = setup([liveItem(old), liveItem({ id: "ok" })], { regenerating: true });
+    await runPostAnalysis("m", () => {}, again.deps);
+    expect(again.calls[0].label).toBe("limpeza");
+    expect(again.store.items.some((i) => i.id === "velho")).toBe(false);
+    expect(again.store.items.find((i) => i.id === "ok")?.reviewStatus).toBe("aprovado");
+  });
+
+  it("consolida em lotes por tipo, junta repetido ao revisado e nunca remove revisado", async () => {
+    const { deps } = setup([
+      liveItem({ id: "a1", type: "decisao", description: "Reunião semanal às terças" }),
+      liveItem({ id: "r1", type: "risco", description: "Prazo apertado", reviewStatus: "rejeitado" }),
+      ...[0, 1, 2].map((n) => liveItem({ id: `d${n}`, type: "decisao", description: `Decisão proposta ${n}`, reviewStatus: "proposto" })),
+      liveItem({ id: "k1", type: "risco", description: "Risco proposto", reviewStatus: "proposto" }),
+    ]);
+    const merges: [string, string[]][] = [];
+    const consolidations: { label: string; user: string }[] = [];
+    await runPostAnalysis("m", () => {}, {
+      ...deps,
+      consolidationItems: 3,
+      mergeInto: async (_m, keep, remove) => (merges.push([keep, remove]), remove),
+      async generate<T>(req: GenerateRequest<T>): Promise<T> {
+        if (req.schema !== (Consolidacao as unknown)) return deps.generate(req);
+        consolidations.push({ label: req.label, user: req.user });
+        const duplicados = req.user.includes("Decisão proposta 0")
+          ? [{ manter: "R1", remover: ["I1", "R1"] }]
+          : [{ manter: "I1", remover: ["R1"] }];
+        return Consolidacao.parse({ resumo: "resumo", duplicados }) as T;
+      },
+    });
+    expect(consolidations.map((c) => c.label)).toEqual(["consolidação final m 1/2", "consolidação final m 2/2"]);
+    expect(consolidations[0].user).toContain("R1 [decisao] Reunião semanal às terças");
+    expect(consolidations[0].user).not.toContain("Resumos dos trechos novos:\n(nenhum)");
+    expect(consolidations[1].user).toContain("Resumos dos trechos novos:\n(nenhum)");
+    expect(consolidations[1].user).toContain("R1 [risco] Prazo apertado");
+    expect(merges).toEqual([["a1", ["d0"]]]);
+  });
+});
+
+describe("batchByType", () => {
+  const item = (id: string, type: Item["type"]) => liveItem({ id, type });
+  it("não separa um tipo e divide o que passa do limite", () => {
+    const items = [item("a", "decisao"), item("b", "risco"), item("c", "decisao"), item("d", "pendencia")];
+    expect(batchByType(items, 3).map((b) => b.map((i) => i.id))).toEqual([["a", "c", "b"], ["d"]]);
+    const many = [1, 2, 3, 4, 5].map((n) => item(`x${n}`, "risco"));
+    expect(batchByType(many, 2).map((b) => b.length)).toEqual([2, 2, 1]);
+    expect(batchByType([], 5)).toEqual([]);
+  });
 });
 
 describe("runAdrGeneration (sob demanda)", () => {
@@ -214,6 +283,7 @@ describe("runAdrGeneration (sob demanda)", () => {
         participants: [],
         liveSummary: "resumo ao vivo",
         analysisSummary: "resumo executivo salvo",
+        regenerating: false,
         segments,
       }),
     }, { itemId: "outra" });

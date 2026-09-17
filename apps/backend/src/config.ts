@@ -62,7 +62,7 @@ function asrProvider(allowed: boolean): AsrProvider {
 
 const external = externalAsr();
 
-export type GenerationProvider = "local" | "openrouter";
+export type GenerationProvider = "local" | "openrouter" | "claude" | "codex";
 
 // LLM externo opcional (Constituição 1.3.0, princípio I): só com ALLOW_EXTERNAL_LLM=true.
 // Usa o mesmo OpenRouter (URL e chave) do ASR externo.
@@ -75,21 +75,51 @@ function externalLlm() {
     apiKey: external.apiKey,
     model: (process.env.OPENROUTER_LLM_MODEL || "anthropic/claude-sonnet-5").trim(),
     timeoutMs: int("OPENROUTER_LLM_TIMEOUT_SECONDS", 180) * 1000,
-    maxTokens: int("OPENROUTER_LLM_MAX_TOKENS", 8192),
+    // modelos que raciocinam (ex.: DeepSeek) gastam parte disso antes da resposta
+    maxTokens: int("OPENROUTER_LLM_MAX_TOKENS", 32000),
   };
 }
 
-function generationProvider(allowed: boolean): GenerationProvider {
+// Assinaturas pessoais (Constituição 1.4.0): o host-agent executa o CLI oficial (claude/codex)
+// com o login do dono da máquina. Também exige ALLOW_EXTERNAL_LLM=true.
+function subscriptionLlm(allowed: boolean) {
+  const claude = bool("CLAUDE_CLI_ENABLED", false);
+  const codex = bool("CODEX_CLI_ENABLED", false);
+  if ((claude || codex) && !allowed) {
+    throw new Error("CLAUDE_CLI_ENABLED/CODEX_CLI_ENABLED exigem ALLOW_EXTERNAL_LLM=true (a transcrição sai da máquina).");
+  }
+  const model = (name: string, fallback: string) => {
+    const raw = (process.env[name] ?? fallback).trim();
+    if (raw && !/^[\w.:/-]{1,80}$/.test(raw)) throw new Error(`${name} inválido: use só letras, números e . : / - _`);
+    return raw;
+  };
+  return {
+    claude: { enabled: claude, model: model("CLAUDE_CLI_MODEL", "sonnet") },
+    codex: { enabled: codex, model: model("CODEX_CLI_MODEL", "") },
+    timeoutSeconds: int("SUBSCRIPTION_LLM_TIMEOUT_SECONDS", 600),
+  };
+}
+
+function generationProvider(
+  allowed: boolean,
+  subscriptions: ReturnType<typeof subscriptionLlm>,
+): GenerationProvider {
   const raw = (process.env.LLM_GENERATION_PROVIDER || "local").trim().toLowerCase();
   if (raw === "local") return "local";
-  if (raw !== "openrouter") throw new Error(`LLM_GENERATION_PROVIDER inválido: ${raw} (use local ou openrouter)`);
-  if (!allowed) {
-    throw new Error("LLM_GENERATION_PROVIDER=openrouter exige ALLOW_EXTERNAL_LLM=true (a transcrição sai da máquina).");
+  if (raw !== "openrouter" && raw !== "claude" && raw !== "codex") {
+    throw new Error(`LLM_GENERATION_PROVIDER inválido: ${raw} (use local, openrouter, claude ou codex)`);
   }
-  return "openrouter";
+  if (!allowed) {
+    throw new Error(`LLM_GENERATION_PROVIDER=${raw} exige ALLOW_EXTERNAL_LLM=true (a transcrição sai da máquina).`);
+  }
+  if (raw !== "openrouter" && !subscriptions[raw].enabled) {
+    throw new Error(`LLM_GENERATION_PROVIDER=${raw} exige ${raw.toUpperCase()}_CLI_ENABLED=true.`);
+  }
+  return raw;
 }
 
 const llmExternal = externalLlm();
+const llmSubscriptions = subscriptionLlm(llmExternal.allowed);
 
 // Constituição, princípio II: o bot sempre se identifica como gravação automatizada.
 function botIdentitySuffix(): string {
@@ -134,6 +164,10 @@ export const config = {
   admissionTimeoutMs: int("ADMISSION_TIMEOUT_MINUTES", 10) * 60_000,
   maxMeetingMs: int("MAX_MEETING_MINUTES", 240) * 60_000,
   aloneTimeoutMs: int("ALONE_TIMEOUT_MINUTES", 5) * 60_000,
+  /** reuniões da agenda com link do Teams/Meet: o assistente entra sozinho no horário */
+  autoAssistant: bool("AUTO_ASSISTANT", true),
+  /** o PC grava sozinho no horário (desligado: grava só quem está na chamada, o assistente) */
+  autoLocalRecording: bool("AUTO_LOCAL_RECORDING", false),
   maxUploadMb: int("MAX_UPLOAD_MB", 500),
 
   // Privacidade
@@ -161,8 +195,9 @@ export const config = {
   ollamaModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || "30m",
   // Gerações pós-reunião e sob demanda: local ou OpenRouter (ao vivo é sempre local)
-  generationProvider: generationProvider(llmExternal.allowed),
+  generationProvider: generationProvider(llmExternal.allowed, llmSubscriptions),
   externalLlm: llmExternal,
+  subscriptionLlm: llmSubscriptions,
   liveExtractMinSpeechSeconds: int("LIVE_EXTRACT_MIN_SPEECH_SECONDS", 90),
   liveExtractMaxIntervalSeconds: int("LIVE_EXTRACT_MAX_INTERVAL_SECONDS", 180),
   liveConsolidateIntervalSeconds: int("LIVE_CONSOLIDATE_INTERVAL_SECONDS", 900),

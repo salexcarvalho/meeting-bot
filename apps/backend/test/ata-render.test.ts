@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Adr, Item, MeetingSummary } from "@meeting-bot/contracts";
-import { renderAta, type AtaAnalysis } from "../src/ata/render";
+import { renderAta, renderResumo, type AtaAnalysis } from "../src/ata/render";
 
 const SECTIONS = [
   "Data", "Horário", "Duração", "Projeto", "Participantes", "Objetivo", "Resumo executivo",
@@ -156,5 +156,39 @@ describe("renderAta", () => {
     expect(legacy).toContain("versão anterior");
     expect(legacy).toContain("### Ata original");
     expect(legacy).toContain("antigo");
+  });
+});
+
+describe("renderResumo", () => {
+  const input = { meeting, timezone: "America/Sao_Paulo", items, adrs, speakers: [], analysis, legacyAta: null };
+  const { text, approved, pending } = renderResumo(input);
+
+  it("tem título, data local, projeto, objetivo e resumo", () => {
+    expect(text.startsWith("Resumo da reunião: Portal SES - Arquitetura\n16/09/2026, 10:02 · Projeto: Portal SES\n")).toBe(true);
+    expect(text).toContain("Objetivo: Definir o banco do portal.");
+    expect(text).toContain("A equipe escolheu PostgreSQL.");
+  });
+
+  it("leva só itens aprovados e conta os que ficaram de fora", () => {
+    expect(text).not.toContain("Usar PostgreSQL");
+    expect(text).not.toContain("Oracle");
+    expect(approved).toBe(7);
+    expect(pending).toBe(1);
+  });
+
+  it("mostra responsável e prazo das pendências abertas, ADR aprovado e categoria do risco", () => {
+    expect(text).toContain("Pendências\n- Revisar backup (responsável: João; prazo: sexta)\n- Enviar estimativa (responsável: João; sem prazo)\n");
+    expect(text).not.toContain("Criar repositório");
+    expect(text).toContain("- Adotar filas para integração (ADR-007)\n- Separar leitura e escrita\n");
+    expect(text).toContain("Riscos\n- Certificado do SUS pode atrasar (Integração)");
+    expect(text).not.toContain("Decisões\n");
+    expect(text).not.toContain("Responder em até 2 s");
+  });
+
+  it("avisa quando nada foi aprovado", () => {
+    const empty = renderResumo({ ...input, items: [items[0]], analysis: null });
+    expect(empty.text).toContain("Nenhum item aprovado ainda.");
+    expect(empty.pending).toBe(1);
+    expect(empty.text).not.toContain("Objetivo");
   });
 });

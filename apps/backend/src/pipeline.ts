@@ -3,7 +3,7 @@ import { EXTERNAL_ASR_ID, providerLabel, transcribeFileExternal } from "./asr/op
 import { runTranscriptionJob, type JobChannelResult, type JobFile } from "./asr/workerClient";
 import { config } from "./config";
 import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
-import { unloadLlm } from "./llm";
+import { automaticProvider, generationLabel, unloadLlm } from "./llm";
 import { hub } from "./live/hub";
 import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, replaceWithFinal } from "./repo/transcripts";
 
@@ -11,7 +11,7 @@ import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, repla
 export type ProcessStep = "all" | "analysis" | "adrs";
 
 export interface ProcessOptions {
-  /** provedor das gerações; padrão = LLM_GENERATION_PROVIDER */
+  /** provedor escolhido na interface; sem ele, LLM_GENERATION_PROVIDER (automaticProvider) */
   llm?: LlmChoice;
   /** passo adrs: só a decisão arquitetural indicada */
   itemId?: string;
@@ -80,7 +80,6 @@ function adrSummary(r: AdrRunSummary): string {
 export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", opts: ProcessOptions = {}): boolean {
   if (pending.has(meetingId)) return false;
   pending.add(meetingId);
-  const provider = opts.llm ?? config.generationProvider;
   // Gerar só os ADRs não mexe no status da reunião (ela continua concluída).
   const onlyAdrs = step === "adrs";
   const queued = onlyAdrs ? Promise.resolve() : setMeetingStatus(meetingId, "queued").catch(console.error);
@@ -90,12 +89,14 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
     .then(() => queued)
     .then(async () => {
       current = meetingId;
+      const { provider, note } = await providerFor(meetingId, opts.llm);
+      const suffix = note ? ` (${note})` : "";
       if (onlyAdrs) {
         const result = await adrGeneration(meetingId, (s, p) => report(meetingId, s, p), provider, opts.itemId);
-        finalEvent = { done: adrSummary(result) };
+        finalEvent = { done: `${adrSummary(result)}${suffix}` };
       } else {
         await processMeeting(meetingId, step, provider);
-        finalEvent = { done: "Ata gerada." };
+        finalEvent = { done: `Ata gerada${suffix}.` };
       }
     })
     .catch(async (err) => {
@@ -110,6 +111,14 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
       hub.publishToMeeting(meetingId, { type: "processing", meetingId, step: null, ...finalEvent });
     });
   return true;
+}
+
+async function providerFor(meetingId: string, requested: LlmChoice | undefined) {
+  if (requested) return { provider: requested, note: null };
+  const meeting = await getMeeting(meetingId);
+  const chosen = await automaticProvider(meeting?.created_by ?? null);
+  if (chosen.note) console.warn(`[pipeline ${meetingId}] ${chosen.note}`);
+  return chosen;
 }
 
 async function processMeeting(meetingId: string, step: ProcessStep, provider: LlmChoice): Promise<void> {
@@ -173,7 +182,7 @@ async function processMeeting(meetingId: string, step: ProcessStep, provider: Ll
 
   await setMeetingStatus(meetingId, "generating_ata");
   report(meetingId, "analisando", 0);
-  if (provider === "openrouter") console.log(`[pipeline ${meetingId}] análise via OpenRouter (${config.externalLlm.model})`);
+  if (provider !== "local") console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
   await postAnalysis(meetingId, (s, p) => report(meetingId, s, p), provider);
   await markDone(meetingId);
 }

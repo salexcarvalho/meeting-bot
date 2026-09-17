@@ -8,7 +8,7 @@ import { hub } from "../live/hub";
 import { toMeetingSummary } from "../meetings/summary";
 import { parseBody, wrap } from "../routes";
 import { getSegments, getSpeakers, renameSpeaker, speakerNameResolver } from "../repo/transcripts";
-import { renderAta, type AtaAnalysis } from "./render";
+import { renderAta, renderResumo, type AtaAnalysis, type AtaInput } from "./render";
 
 const SpeakerRename = z.object({ displayName: z.string().trim().min(1, "Informe o nome.").max(80) });
 
@@ -24,7 +24,7 @@ async function buildAta(meetingId: string) {
   const nameOf = speakerNameResolver(speakers);
   const labels = [...new Set(segments.map((s) => s.speaker).filter((s): s is string => Boolean(s)))];
   const analysis = (meeting.analysis as AtaAnalysis | null) ?? null;
-  const markdown = renderAta({
+  const input: AtaInput = {
     meeting: toMeetingSummary(meeting),
     timezone: config.appTimezone,
     items,
@@ -32,8 +32,8 @@ async function buildAta(meetingId: string) {
     speakers: labels.map((l) => nameOf(l) ?? l),
     analysis,
     legacyAta: meeting.ata_markdown,
-  });
-  return { meeting, markdown, analysis };
+  };
+  return { meeting, markdown: renderAta(input), analysis, input };
 }
 
 function fileName(title: string): string {
@@ -59,6 +59,17 @@ function register(router: Router): void {
         generatedAt: ata.meeting.analyzed_at?.toISOString() ?? null,
         hasAnalysis: Boolean(ata.analysis),
       });
+    }),
+  );
+
+  // Resumo curto para enviar ao pessoal (só itens aprovados).
+  router.get(
+    "/meetings/:id/resumo",
+    wrap(async (req, res) => {
+      const ata = await buildAta(String(req.params.id));
+      if (!ata) return res.status(404).json({ error: "Reunião não encontrada." });
+      res.set("Cache-Control", "no-store");
+      res.json(renderResumo(ata.input));
     }),
   );
 

@@ -160,7 +160,7 @@ describe("escolha do provedor de geração", () => {
     expect(llm.parseLlmChoice(undefined)).toEqual({ ok: true, value: "local" });
     expect(llm.parseLlmChoice("openrouter")).toMatchObject({ ok: false, error: expect.stringMatching(/ALLOW_EXTERNAL_LLM/) });
     expect(llm.parseLlmChoice("gpt")).toMatchObject({ ok: false });
-    expect(llm.llmOptions().external).toBeNull();
+    expect((await llm.llmOptions(null)).external).toBeNull();
     await expect(llm.generate("post", request, "openrouter")).rejects.toThrow(/desabilitado/);
   });
 
@@ -173,7 +173,7 @@ describe("escolha do provedor de geração", () => {
     });
     expect(llm.parseLlmChoice("default")).toEqual({ ok: true, value: "openrouter" });
     expect(llm.parseLlmChoice("openrouter")).toMatchObject({ ok: false, error: expect.stringMatching(/OPENROUTER_API_KEY/) });
-    expect(llm.llmOptions()).toMatchObject({
+    expect(await llm.llmOptions(null)).toMatchObject({
       default: "openrouter",
       external: { model: "google/gemini-3.7-flash", available: false },
     });

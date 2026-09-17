@@ -40,8 +40,14 @@ try {
   const files = process.argv.slice(2);
   const result = spawnSync("npx", ["vitest", "run", ...(files.length ? files : ["test/db"])], {
     stdio: "inherit",
-    // LLM externo desligado: os testes nunca chamam a rede.
-    env: { ...process.env, TEST_DATABASE_URL: url, ALLOW_EXTERNAL_LLM: "false", LLM_GENERATION_PROVIDER: "local" },
+    // LLM externo desligado: os testes nunca chamam a rede. Assistente automático só no teste dele.
+    env: {
+      ...process.env,
+      TEST_DATABASE_URL: url,
+      ALLOW_EXTERNAL_LLM: "false",
+      LLM_GENERATION_PROVIDER: "local",
+      AUTO_ASSISTANT: "false",
+    },
   });
   code = result.status ?? 1;
 } finally {

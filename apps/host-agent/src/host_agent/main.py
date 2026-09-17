@@ -16,6 +16,7 @@ from .alerts import Alert, AlertScheduler, Meeting
 from .api import BackendApi
 from .capture import Recorder
 from .config import Config, load_config
+from .llm_runner import LlmRunner
 from .notifier import Notifier
 from .opener import open_url
 from .uploader import ChannelUploader, ws_base_from
@@ -23,6 +24,8 @@ from .uploader import ChannelUploader, ws_base_from
 log = logging.getLogger("host_agent")
 
 HEARTBEAT_SECONDS = 5
+LLM_POLL_SECONDS = 25
+LLM_STATUS_SECONDS = 60
 SPOOL_MAX_AGE = timedelta(days=7)
 
 
@@ -67,6 +70,7 @@ class HostAgent:
         self._stopping = asyncio.Event()
         self._conflict_notified: set[str] = set()
         self._background: set[asyncio.Task] = set()
+        self.llm = LlmRunner(cfg.llm)
 
     # ---------- cache da agenda (alertas funcionam com o backend fora) ----------
 
@@ -89,7 +93,7 @@ class HostAgent:
     async def heartbeat_loop(self) -> None:
         while not self._stopping.is_set():
             capture = self.recording.recorder.status() if self.recording else None
-            resp = await self.api.heartbeat(capture)
+            resp = await self.api.heartbeat(capture, self.llm.statuses())
             if resp is not None:
                 raw = resp.get("meetings", [])
                 self.meetings = [Meeting.from_api(m) for m in raw]
@@ -102,6 +106,32 @@ class HostAgent:
                 await asyncio.wait_for(self._stopping.wait(), HEARTBEAT_SECONDS)
             except asyncio.TimeoutError:
                 pass
+
+    async def llm_status_loop(self) -> None:
+        while not self._stopping.is_set():
+            await self.llm.refresh()
+            try:
+                await asyncio.wait_for(self._stopping.wait(), LLM_STATUS_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+
+    async def llm_loop(self) -> None:
+        """Executa, um por vez, os pedidos de geração com a assinatura (claude/codex)."""
+        while not self._stopping.is_set():
+            try:
+                job = await self.api.next_llm_job(LLM_POLL_SECONDS)
+            except ConnectionError:
+                await asyncio.sleep(HEARTBEAT_SECONDS)
+                continue
+            if not job:
+                continue
+            try:
+                log.info("gerando com %s (%s)", job.get("provider"), str(job.get("id", ""))[:8])
+                result = await self.llm.run(job)
+                await self.api.post_llm_result(str(job["id"]), result)
+            except Exception:  # noqa: BLE001
+                log.exception("falha ao atender pedido de geração")
+                await asyncio.sleep(HEARTBEAT_SECONDS)
 
     async def alert_loop(self) -> None:
         last_prune = 0.0
@@ -211,7 +241,12 @@ class HostAgent:
             loop.add_signal_handler(sig, self._stopping.set)
         log.info("host-agent %s iniciado (backend %s)", __version__, self.cfg.backend_url)
         # A gravação desejada vem no primeiro heartbeat; só depois retoma spools antigos.
-        tasks = [asyncio.create_task(self.heartbeat_loop()), asyncio.create_task(self.alert_loop())]
+        tasks = [
+            asyncio.create_task(self.heartbeat_loop()),
+            asyncio.create_task(self.alert_loop()),
+            asyncio.create_task(self.llm_status_loop()),
+            asyncio.create_task(self.llm_loop()),
+        ]
         await asyncio.sleep(HEARTBEAT_SECONDS + 1)
         asyncio.create_task(self.resume_pending_spools())
         await self._stopping.wait()

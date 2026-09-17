@@ -319,21 +319,34 @@ export interface MeetingDetail {
   asrProvider: string | null;
   /** acesso de quem pediu: dono, compartilhada com edição ou só leitura */
   access: "owner" | "edit" | "read";
-  /** quem gerou a análise da ata: "local:<modelo>" ou "openrouter:<modelo>" */
+  /** quem gerou a análise da ata: "local:<modelo>", "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
   analysisProvider: string | null;
 }
 
 export type AsrProvider = "local" | "openrouter";
 
-// LLM das gerações (ata, itens pós-reunião, ADR). Ao vivo é sempre local (Constituição 1.3.0).
-export const LLM_CHOICES = ["local", "openrouter"] as const;
+// LLM das gerações (ata, itens pós-reunião, ADR). Ao vivo é sempre local (Constituição 1.4.0).
+// claude/codex: CLI oficial com a assinatura do dono do host-agent, executado pelo host-agent.
+export const LLM_CHOICES = ["local", "openrouter", "claude", "codex"] as const;
 export type LlmChoice = (typeof LLM_CHOICES)[number];
+export const SUBSCRIPTION_LLMS = ["claude", "codex"] as const;
+export type SubscriptionLlm = (typeof SUBSCRIPTION_LLMS)[number];
+
+export interface SubscriptionLlmOption {
+  id: SubscriptionLlm;
+  model: string;
+  available: boolean;
+  /** por que não dá para usar agora (host-agent desligado, sem login, reunião de outra pessoa) */
+  reason: string | null;
+}
 
 export interface LlmOptions {
   /** provedor da geração automática ao fim da reunião (LLM_GENERATION_PROVIDER) */
   default: LlmChoice;
   local: { model: string };
   external: { model: string; available: boolean } | null;
+  /** assinaturas habilitadas no .env (a disponibilidade depende da reunião e do host-agent) */
+  subscriptions: SubscriptionLlmOption[];
 }
 
 export const GenerateAdrsRequest = z.object({
@@ -428,8 +441,17 @@ const ChannelCaptureInput = z.object({
   bytes: z.number().int().nonnegative(),
 });
 
+const CliStatusInput = z.object({
+  available: z.boolean(),
+  reason: z.string().max(300).nullable(),
+  version: z.string().max(80).nullable(),
+});
+export type CliStatus = z.infer<typeof CliStatusInput>;
+
 export const HeartbeatInput = z.object({
   version: z.string().max(40),
+  /** CLIs de assinatura que o host-agent consegue executar */
+  llm: z.object({ claude: CliStatusInput.optional(), codex: CliStatusInput.optional() }).optional(),
   capture: z
     .object({
       meetingId: z.uuid(),
@@ -438,6 +460,36 @@ export const HeartbeatInput = z.object({
     .nullable(),
 });
 export type HeartbeatInput = z.infer<typeof HeartbeatInput>;
+
+/** Pedido de geração entregue ao host-agent (GET /api/agent/llm/next). */
+export interface AgentLlmJob {
+  id: string;
+  provider: SubscriptionLlm;
+  /** vazio = modelo padrão do CLI */
+  model: string;
+  system: string;
+  user: string;
+  /** JSON Schema da resposta */
+  schema: Record<string, unknown>;
+  timeoutSeconds: number;
+}
+
+export const AgentLlmResult = z.discriminatedUnion("ok", [
+  z.object({
+    ok: z.literal(true),
+    output: z.unknown(),
+    usage: z
+      .object({
+        inputTokens: z.number().int().nonnegative().nullable(),
+        outputTokens: z.number().int().nonnegative().nullable(),
+        model: z.string().max(120).nullable(),
+      })
+      .optional(),
+    durationMs: z.number().int().nonnegative().optional(),
+  }),
+  z.object({ ok: z.literal(false), error: z.string().max(1000) }),
+]);
+export type AgentLlmResult = z.infer<typeof AgentLlmResult>;
 
 export interface HeartbeatResponse {
   now: string;
