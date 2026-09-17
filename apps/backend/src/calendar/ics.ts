@@ -25,6 +25,8 @@ export interface Occurrence {
 export interface ParseResult {
   occurrences: Occurrence[];
   ignored: number;
+  /** Títulos que vieram só como ocorrência (RECURRENCE-ID sem RRULE): a série não está no arquivo. */
+  partialSeries: string[];
 }
 
 const MAX_DESCRIPTION = 20_000;
@@ -134,6 +136,7 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
   const data = sync.parseICS(text);
   const calendarCancelled = String(data.vcalendar?.method ?? "").toUpperCase() === "CANCEL";
   const occurrences: Occurrence[] = [];
+  const partialSeries = new Set<string>();
   let ignored = 0;
 
   for (const [key, component] of Object.entries(data)) {
@@ -166,7 +169,10 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
       continue;
     }
     const recurrenceKey = event.recurrenceid ? new Date(event.recurrenceid).toISOString() : "";
-    occurrences.push(toOccurrence(event, start, end, recurrenceKey, calendarCancelled));
+    const occurrence = toOccurrence(event, start, end, recurrenceKey, calendarCancelled);
+    occurrences.push(occurrence);
+    // Ocorrência sem a regra de repetição: o Outlook exportou "esta ocorrência", não a série.
+    if (recurrenceKey && !occurrence.cancelled) partialSeries.add(occurrence.title);
 
     // Arquivo só com overrides (sem a série) também traz as ocorrências alteradas.
     for (const override of Object.values(event.recurrences ?? {}) as VEvent[]) {
@@ -174,10 +180,12 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
       const oStart = new Date(override.start);
       const oKey = new Date(override.recurrenceid).toISOString();
       if (occurrences.some((o) => o.uid === event.uid && o.recurrenceKey === oKey)) continue;
-      occurrences.push(toOccurrence(override, oStart, endOf(override, oStart), oKey, calendarCancelled));
+      const extra = toOccurrence(override, oStart, endOf(override, oStart), oKey, calendarCancelled);
+      occurrences.push(extra);
+      if (!extra.cancelled) partialSeries.add(extra.title);
     }
   }
 
   occurrences.sort((a, b) => a.start.getTime() - b.start.getTime());
-  return { occurrences, ignored };
+  return { occurrences, ignored, partialSeries: [...partialSeries] };
 }

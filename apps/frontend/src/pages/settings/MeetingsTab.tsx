@@ -51,13 +51,14 @@ export function MeetingsTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
         <CardHead title="Transparência e limites" icon={ShieldCheck} />
         <ul className="plain-list small">
           <li>
-            O assistente entra como <strong>convidado anônimo</strong> e sempre com o sufixo que o identifica como
-            assistente automatizado gravando. Não há opção para esconder isso.
+            O assistente entra como <strong>convidado anônimo</strong> com um nome que diz que é a ata (ex.: "Ata do
+            Sérgio"). Nome sem "ata" ou "gravação" ganha "Ata de" na frente; não há opção para esconder isso.
           </li>
           <li>O nome é definido antes de entrar; Meet e Teams não deixam convidados trocarem de nome depois.</li>
           <li>
-            <strong>Sem foto na reunião:</strong> Meet e Teams mostram só as iniciais de convidados, e o assistente
-            não liga câmera. O avatar do agente aparece apenas dentro deste sistema.
+            <strong>Sem foto na reunião:</strong> convidado anônimo não tem avatar no Meet e no Teams; aparecem as
+            iniciais do nome. O avatar do agente é usado dentro deste sistema. Nada é filmado: o assistente entra
+            mudo e sem câmera.
           </li>
           <li>Avise os participantes de que a reunião está sendo gravada e transcrita (LGPD).</li>
         </ul>

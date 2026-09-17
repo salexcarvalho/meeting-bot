@@ -5,9 +5,11 @@ import { hub } from "../live/hub";
 import { defaultSpeaker, getSpeakers, insertLiveSegments, speakerNameResolver, toSegmentJson } from "../repo/transcripts";
 import { BYTES_PER_SECOND, Chunk, Chunker } from "./chunker";
 import { glossaryFor } from "./glossary";
-import { runtimeFor, type LocalChannel } from "./runtime";
+import type { Channel } from "@meeting-bot/contracts";
+import { runtimeFor } from "./runtime";
 
 // Transcrição ao vivo de um canal: corta o PCM recebido e manda cada trecho ao worker.
+// Canais mic/remote vêm do host-agent; "mixed" vem do assistente dentro da chamada.
 
 const MAX_QUEUE = 20; // ~10 min; além disso o passe final cobre o que ficar para trás
 const BACKLOG_AS_SPEECH = 3;
@@ -21,7 +23,7 @@ interface QueuedChunk extends Chunk {
 const sessions = new Map<string, LiveSession>();
 const lastSpeechWrite = new Map<string, number>();
 
-export function liveSession(meetingId: string, channel: LocalChannel): LiveSession {
+export function liveSession(meetingId: string, channel: Channel): LiveSession {
   const key = `${meetingId}:${channel}`;
   let s = sessions.get(key);
   if (!s) {
@@ -64,7 +66,7 @@ export class LiveSession {
 
   constructor(
     readonly meetingId: string,
-    readonly channel: LocalChannel,
+    readonly channel: Channel,
   ) {}
 
   // Nova conexão do host-agent: continua do byte informado.
@@ -140,8 +142,8 @@ export class LiveSession {
               end: Math.round((base + Math.max(s.end, s.start)) * 100) / 100,
             })),
         );
-        const rt = runtimeFor(this.meetingId).channels[this.channel];
-        rt.lagSeconds = Math.round(((Date.now() - chunk.cutAt) / 1000 + duration) * 10) / 10;
+        const rt = this.channel === "mixed" ? null : runtimeFor(this.meetingId).channels[this.channel];
+        if (rt) rt.lagSeconds = Math.round(((Date.now() - chunk.cutAt) / 1000 + duration) * 10) / 10;
         if (rows.length) {
           this.lastText = rows.map((r) => r.text).join(" ").slice(-200);
           const nameOf = speakerNameResolver(await getSpeakers(this.meetingId));

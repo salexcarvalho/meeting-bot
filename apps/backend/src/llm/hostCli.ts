@@ -2,7 +2,7 @@ import type { AgentLlmResult, SubscriptionLlm } from "@meeting-bot/contracts";
 import { z } from "zod";
 import { audit } from "../security/audit";
 import { HostJobError, type HostJobQueue } from "./hostJobs";
-import { toOllamaSchema } from "./ollama";
+import { toJsonSchema } from "./ollama";
 import type { GenerateRequest, LLMProvider } from "./provider";
 
 // Geração com a assinatura pessoal (Constituição 1.4.0, princípio I): o host-agent roda o CLI
@@ -17,6 +17,9 @@ export interface HostCliSettings {
 }
 
 export class SubscriptionLlmError extends Error {}
+
+/** O CLI desistiu de encaixar a resposta no schema: é resposta inválida, não falha do CLI. */
+const OUTPUT_RETRIES = /max_structured_output_retries/i;
 
 const NAMES: Record<SubscriptionLlm, string> = { claude: "Claude", codex: "Codex" };
 
@@ -43,12 +46,21 @@ export class HostCliLlm implements LLMProvider {
   }
 
   async generate<T>(req: GenerateRequest<T>): Promise<T> {
-    const schema = toOllamaSchema(req.schema) as Record<string, unknown>;
+    // O Claude encurta o texto para caber no limite; o Codex corta no meio da frase, então só o
+    // Claude recebe os tamanhos máximos (o zod confere os dois depois).
+    const schema = toJsonSchema(req.schema, { limits: this.settings.provider === "claude" }) as Record<string, unknown>;
     let user = req.user;
     let lastError = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
       const result = await this.run(req, user, schema);
-      if (!result.ok) throw new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${result.error}`);
+      if (!result.ok) {
+        if (!OUTPUT_RETRIES.test(result.error ?? "")) {
+          throw new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${result.error}`);
+        }
+        lastError = `${NAMES[this.settings.provider]} não conseguiu seguir o schema`;
+        user = req.user + retryNote("(sem resposta)", lastError);
+        continue;
+      }
       audit("external_llm", {
         meetingId: req.meetingId ?? null,
         label: req.label,

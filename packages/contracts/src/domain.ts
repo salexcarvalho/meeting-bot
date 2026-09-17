@@ -375,6 +375,8 @@ export interface ImportResult {
   cancelled: number;
   unchanged: number;
   ignored: number;
+  /** Reuniões que vieram só com a ocorrência do dia, sem a regra de repetição da série. */
+  partialSeries: string[];
   errors: { file: string; message: string }[];
 }
 
@@ -450,6 +452,8 @@ export type CliStatus = z.infer<typeof CliStatusInput>;
 
 export const HeartbeatInput = z.object({
   version: z.string().max(40),
+  /** "llm" = agente sem desktop (container do servidor): só executa gerações, não grava */
+  mode: z.enum(["full", "llm"]).optional(),
   /** CLIs de assinatura que o host-agent consegue executar */
   llm: z.object({ claude: CliStatusInput.optional(), codex: CliStatusInput.optional() }).optional(),
   capture: z

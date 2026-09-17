@@ -18,14 +18,16 @@ agente arquiteto, memória pesquisável.
   - Exceção (constituição 1.1.0): ASR externo de teste (Deepgram nova-3 via OpenRouter), só com `ALLOW_EXTERNAL_ASR=true`, só no passe final/upload, escolhido por `.env` ou por reunião. Whisper local continua padrão; ao vivo sempre local.
 - Nunca contornar políticas da organização (sem scraping de Outlook/Teams para burlar bloqueio de app).
 - Calendário: importação `.ics` + cadastro manual (tenant bloqueia Graph e acesso por e-mail).
-- Gravação (constituição 1.5.0): no horário, o assistente convidado entra em toda reunião da agenda com link Teams/Meet (exceto "Não gravar") e grava de dentro da chamada. O PC não grava sozinho (o usuário nem sempre entra); sem link, só "Gravar agora", que para após o fim previsto com 3 min sem fala, ou manualmente.
+- Gravação (constituição 1.5.0): no horário, o assistente convidado entra em toda reunião da agenda com link Teams/Meet (exceto "Não gravar") e grava de dentro da chamada, com transcrição ao vivo (1.6.0). O PC não grava sozinho (o usuário nem sempre entra); sem link, só "Gravar agora", que para após o fim previsto com 3 min sem fala, ou manualmente.
 - Áudio é guardado sempre.
 - ADR e itens da IA só viram definitivos com aprovação humana.
 - Multiusuário (plano em `docs/analise/plataforma-multiusuario.md`):
   - RBAC e isolamento por dono;
   - admin não lê conteúdo alheio;
-  - assistente sempre com o sufixo "assistente gravando" e sem imagem na reunião;
+  - assistente sem sufixo, mas com nome que diz que é a ata (ex.: "Ata do Sérgio"; sem "ata"/"gravação" entra como "Ata de <nome>") e sem foto na reunião (convidado anônimo só mostra iniciais); câmera virtual com o ícone do agente existe, mas desligada por padrão (`BOT_CAMERA`);
   - host-agent grava só as reuniões de `AGENT_OWNER` (host-agent do sócio fica para o futuro).
+
+- Servidor de teste (constituição 2.0.0): VPS com Dokploy, `docker-compose.vps.yml` + `.env.vps.example`; transcrição final pelo OpenRouter (sem GPU), ata/ADR pela assinatura do Claude no container `agent-cli` (`AGENTE_MODE=llm`), sem passe ao vivo e sem gravação pelo PC. Guia: `docs/vps-dokploy.md`.
 
 ## Ambiente
 

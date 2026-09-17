@@ -49,7 +49,7 @@ import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
 import { detectPlatform } from "./bot/link";
 import { botForUrl, botUrlKey, releaseBotUrl, reserveBotUrl } from "./bot/state";
 import { meetingAccess, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
-import { resolveBotDisplayName } from "./users/identity";
+import { resolveBotIdentity } from "./users/identity";
 import { getAgent, getProfile } from "./users/repo";
 import type { User } from "./types";
 import { toMeetingSummary } from "./meetings/summary";
@@ -306,7 +306,7 @@ export function buildRouter(): Router {
             error: `Já existem ${activeBotCount() - 1} bots em reunião (limite ${config.maxConcurrentBots}). Encerre um antes.`,
           });
         }
-        const displayName = await resolveBotDisplayName(req.user!.id, identity);
+        const botIdentity = await resolveBotIdentity(req.user!.id, identity);
         const id = await createMeeting({
           title: cleanTitle(req.body?.title, "Reunião sem título"),
           platform: target.platform,
@@ -314,9 +314,9 @@ export function buildRouter(): Router {
           status: "joining",
           createdBy: req.user!.id,
           source: "bot",
-          botDisplayName: displayName,
+          botDisplayName: botIdentity.name,
         });
-        startBot(id, target.url, target.platform, { displayName, urlKey, requestedAt });
+        startBot(id, target.url, target.platform, { identity: botIdentity, urlKey, requestedAt });
         const meeting = await getMeeting(id);
         console.log(`[bot ${id}] pedido aceito em ${Date.now() - requestedAt} ms`);
         res.status(201).json(toMeetingSummary(meeting!));

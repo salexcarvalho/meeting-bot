@@ -183,9 +183,14 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
     com `CODEX_HOME` próprio (`~/.config/agente-reunioes/codex`, login separado);
   - só entram no ambiente do CLI as variáveis de sistema necessárias (nada de `AGENT_TOKEN` ou chaves de API);
   - o prompt de sistema vai na linha de comando porque é fixo (não tem conteúdo de reunião).
-- **Geração automática:** com `LLM_GENERATION_PROVIDER=claude|codex`, se a assinatura não serve
-  (host-agent desligado, CLI sem login, reunião de outra pessoa), a análise roda no modelo local e o
-  aviso final diz o motivo.
+- **Geração automática:** com `LLM_GENERATION_PROVIDER=claude|codex`, o provedor é escolhido
+  depois da transcrição final.
+  - Host-agent desligado ou CLI sem login: espera até `SUBSCRIPTION_WAIT_MINUTES` (passo
+    `aguardando_assinatura`). Se não voltar, a reunião fica com erro e a ata sai pelo botão. Nunca
+    troca para o modelo local (decisão do usuário em 2026-09-17, depois de um reinício do PC ter
+    gerado uma ata no local).
+  - Reunião de outra pessoa: a assinatura é pessoal, então a análise roda no modelo local e o aviso
+    final diz o motivo.
 - **Quem gerou:** `local:<modelo>` ou `openrouter:<modelo>`, gravado em `meetings.analysis_provider`,
   `meeting_items.generated_by` e `adrs.generated_by`. A interface marca o que veio de fora.
 - O evento final `processing` (`step: null`) traz `done` (ex.: "1 ADR gerado.") ou `error`. A tela

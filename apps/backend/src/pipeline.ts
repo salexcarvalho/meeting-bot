@@ -89,14 +89,14 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
     .then(() => queued)
     .then(async () => {
       current = meetingId;
-      const { provider, note } = await providerFor(meetingId, opts.llm);
-      const suffix = note ? ` (${note})` : "";
+      const resolve = () => providerFor(meetingId, opts.llm);
       if (onlyAdrs) {
+        const { provider, note } = await resolve();
         const result = await adrGeneration(meetingId, (s, p) => report(meetingId, s, p), provider, opts.itemId);
-        finalEvent = { done: `${adrSummary(result)}${suffix}` };
+        finalEvent = { done: `${adrSummary(result)}${note ? ` (${note})` : ""}` };
       } else {
-        await processMeeting(meetingId, step, provider);
-        finalEvent = { done: `Ata gerada${suffix}.` };
+        const note = await processMeeting(meetingId, step, resolve);
+        finalEvent = { done: `Ata gerada${note ? ` (${note})` : ""}.` };
       }
     })
     .catch(async (err) => {
@@ -113,17 +113,30 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
   return true;
 }
 
-async function providerFor(meetingId: string, requested: LlmChoice | undefined) {
+type ProviderChoice = { provider: LlmChoice; note: string | null };
+
+async function providerFor(meetingId: string, requested: LlmChoice | undefined): Promise<ProviderChoice> {
   if (requested) return { provider: requested, note: null };
   const meeting = await getMeeting(meetingId);
-  const chosen = await automaticProvider(meeting?.created_by ?? null);
+  const chosen = await automaticProvider(meeting?.created_by ?? null, {
+    waitMs: config.subscriptionWaitMs,
+    onWait: (reason) => {
+      console.warn(`[pipeline ${meetingId}] aguardando ${config.generationProvider}: ${reason}`);
+      report(meetingId, "aguardando_assinatura", 0);
+    },
+  });
   if (chosen.note) console.warn(`[pipeline ${meetingId}] ${chosen.note}`);
   return chosen;
 }
 
-async function processMeeting(meetingId: string, step: ProcessStep, provider: LlmChoice): Promise<void> {
+/** O provedor é escolhido depois da transcrição: a espera pela assinatura não segura o passe final. */
+async function processMeeting(
+  meetingId: string,
+  step: ProcessStep,
+  resolveProvider: () => Promise<ProviderChoice>,
+): Promise<string | null> {
   const meeting = await getMeeting(meetingId);
-  if (!meeting) return;
+  if (!meeting) return null;
 
   if (step === "all" || (await countFinalSegments(meetingId)) === 0) {
     const audio = (await listAudio(meetingId)).filter((a) => a.format !== "pcm_s16le_16k");
@@ -180,9 +193,12 @@ async function processMeeting(meetingId: string, step: ProcessStep, provider: Ll
     }
   }
 
+  // generating_ata com transcrição final: um reinício retoma só a análise (e a espera).
   await setMeetingStatus(meetingId, "generating_ata");
+  const { provider, note } = await resolveProvider();
   report(meetingId, "analisando", 0);
   if (provider !== "local") console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
   await postAnalysis(meetingId, (s, p) => report(meetingId, s, p), provider);
   await markDone(meetingId);
+  return note;
 }

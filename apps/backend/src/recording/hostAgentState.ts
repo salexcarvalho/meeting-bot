@@ -9,6 +9,7 @@ const ONLINE_WINDOW_MS = 15_000;
 let lastSeenAt: Date | null = null;
 let version: string | null = null;
 let capture: HostAgentCapture | null = null;
+let mode: "full" | "llm" = "full";
 let cliStatus: Partial<Record<SubscriptionLlm, CliStatus>> = {};
 let lastPublishedOnline = false;
 
@@ -44,6 +45,11 @@ export function hostAgentCli(provider: SubscriptionLlm): CliStatus | null {
   return cliStatus[provider] ?? { available: false, reason: "host-agent sem suporte a CLI (atualize o host-agent)", version: null };
 }
 
+/** O agente desta máquina consegue gravar (modo "llm" só executa gerações). */
+export function hostAgentCanRecord(): boolean {
+  return isHostAgentOnline() && mode === "full";
+}
+
 export function hostAgentCapture(): HostAgentCapture | null {
   return isHostAgentOnline() ? capture : null;
 }
@@ -59,6 +65,7 @@ export function recordHeartbeat(input: HeartbeatInput): void {
   lastSeenAt = new Date();
   version = input.version;
   capture = input.capture;
+  mode = input.mode ?? "full";
   cliStatus = input.llm ?? {};
   publishIfChanged();
 }

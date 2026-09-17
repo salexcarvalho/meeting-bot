@@ -6,6 +6,7 @@ const STEP_LABEL: Record<ProcessingStep, string> = {
   convertendo: "Salvando o áudio",
   transcrevendo: "Transcrição final",
   diarizando: "Identificando falantes",
+  aguardando_assinatura: "Aguardando a assinatura no agente do desktop",
   analisando: "Analisando a reunião",
   ata: "Gerando a ata",
   adrs: "Sugerindo ADRs",

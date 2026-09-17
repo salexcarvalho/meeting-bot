@@ -278,7 +278,9 @@ async function agentFor(meetingId: string): Promise<LiveAgent> {
 async function tickAll(): Promise<void> {
   try {
     const { rows } = await pool.query(
-      `SELECT id FROM meetings WHERE source IN ('ics', 'manual') AND status IN ('recording', 'stopping')`,
+      // gravação local (recording/stopping) ou assistente dentro da chamada (in_call)
+      `SELECT id FROM meetings
+       WHERE (source IN ('ics', 'manual') AND status IN ('recording', 'stopping')) OR status = 'in_call'`,
     );
     for (const { id } of rows) void (await agentFor(id)).tick();
   } catch (err) {

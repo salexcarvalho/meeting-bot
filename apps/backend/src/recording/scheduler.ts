@@ -12,6 +12,7 @@ import {
   checkHostAgentTimeout,
   hostAgentCapture,
   hostAgentLastSeen,
+  hostAgentCanRecord,
   isHostAgentOnline,
 } from "./hostAgentState";
 import { LOCAL_CHANNELS, peekRuntime, runtimeFor } from "./runtime";
@@ -125,7 +126,7 @@ export async function tick(): Promise<void> {
       );
       const state = {
         meetings: rows.map((r) => toSched(r, owner?.id ?? null)),
-        hostAgentOnline: isHostAgentOnline(now.getTime()),
+        hostAgentOnline: hostAgentCanRecord() && isHostAgentOnline(now.getTime()),
         hostAgentLastSeen: hostAgentLastSeen(),
       };
       const done: SchedulerAction[] = [];
@@ -223,6 +224,12 @@ function publishRecording(): void {
 export async function startRecordingNow(meetingId: string): Promise<void> {
   if (!isHostAgentOnline()) {
     throw new RecordingError("O agente do desktop está offline. Inicie-o para gravar.", 503);
+  }
+  if (!hostAgentCanRecord()) {
+    throw new RecordingError(
+      "O agente deste servidor só gera textos (sem desktop para capturar áudio). Use o assistente na chamada.",
+      409,
+    );
   }
   await withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock($1)`, [LOCK_KEY]);

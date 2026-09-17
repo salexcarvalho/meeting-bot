@@ -93,8 +93,9 @@ class HostAgent:
     async def heartbeat_loop(self) -> None:
         while not self._stopping.is_set():
             capture = self.recording.recorder.status() if self.recording else None
-            resp = await self.api.heartbeat(capture, self.llm.statuses())
-            if resp is not None:
+            resp = await self.api.heartbeat(capture, self.llm.statuses(), self.cfg.mode)
+            # No modo "llm" não há desktop: nada de alertas nem captura.
+            if resp is not None and self.cfg.mode == "full":
                 raw = resp.get("meetings", [])
                 self.meetings = [Meeting.from_api(m) for m in raw]
                 self._save_cached_meetings(raw)
@@ -239,16 +240,17 @@ class HostAgent:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._stopping.set)
-        log.info("host-agent %s iniciado (backend %s)", __version__, self.cfg.backend_url)
+        log.info("host-agent %s iniciado em modo %s (backend %s)", __version__, self.cfg.mode, self.cfg.backend_url)
         # A gravação desejada vem no primeiro heartbeat; só depois retoma spools antigos.
         tasks = [
             asyncio.create_task(self.heartbeat_loop()),
-            asyncio.create_task(self.alert_loop()),
             asyncio.create_task(self.llm_status_loop()),
             asyncio.create_task(self.llm_loop()),
         ]
-        await asyncio.sleep(HEARTBEAT_SECONDS + 1)
-        asyncio.create_task(self.resume_pending_spools())
+        if self.cfg.mode == "full":
+            tasks.append(asyncio.create_task(self.alert_loop()))
+            await asyncio.sleep(HEARTBEAT_SECONDS + 1)
+            asyncio.create_task(self.resume_pending_spools())
         await self._stopping.wait()
         log.info("encerrando host-agent")
         for t in tasks:

@@ -131,6 +131,37 @@ describe("HostCliLlm", () => {
     expect(JSON.stringify(audits)).not.toContain(SECRET_TEXT);
   });
 
+  it("só o Claude recebe os limites de tamanho (o Codex corta a frase no meio)", async () => {
+    const claude = withAgent([VALID]);
+    await new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 60 }, claude.q).generate(request);
+    await claude.done();
+    const codex = withAgent([VALID]);
+    await new HostCliLlm({ provider: "codex", model: "", timeoutSeconds: 60 }, codex.q).generate(request);
+    await codex.done();
+
+    const limit = (job: AgentLlmJob) =>
+      (job.schema as { properties: { resumo_executivo: { maxLength?: number } } }).properties.resumo_executivo.maxLength;
+    expect(limit(claude.jobs[0])).toBe(1200);
+    expect(limit(codex.jobs[0])).toBeUndefined();
+  });
+
+  it("CLI que desiste do schema vira resposta inválida, com nova tentativa", async () => {
+    const agent = withAgent([new Error("error_max_structured_output_retries"), VALID]);
+    const llm = new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 60 }, agent.q);
+    await expect(llm.generate(request)).resolves.toEqual(VALID);
+    await agent.done();
+    expect(agent.jobs[1].user).toMatch(/não seguiu o schema \(Claude não conseguiu seguir o schema\)/);
+
+    const twice = withAgent([
+      new Error("error_max_structured_output_retries"),
+      new Error("error_max_structured_output_retries"),
+    ]);
+    const other = new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 60 }, twice.q);
+    // resposta inválida não derruba o passo (a ata segue sem aquele trecho); erro do CLI derruba
+    await expect(other.generate(request)).rejects.toThrow(/Resposta do LLM inválida \(narrativa abc\)/);
+    await twice.done();
+  });
+
   it("aceita JSON em texto, tenta de novo com a resposta anterior e falha como resposta inválida", async () => {
     const agent = withAgent([JSON.stringify(VALID)]);
     const llm = new HostCliLlm({ provider: "codex", model: "", timeoutSeconds: 60 }, agent.q);
@@ -206,15 +237,48 @@ describe("escolha da assinatura", () => {
     await expect(llm.generate("live", request, "claude")).rejects.toThrow(/ao vivo é sempre local/);
   });
 
-  it("geração automática: usa a assinatura quando serve e volta ao local quando não", async () => {
+  it("geração automática: espera a assinatura voltar e nunca cai no local por falha passageira", async () => {
     const { llm, state } = await load({ ...ON, LLM_GENERATION_PROVIDER: "claude" });
-    expect(await llm.automaticProvider("dono")).toEqual({
-      provider: "local",
-      note: expect.stringMatching(/modelo local \(claude indisponível: O host-agent está desligado/),
+    const heartbeat = () =>
+      state.recordHeartbeat({ version: "t", capture: null, llm: { claude: { available: true, reason: null, version: null } } });
+
+    // host-agent desligado e sem espera: erro claro, não gera no local
+    await expect(llm.automaticProvider("dono")).rejects.toThrow(/claude indisponível .*host-agent está desligado.*Gerar ata/);
+
+    // host-agent volta durante a espera (reinício do PC): usa o Claude
+    let t = 0;
+    const waits: string[] = [];
+    const chosen = await llm.automaticProvider("dono", {
+      waitMs: 60_000,
+      pollMs: 5000,
+      now: () => t,
+      onWait: (reason) => waits.push(reason),
+      sleep: async (ms) => {
+        t += ms;
+        if (t === 15_000) heartbeat();
+      },
     });
-    state.recordHeartbeat({ version: "t", capture: null, llm: { claude: { available: true, reason: null, version: null } } });
+    expect(chosen).toEqual({ provider: "claude", note: null });
+    expect(waits).toEqual([expect.stringMatching(/desligado/)]);
+    expect(t).toBe(15_000);
+
+    // pronto de cara: sem espera
     expect(await llm.automaticProvider("dono")).toEqual({ provider: "claude", note: null });
-    expect((await llm.automaticProvider("socio")).provider).toBe("local");
+
+    // CLI sem login não volta dentro do prazo: desiste com erro
+    state.recordHeartbeat({ version: "t", capture: null, llm: { claude: { available: false, reason: "faça login", version: null } } });
+    let u = 0;
+    await expect(
+      llm.automaticProvider("dono", { waitMs: 120_000, now: () => u, sleep: async (ms) => void (u += ms) }),
+    ).rejects.toThrow(/claude indisponível há 2 min \(faça login\)/);
+    expect(u).toBe(120_000);
+
+    // reunião de outra pessoa: a assinatura é pessoal, então vai para o local (sem esperar)
+    heartbeat();
+    expect(await llm.automaticProvider("socio", { waitMs: 60_000 })).toEqual({
+      provider: "local",
+      note: expect.stringMatching(/só para as reuniões dele/),
+    });
   });
 
   it("desligada no .env não aparece e é recusada", async () => {

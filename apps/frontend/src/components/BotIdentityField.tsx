@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { DISPLAY_IDENTITIES, DISPLAY_IDENTITY_LABELS, type DisplayIdentity, type IdentityChoice } from "@meeting-bot/contracts";
 import { api } from "../api";
 
-// Escolha de como o bot aparece na reunião, com prévia do nome final (sempre com o sufixo de gravação).
+// Escolha de como o bot aparece na reunião, com prévia do nome final (sempre dizendo que é a ata).
 export function BotIdentityField({
   value,
   onChange,
@@ -55,7 +55,7 @@ export function BotIdentityField({
             required
             value={value.customName ?? ""}
             onChange={(e) => onChange({ mode: "custom", customName: e.target.value })}
-            placeholder="Ex.: Ata da equipe"
+            placeholder="Ex.: Ata do Sérgio"
           />
         </label>
       )}
@@ -67,7 +67,7 @@ export function BotIdentityField({
         ) : (
           " "
         )}{" "}
-        O sufixo que identifica o assistente automatizado é sempre incluído.
+        Se o nome não disser que é ata ou gravação, entra com "Ata de" na frente.
       </p>
     </fieldset>
   );

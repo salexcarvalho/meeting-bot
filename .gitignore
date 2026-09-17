@@ -1,4 +1,6 @@
 .env
+# segredos do servidor de teste (o .env.vps.example fica versionado)
+.env.vps
 node_modules/
 dist/
 .rtk/

@@ -8,11 +8,25 @@ const AGENT = { authorization: `Bearer ${"teste-".repeat(8)}`, "content-type": "
 const teams = (n: string) => `https://teams.microsoft.com/l/meetup-join/19%3ameeting_${n}%40thread.v2/0`;
 
 // O navegador do bot não sobe no teste: registra só o pedido.
-const launches = vi.hoisted(() => [] as { id: string; url: string; admitUntil: Date | null; stayUntil: Date | null }[]);
+const launches = vi.hoisted(
+  () =>
+    [] as {
+      id: string;
+      url: string;
+      identity: { name: string; avatarPath: string | null };
+      admitUntil: Date | null;
+      stayUntil: Date | null;
+    }[],
+);
 vi.mock("../../src/bot/runner", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/bot/runner")>()),
-  startBot: (id: string, url: string, _platform: string, launch: { admitUntil?: Date | null; stayUntil?: Date | null }) => {
-    launches.push({ id, url, admitUntil: launch.admitUntil ?? null, stayUntil: launch.stayUntil ?? null });
+  startBot: (
+    id: string,
+    url: string,
+    _platform: string,
+    launch: { identity: { name: string; avatarPath: string | null }; admitUntil?: Date | null; stayUntil?: Date | null },
+  ) => {
+    launches.push({ id, url, identity: launch.identity, admitUntil: launch.admitUntil ?? null, stayUntil: launch.stayUntil ?? null });
   },
 }));
 
@@ -88,6 +102,28 @@ describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)"
     vi.unstubAllEnvs();
   });
 
+  it("agente sem desktop (servidor) não grava pelo PC", async () => {
+    const semLink = await scheduled("Daily sem link no servidor", -1, null);
+    const heartbeat = (mode: string) =>
+      fetch(`${base}/api/agent/heartbeat`, {
+        method: "POST",
+        headers: AGENT,
+        body: JSON.stringify({ version: "teste", capture: null, mode }),
+      });
+
+    expect((await heartbeat("llm")).status).toBe(200);
+    const recusado = await call("aa-dono", "POST", `/meetings/${semLink}/record`);
+    expect(recusado.status).toBe(409);
+    expect(recusado.json.error).toMatch(/só gera textos/);
+    expect((await row(semLink)).status).toBe("scheduled");
+
+    // com desktop, a gravação local volta a ser aceita
+    expect((await heartbeat("full")).status).toBe(200);
+    const aceito = await call("aa-dono", "POST", `/meetings/${semLink}/record`);
+    expect(aceito.status).toBe(200);
+    await pool.query(`UPDATE meetings SET status = 'scheduled' WHERE id = $1`, [semLink]);
+  });
+
   it("no horário entra só nas reuniões com link do Teams/Meet e sem 'Não gravar'; o PC não grava", async () => {
     const withLink = await scheduled("Daily com link", -1, teams("a1"));
     const noLink = await scheduled("Daily sem link", -1, null);
@@ -102,7 +138,10 @@ describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)"
     expect(launches.map((l) => l.id)).toEqual([withLink]);
     const joined = await row(withLink);
     expect(joined.status).toBe("joining");
-    expect(joined.bot_display_name).toMatch(/assistente gravando$/);
+    expect(joined.bot_display_name).toMatch(/^Ata de /);
+    expect(launches[0].identity.name).toBe(joined.bot_display_name);
+    // sem ícone cadastrado, a câmera fica desligada
+    expect(launches[0].identity.avatarPath).toBeNull();
     // espera a admissão e fica até o fim previsto
     expect(launches[0].admitUntil?.getTime()).toBe(new Date(joined.scheduled_end).getTime());
     expect(launches[0].stayUntil?.getTime()).toBe(new Date(joined.scheduled_end).getTime());
@@ -125,7 +164,7 @@ describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)"
       abort: new AbortController(),
       done: Promise.resolve(),
       urlKey: botUrlKey(url),
-      displayName: "Outro - assistente gravando",
+      displayName: "Ata de Outro",
       requestedAt: Date.now(),
       stage: "in_call",
       stageAt: Date.now(),

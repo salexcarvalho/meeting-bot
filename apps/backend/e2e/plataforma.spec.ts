@@ -134,10 +134,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("radio", { name: "Nome personalizado" }).check({ force: true });
     await expect(page.getByRole("button", { name: "Salvar" })).toBeEnabled();
     await page.getByRole("textbox", { name: "Nome personalizado" }).fill("Ata <da> Ana");
-    await expect(page.getByText("Vai aparecer como")).toContainText("Ata da Ana - assistente gravando");
+    await expect(page.getByText("Vai aparecer como")).toContainText("Ata da Ana");
     await page.getByRole("radio", { name: "Nome do agente" }).check({ force: true });
-    await expect(page.getByText("Vai aparecer como")).toContainText("Orion - assistente gravando");
-    await expect(page.getByText("Hoje:")).toContainText("Orion - assistente gravando");
+    await expect(page.getByText("Vai aparecer como")).toContainText("Ata de Orion");
+    await expect(page.getByText("Hoje:")).toContainText("Ata de Orion");
     await shot(page, "config-reunioes");
 
     // recarregar mantém tudo
@@ -172,7 +172,7 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, ANA);
     await page.getByRole("link", { name: "Reuniões", exact: true }).first().click();
     const form = page.locator("form", { has: page.getByRole("heading", { name: /Modo Agente/ }) });
-    await expect(form.getByText("Vai aparecer como")).toContainText("Orion - assistente gravando");
+    await expect(form.getByText("Vai aparecer como")).toContainText("Ata de Orion");
     await form.getByLabel("Link do Google Meet ou Teams").fill("https://meet.google.com/e2e-abcd-efg");
     await form.getByRole("textbox", { name: "Título", exact: true }).fill("Reunião com assistente");
 
@@ -189,7 +189,7 @@ test.describe.serial("plataforma multiusuário", () => {
     expect(navigatedMs).toBeLessThan(5000);
 
     await expect(page.getByRole("heading", { name: "Reunião com assistente" })).toBeVisible();
-    await expect(page.getByText("assistente: Orion - assistente gravando")).toBeVisible();
+    await expect(page.getByText("assistente: Ata de Orion")).toBeVisible();
     // Sem PulseAudio no E2E o assistente falha logo na preparação, com mensagem clara.
     await expect(page.getByText(/Erro no bot|pactl/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Enviar assistente de novo" })).toBeVisible();

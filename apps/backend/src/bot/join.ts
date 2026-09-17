@@ -15,8 +15,13 @@ export interface JoinScreen {
     value(): Promise<string>;
     fill(name: string): Promise<void>;
   };
-  /** Desligar câmera/microfone: cada um só é visível enquanto está ligado. */
-  toggles: JoinControl[];
+  /** Desligar o microfone: só é visível enquanto ele está ligado. */
+  mute: JoinControl[];
+  /** Chave da câmera na pré-entrada (null enquanto não aparece). */
+  camera: {
+    state(): Promise<CameraState | null>;
+    set(on: boolean): Promise<void>;
+  };
   join: {
     visible(): Promise<boolean>;
     enabled(): Promise<boolean>;
@@ -26,11 +31,29 @@ export interface JoinScreen {
   failure(): Promise<string | null>;
 }
 
+export type CameraState = "on" | "off";
+
+/** Como o assistente se apresenta: o nome (sempre com o aviso de gravação) e se liga a câmera. */
+export interface JoinIdentity {
+  name: string;
+  /** há ícone para mostrar: liga a câmera virtual; senão, desliga */
+  camera: boolean;
+}
+
+export interface JoinResult {
+  /** a câmera (com o ícone) ficou ligada */
+  camera: boolean;
+}
+
 export interface JoinOptions {
   timeoutMs: number;
   pollMs?: number;
   /** Espera extra, depois que o "Entrar" aparece, pelo campo de nome e pelas chaves de mídia. */
   graceMs?: number;
+  /** Quanto esperar, depois do "Entrar", pela câmera ligada antes de entrar sem ela. */
+  cameraGraceMs?: number;
+  /** Intervalo entre tentativas de ligar/desligar a câmera. */
+  cameraRetryMs?: number;
   failureCheckMs?: number;
   signal?: AbortSignal;
   onJoining?: () => void;
@@ -50,6 +73,7 @@ export class JoinError extends Error {
 }
 
 const MAX_DISMISS = 2;
+const MAX_CAMERA_TRIES = 3;
 
 const safe = async (fn: () => Promise<boolean>): Promise<boolean> => {
   try {
@@ -59,21 +83,26 @@ const safe = async (fn: () => Promise<boolean>): Promise<boolean> => {
   }
 };
 
-export async function driveJoin(screen: JoinScreen, displayName: string, opts: JoinOptions): Promise<void> {
+export async function driveJoin(screen: JoinScreen, identity: JoinIdentity, opts: JoinOptions): Promise<JoinResult> {
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const pollMs = opts.pollMs ?? 250;
   const graceMs = opts.graceMs ?? 1500;
+  const cameraGraceMs = opts.cameraGraceMs ?? 5000;
+  const cameraRetryMs = opts.cameraRetryMs ?? 2000;
   const failureCheckMs = opts.failureCheckMs ?? 1000;
   const log = opts.log ?? (() => {});
 
   const start = now();
   const dismissed = new Map<string, number>();
-  const toggled = new Set<string>();
+  const muted = new Set<string>();
   let joining = false;
-  let nameFilled = false;
   let joinSeenAt: number | null = null;
   let lastFailureCheck = -Infinity;
+  let cameraSeen = false;
+  let cameraTries = 0;
+  let cameraSetAt = -Infinity;
+  let nameFilled = false;
 
   const markJoining = () => {
     if (joining) return;
@@ -105,22 +134,37 @@ export async function driveJoin(screen: JoinScreen, displayName: string, opts: J
       );
     }
 
-    if (await safe(screen.nameInput.visible)) {
+    const camera = await screen.camera.state().catch(() => null);
+    if (camera) {
       markJoining();
-      const current = await screen.nameInput.value().catch(() => "");
-      if (current !== displayName) {
-        await screen.nameInput.fill(displayName).catch(() => {});
-        log(`nome preenchido (${now() - start} ms)`);
+      cameraSeen = true;
+      const mismatch = (camera === "on") !== identity.camera;
+      if (mismatch && cameraTries < MAX_CAMERA_TRIES && now() - cameraSetAt >= cameraRetryMs) {
+        cameraTries++;
+        cameraSetAt = now();
+        await screen.camera.set(identity.camera).then(
+          () => log(`câmera: pedido para ${identity.camera ? "ligar" : "desligar"} (${now() - start} ms)`),
+          () => {},
+        );
       }
-      nameFilled = (await screen.nameInput.value().catch(() => "")) === displayName;
     }
 
-    for (const control of screen.toggles) {
-      if (toggled.has(control.name) || !(await safe(control.visible))) continue;
+    if (await safe(screen.nameInput.visible)) {
+      markJoining();
+      if ((await screen.nameInput.value().catch(() => "")) !== identity.name) {
+        await screen.nameInput.fill(identity.name).catch(() => {});
+        // O Teams às vezes devolve o campo vazio na leitura seguinte: preenche de novo, sem repetir o log.
+        if (!nameFilled) log(`nome preenchido (${now() - start} ms)`);
+      }
+      nameFilled = (await screen.nameInput.value().catch(() => "")) === identity.name;
+    }
+
+    for (const control of screen.mute) {
+      if (muted.has(control.name) || !(await safe(control.visible))) continue;
       markJoining();
       await control.act().then(
         () => {
-          toggled.add(control.name);
+          muted.add(control.name);
           log(`${control.name} desligado (${now() - start} ms)`);
         },
         () => {},
@@ -131,12 +175,19 @@ export async function driveJoin(screen: JoinScreen, displayName: string, opts: J
       markJoining();
       joinSeenAt ??= now();
       const waited = now() - joinSeenAt;
-      const togglesPending = toggled.size < screen.toggles.length;
-      const ready =
-        (nameFilled || waited >= graceMs) && (!togglesPending || waited >= graceMs) && (await safe(screen.join.enabled));
+      const nameOk = nameFilled || waited >= graceMs;
+      const muteOk = muted.size >= screen.mute.length || waited >= graceMs;
+      const cameraOk = identity.camera
+        ? camera === "on" ||
+          waited >= cameraGraceMs ||
+          (!cameraSeen && waited >= graceMs) ||
+          (cameraTries >= MAX_CAMERA_TRIES && now() - cameraSetAt >= cameraRetryMs)
+        : camera !== "on" || waited >= graceMs;
+      const ready = nameOk && muteOk && cameraOk && (await safe(screen.join.enabled));
       if (ready && (await screen.join.click().then(() => true, () => false))) {
-        log(`pedido de entrada enviado (${now() - start} ms)`);
-        return;
+        const cameraOn = identity.camera && camera === "on";
+        log(`pedido de entrada enviado, câmera ${cameraOn ? "com o ícone" : "desligada"} (${now() - start} ms)`);
+        return { camera: cameraOn };
       }
     }
 

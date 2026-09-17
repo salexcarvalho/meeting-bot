@@ -85,7 +85,7 @@ No banco, a diferença entre `created_at` e `started_at` ficou entre 34 e 58 s.
 | 1 | Visual no padrão Bússola, azul, claro/escuro | **PA** | Os tokens azuis já existem. Faltam sidebar, header, cards, KPIs, tabelas, abas e alternância manual de tema |
 | 2 | Perfil do usuário (nome real, exibição, agente, fotos) | **NE** | A tabela `users` só tem credenciais |
 | 3 | Voz ou nome do agente gravado | **NE** | Gravar e guardar é viável. Usar a voz *dentro* da reunião é **DL** (o bot entra mudo; não há TTS local) |
-| 4 | `meeting_display_identity` | **NE** + regra | Viável só no Modo Agente, no campo de nome **antes** de entrar. A constituição (II) exige que o bot se identifique como gravação: o sufixo é obrigatório |
+| 4 | `meeting_display_identity` | **NE** + regra | Viável só no Modo Agente, no campo de nome **antes** de entrar. A constituição (II) exige que o bot se identifique como gravação: o próprio nome diz que é a ata (sem sufixo desde 2.1.0) |
 | 5 | Foto na reunião | **DL** | Convidado anônimo não tem foto no Meet nem no Teams, só iniciais. A única imagem possível é a **câmera falsa** (imagem estática como vídeo). Ver Q5 |
 | 6 | Latência do "Entrar" com estados e anti-duplicidade | **PA** | Medida acima. Fácil de corrigir |
 | 7 | Transcrição local separada da análise | **JE** | Áudio → worker → segmentos → itens/ata |
@@ -321,7 +321,7 @@ Rota/Job ──► AIOrchestrator.run(purpose, meeting, user)
 | **F2** | RBAC (tabelas, seed, middleware, sessão com permissões); isolamento por dono e compartilhamento; Administração > Usuários; configurações por categoria; host-agent ligado ao dono | Q2 e Q3 (o padrão seguro é implementado antes) |
 | **F3** | AIProvider com uso; catálogo de modelos; prompts no banco com versão; agente arquiteto usando o perfil; provedor externo opcional por flag (Q1) — **parcial (2026-09-17):** OpenRouter para ata e ADR pela `.env`, com auditoria de uso e custo | — |
 | **F4** | Jobs de geração; documentos (ata, anotações, resumo, decisões, análise); minhas pendências; tarefas; hub "Gerar com IA"; painel completo | — |
-| **F5** | ~~Imagem na reunião por câmera falsa~~ (Q5: sem imagem). A identidade por reunião já foi entregue na F1. | — |
+| **F5** | Identidade por reunião (entregue na F1). Ícone do agente na reunião por câmera virtual (entregue em 2026-09-17, Q5 revista). | — |
 | **F6** | Painel de uso e custo; auditoria na interface; painel de admin | — |
 
 **Critérios por entrega:**
@@ -339,7 +339,7 @@ Rota/Job ──► AIOrchestrator.run(purpose, meeting, user)
 | Q2 | Admin lê transcrições e documentos de outros usuários? | **Não**, só metadados. Ninguém recebe `meetings.read_all`. |
 | Q3 | Destino das 7 reuniões do `teste-claude` | Criar `sergio` (SUPER_ADMIN, `AGENT_OWNER`), transferir as reuniões e desativar o `teste-claude`. |
 | Q4 | Host-agent próprio do sócio | **No futuro** (backlog: token por usuário e agendador por máquina). Hoje há um só, o do `AGENT_OWNER`. |
-| Q5 | Imagem na reunião | **Sem imagem**: nada de câmera virtual. A F5 fica restrita à identidade por reunião, que já está feita. |
+| Q5 | Imagem na reunião | 2026-09-16: sem imagem. 2026-09-17: câmera virtual com o ícone do agente (constituição 1.6.0). Ainda em 2026-09-17, depois de ver na chamada: **só iniciais** — a câmera fica desligada (`BOT_CAMERA=false`), porque o quadro de vídeo parece apresentação e o avatar na lista exigiria entrar logado numa conta. |
 | Q6 | Sufixo obrigatório | `assistente gravando` (formato `Nome - assistente gravando`). |
 
 ## 13. Estado da implementação (2026-09-16)
@@ -413,7 +413,7 @@ Typecheck e build também passaram.
 
 - Decisões do usuário: os dois; nos botões e na geração automática; aceita os termos de consumidor.
 - O host-agent executa o CLI oficial isolado; o backend só troca pedidos e respostas com ele.
-- Vale só para as reuniões do `AGENT_OWNER`. Sem a assinatura disponível, a geração automática usa o modelo local.
+- Vale só para as reuniões do `AGENT_OWNER`. Sem a assinatura disponível, a geração automática espera por ela (até 30 min) e não troca para o modelo local (mudança de 2026-09-17, abaixo).
 - Teste real com reunião fictícia: Claude em 76 s e Codex em 63 s, ambos com itens, ata e ADRs válidos.
 
 **2026-09-17 — gerar de novo sem duplicar e resumo para enviar:**
@@ -425,6 +425,40 @@ Typecheck e build também passaram.
 - Reinício no meio de "Gerar ata" retoma só a análise (antes refazia a transcrição).
 - Aba Ata refeita (ficha no topo, índice, seções vazias numa linha, ações num só cabeçalho) e histórico do item em linha do tempo, com rótulos em português e antes/depois.
 - Aba ADRs refeita: filtros por status, cartões recolhíveis, seções em duas colunas, link para a decisão de origem. Corrigido o "rejeitado em <data>", que mostrava a data da aprovação.
+
+**2026-09-17 — ícone do agente na reunião e transcrição ao vivo do assistente:**
+
+- Decisões do usuário: a reunião mostra o ícone do agente e nada mais; o assistente também transcreve ao vivo.
+- Pedido para tirar "assistente gravando" do nome: não atendido, porque sem o sufixo ninguém na sala saberia da gravação (Princípio II). Para encurtar, use `BOT_IDENTITY_SUFFIX=gravando`.
+- Convidado anônimo não tem foto no Meet/Teams. O ffmpeg gera um quadro `.y4m` com o avatar recortado em círculo e o Chromium o usa como webcam (`--use-file-for-fake-video-capture`). Nada é filmado.
+- Ao ver na chamada, o usuário notou que isso aparece como quadro de vídeo ("parece apresentação"): ele queria o avatar na lista de participantes, que só existe para quem entra logado. Decisão dele: **deixar só as iniciais**; `BOT_CAMERA` fica desligado por padrão e a funcionalidade permanece disponível.
+- Na pré-entrada, a câmera é ligada (três tentativas) e o microfone, desligado. Na chamada, a câmera é religada até três vezes se cair. Sem avatar, ou se a imagem não abrir, a câmera fica desligada. Para desligar a câmera: `BOT_CAMERA=false`.
+- O ffmpeg do assistente também entrega PCM 16 kHz para a transcrição ao vivo (canal `mixed`). O agente arquiteto ao vivo passa a rodar em reuniões `in_call`, e a página da reunião mostra o layout ao vivo. O passe final continua substituindo o ao vivo (`BOT_LIVE_TRANSCRIPTION=false` desliga).
+
+**2026-09-17 — análise automática sempre com a assinatura:**
+
+- Problema real: o PC reiniciou quando o RADAR Daily terminava. O backend processou a reunião antes do primeiro heartbeat do host-agent, achou o Claude indisponível e gerou a ata no qwen local.
+- Decisão do usuário: gerar sempre com o Claude.
+- O provedor agora é escolhido depois da transcrição. Com o host-agent fora ou o CLI sem login, a reunião espera (`SUBSCRIPTION_WAIT_MINUTES`, padrão 30) e mostra "Aguardando a assinatura". Se não voltar, fica com erro e a ata sai pelo botão. Um reinício no meio retoma só a análise.
+
+**2026-09-17 — assistente preso na chamada depois do fim:**
+
+- Problema real: numa reunião de teste todos saíram e o assistente continuou gravando; só parou quando o backend reiniciou (25 min a mais).
+- Causa: a saída dependia do texto "você é o único aqui", que o Teams não mostrou.
+- `bot/leave.ts` (com testes) passou a decidir por: tela de fim da chamada, número de pessoas na barra do Teams/Meet ("People 8"), o texto antigo como reserva, silêncio (3 min depois do fim previsto; 10 min sem horário previsto) e o limite de 4 h. O silêncio vem do próprio PCM que o ffmpeg do assistente já entrega.
+
+**2026-09-17 — servidor de teste no VPS (Dokploy):**
+
+- Decisões do usuário: transcrição pelo Deepgram/OpenRouter, ata e ADR pela assinatura do Claude com login feito no próprio servidor, domínio com HTTPS pelo Dokploy e cópia do banco desta máquina.
+- Constituição 2.0.0: o conteúdo pode viver na infraestrutura do dono (servidor que ele controla), com HTTPS, segredos próprios e remoção dos volumes no fim do teste.
+- `docker-compose.vps.yml` (backend + postgres + `agent-cli`), `.env.vps.example`, `scripts/vps-copiar-dados.sh` e `docs/vps-dokploy.md`.
+- Host-agent ganhou `AGENTE_MODE=llm`: sem alertas e sem captura, só executa as gerações; o backend recusa "Gravar agora" enquanto for esse o agente conectado.
+
+**2026-09-17 — nome do assistente sem sufixo:**
+
+- Pedido do usuário: tirar "assistente gravando" do nome. Tirar todo aviso não foi aceito (gravação escondida de terceiros, Princípio II). Decisão dele entre as alternativas: **o próprio nome diz o que é**, ex.: "Ata do Sérgio".
+- Constituição 2.1.0. `BOT_IDENTITY_SUFFIX` deixou de existir. `recorderName` (`bot/identity.ts`, com testes) mantém nomes com "ata", "gravação", "record" ou "transcrição" e põe "Ata de" na frente dos outros; "Meu nome" vira "Ata de <nome>".
+- Importação `.ics` avisa quando o arquivo traz só a ocorrência do dia, sem a regra de repetição (`partialSeries`): o Outlook exportou a ocorrência, não a série. Decisão do usuário: só avisar, sem repetição criada no app.
 
 **Ainda não feito:**
 

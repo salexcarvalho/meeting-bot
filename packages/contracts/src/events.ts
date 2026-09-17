@@ -17,7 +17,14 @@ export type LiveClientMessage =
   | { type: "unsubscribe"; topic: "meeting"; meetingId: string }
   | { type: "ping" };
 
-export type ProcessingStep = "convertendo" | "transcrevendo" | "diarizando" | "analisando" | "ata" | "adrs";
+export type ProcessingStep =
+  | "convertendo"
+  | "transcrevendo"
+  | "diarizando"
+  | "aguardando_assinatura"
+  | "analisando"
+  | "ata"
+  | "adrs";
 
 export interface ChannelLiveState {
   state: CaptureState | "waiting";
