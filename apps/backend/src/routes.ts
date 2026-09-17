@@ -43,6 +43,7 @@ import {
 import { enqueueProcessing, isProcessing } from "./pipeline";
 import { adrLockReason, getItem, listItems } from "./items/service";
 import { generationLabel, isSubscription, llmOptions, parseLlmChoice, subscriptionUnavailable } from "./llm";
+import { currentMonth, llmUsage } from "./llm/usage";
 import { audit } from "./security/audit";
 import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBot } from "./bot/runner";
 import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
@@ -229,6 +230,19 @@ export function buildRouter(): Router {
       await updatePassword(req.user!.id, await hashPassword(newPassword));
       await deleteUserSessions(req.user!.id, req.sessionTokenHash);
       res.status(204).end();
+    }),
+  );
+
+  // Consumo de LLM do mês (só leitura, agregado do audit_log; cada um vê o que enxerga).
+  router.get(
+    "/llm/usage",
+    wrap(async (req, res) => {
+      const month = typeof req.query.month === "string" && req.query.month ? req.query.month : currentMonth();
+      try {
+        res.json(await llmUsage(req.user!, month));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
     }),
   );
 

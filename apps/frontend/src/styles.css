@@ -903,6 +903,21 @@ dialog::backdrop { background: var(--overlay); backdrop-filter: blur(1px); }
 .auth-watermark { position: absolute; right: -48px; bottom: -48px; opacity: 0.1; pointer-events: none; }
 .auth-main { display: grid; place-items: center; padding: 32px 16px; }
 .auth-form { width: 100%; max-width: 380px; }
+.password-field { position: relative; display: block; }
+.password-field input { padding-right: 44px; }
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  min-height: 32px;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+.password-toggle:hover:not(:disabled) { color: var(--text); }
+.auth-help-link { margin-top: 12px; padding: 0; }
+.auth-help { margin-top: 8px; color: var(--muted); display: grid; gap: 8px; }
+.auth-help code { display: block; overflow-x: auto; padding: 8px 10px; border-radius: var(--radius-md); background: var(--surface-2); color: var(--text); }
 .auth-form .brand { padding: 0; margin-bottom: 24px; }
 @media (min-width: 1024px) { .auth-form .brand { display: none; } }
 
@@ -1094,3 +1109,22 @@ table.simple td .badge + .badge { margin-left: 4px; }
 .llm-option.active { border-color: var(--primary); background: var(--accent); }
 .llm-option.disabled { cursor: not-allowed; opacity: 0.6; }
 .chip-external { margin-left: 6px; font-size: 11px; padding: 0 6px; }
+
+/* Consumo de IA (Configurações) */
+.usage-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.usage-totals > div { display: grid; gap: 2px; padding: 12px; border-radius: var(--radius-md); background: var(--surface-2); }
+.usage-totals strong { font-size: 1.125rem; font-variant-numeric: tabular-nums; }
+.usage-block { margin-top: 20px; overflow-x: auto; }
+.usage-block h3 { margin: 0 0 8px; color: var(--muted); font-weight: 500; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.usage-table th, .usage-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.usage-table th { color: var(--muted); font-weight: 500; }
+.usage-table td + td, .usage-table th + th { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table tr:last-child td { border-bottom: 0; }
+.inline-field { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; }
+.inline-field select { min-height: 32px; padding: 4px 28px 4px 8px; }

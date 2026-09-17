@@ -105,6 +105,8 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - ficam em `DATA_DIR/profiles/<userId>/`;
   - o tipo é conferido pelos bytes iniciais (sem SVG);
   - nomes seguem um padrão fixo (sem path traversal) e a gravação usa modo 0600.
+- **Consumo de LLM:** `GET /llm/usage?month=AAAA-MM` agrega o próprio `audit_log` (`llm/usage.ts`),
+  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração.
 - **Ações administrativas:** criar, editar, trocar papel, ativar, redefinir senha e redefinir configurações; todas vão para `audit_log`.
 - host-agent autenticado por `AGENT_TOKEN` (Bearer, comparação em tempo constante, limite de
   falhas auditado).

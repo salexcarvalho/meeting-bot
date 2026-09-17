@@ -70,6 +70,7 @@ export class HostCliLlm implements LLMProvider {
         completionTokens: result.usage?.outputTokens ?? null,
         // assinatura: sem custo por chamada
         cost: null,
+        durationMs: result.durationMs ?? null,
       });
       console.log(
         `[llm-assinatura] ${this.settings.provider} ${req.label}: ` +

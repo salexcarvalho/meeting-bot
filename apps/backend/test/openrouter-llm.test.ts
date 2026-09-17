@@ -77,6 +77,9 @@ describe("OpenRouterLlm", () => {
   it("audita uso e custo sem o conteúdo", async () => {
     fetchMock.mockResolvedValueOnce(completion(VALID));
     await new OpenRouterLlm(settings, sleep).generate(request);
+    // a duração varia por execução: confere o tipo e tira do comparado
+    expect(typeof audits[0]?.detail.durationMs).toBe("number");
+    audits.forEach((a) => delete (a.detail as Record<string, unknown>).durationMs);
     expect(audits).toEqual([
       {
         kind: "external_llm",

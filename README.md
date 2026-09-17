@@ -174,6 +174,10 @@ A tela da reunião mostra as etapas ao vivo: Preparando agente, Conectando, Abri
 
 O mesmo link não recebe dois assistentes ao mesmo tempo.
 
+Na tela de login, o olho mostra a senha digitada e "Esqueceu sua senha?" explica o caminho (um
+administrador redefine em Configurações > Usuários; sozinho, use `npm run user:passwd`). Não há
+recuperação por e-mail: nada sai da máquina.
+
 O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. Não há sufixo: o nome precisa dizer que é a ata (ex.: "Ata do Sérgio"), e um nome sem "ata", "gravação" ou "transcrição" entra como "Ata de <nome>". Convidado anônimo não tem foto no Meet/Teams: aparecem as iniciais do nome. Com `BOT_CAMERA=true` o assistente liga uma câmera virtual com o avatar do agente (imagem parada), mas na chamada isso vira um quadro de vídeo.
 
 Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
@@ -186,6 +190,9 @@ Cada usuário tem as próprias configurações:
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar e gravação do nome falado.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
+- **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.
+  Vem do `audit_log`, é só leitura e não bloqueia geração. A assinatura não cobra por chamada: só
+  tokens. Cada um vê o consumo das reuniões que enxerga.
 
 ## Configuração principal (`.env`)
 

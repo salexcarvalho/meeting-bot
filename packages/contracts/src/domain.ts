@@ -380,6 +380,47 @@ export interface ImportResult {
   errors: { file: string; message: string }[];
 }
 
+// ---------- consumo de LLM (só leitura, vem do audit_log) ----------
+
+export interface LlmUsageGroup {
+  key: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  /** null quando ninguém cobrou por chamada (assinatura pessoal) */
+  costUsd: number | null;
+}
+
+export interface LlmUsageMeeting extends Omit<LlmUsageGroup, "key"> {
+  meetingId: string;
+  title: string;
+}
+
+export interface LlmUsageCall {
+  at: string;
+  label: string | null;
+  provider: string;
+  model: string | null;
+  meetingId: string | null;
+  meetingTitle: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  costUsd: number | null;
+  durationMs: number | null;
+}
+
+export interface LlmUsageReport {
+  /** AAAA-MM no fuso da aplicação */
+  month: string;
+  from: string;
+  to: string;
+  totals: LlmUsageGroup;
+  byProvider: LlmUsageGroup[];
+  byModel: LlmUsageGroup[];
+  byMeeting: LlmUsageMeeting[];
+  recent: LlmUsageCall[];
+}
+
 // ---------- corpos de requisição validados no backend ----------
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "data inválida");

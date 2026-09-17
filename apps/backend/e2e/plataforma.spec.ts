@@ -19,7 +19,7 @@ async function shot(page: Page, name: string) {
 async function login(page: Page, user: { username: string; password: string }) {
   await page.goto("/");
   await page.getByLabel("Usuário").fill(user.username);
-  await page.getByLabel("Senha").fill(user.password);
+  await page.getByLabel("Senha", { exact: true }).fill(user.password);
   await page.getByRole("button", { name: "Entrar" }).click();
   // desktop mostra a barra lateral; celular, o botão do menu
   const shell = page.getByRole("navigation", { name: "Principal" }).or(page.getByRole("button", { name: "Abrir menu" }));
@@ -105,6 +105,38 @@ test.describe.serial("plataforma multiusuário", () => {
     await expect(page).toHaveURL(/\/$/);
     const status = await page.evaluate(async () => (await fetch("/api/admin/users")).status);
     expect(status).toBe(403);
+  });
+
+  test("login: olho mostra a senha e o aviso de senha esquecida explica o caminho", async ({ page }) => {
+    await page.goto("/");
+    const senha = page.getByLabel("Senha", { exact: true });
+    await senha.fill("segredo-visivel");
+    await expect(senha).toHaveAttribute("type", "password");
+    await page.getByRole("button", { name: "Mostrar senha" }).click();
+    await expect(senha).toHaveAttribute("type", "text");
+    await page.getByRole("button", { name: "Esconder senha" }).click();
+    await expect(senha).toHaveAttribute("type", "password");
+
+    await page.getByRole("button", { name: "Esqueceu sua senha?" }).click();
+    await expect(page.getByRole("note")).toContainText("Configurações > Usuários");
+    await expect(page.getByRole("note")).toContainText("user:passwd");
+    await shot(page, "login-senha");
+  });
+
+  test("consumo de IA mostra o mês e fica vazio sem geração", async ({ page }) => {
+    await login(page, BIA);
+    await page.goto("/configuracoes?aba=consumo");
+    await expect(page.getByRole("heading", { name: "Consumo de IA" })).toBeVisible();
+    await expect(page.getByText("Nada gerado neste mês")).toBeVisible();
+    const usage = await page.evaluate(async () => {
+      const res = await fetch("/api/llm/usage");
+      return { status: res.status, body: (await res.json()) as { totals: { calls: number } } };
+    });
+    expect(usage.status).toBe(200);
+    expect(usage.body.totals.calls).toBe(0);
+    const invalido = await page.evaluate(async () => (await fetch("/api/llm/usage?month=2026-13")).status);
+    expect(invalido).toBe(400);
+    await shot(page, "config-consumo");
   });
 
   test("perfil, agente e identidade do assistente persistem", async ({ page }) => {
@@ -449,7 +481,7 @@ test.describe.serial("plataforma multiusuário", () => {
     await bia.getByRole("link", { name: "Reuniões", exact: true }).first().click();
     await expect(bia.getByRole("heading", { name: "Entrar" })).toBeVisible();
     await bia.getByLabel("Usuário").fill(BIA.username);
-    await bia.getByLabel("Senha").fill(BIA.password);
+    await bia.getByLabel("Senha", { exact: true }).fill(BIA.password);
     await bia.getByRole("button", { name: "Entrar" }).click();
     await expect(bia.getByRole("alert")).toContainText("desativado");
 

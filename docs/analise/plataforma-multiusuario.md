@@ -460,6 +460,14 @@ Typecheck e build também passaram.
 - Constituição 2.1.0. `BOT_IDENTITY_SUFFIX` deixou de existir. `recorderName` (`bot/identity.ts`, com testes) mantém nomes com "ata", "gravação", "record" ou "transcrição" e põe "Ata de" na frente dos outros; "Meu nome" vira "Ata de <nome>".
 - Importação `.ics` avisa quando o arquivo traz só a ocorrência do dia, sem a regra de repetição (`partialSeries`): o Outlook exportou a ocorrência, não a série. Decisão do usuário: só avisar, sem repetição criada no app.
 
+**2026-09-17 — consumo de IA e login:**
+
+- Referência pedida pelo usuário: o projeto Financeiro (Bussola) guarda `agent_runs` com tokens e custo, converte USD→BRL e bloqueia por orçamento mensal (`ensure_allowed`).
+- Decisões dele aqui: **só visualizar** (sem teto que bloqueie) e **sem tabela nova** — o `audit_log` já registra cada chamada.
+- `llm/usage.ts` + `GET /llm/usage` + aba "Consumo de IA": totais do mês, quebra por provedor, modelo e reunião, últimas 30 chamadas. Cada chamada passou a gravar também a duração. Visibilidade pelo `visibleMeetingsSql`: ninguém vê reunião alheia; chamadas sem reunião só para quem lê todas.
+- Login: olho para mostrar a senha e "Esqueceu sua senha?" explicando a redefinição pelo administrador ou por `npm run user:passwd` (não há e-mail nesta arquitetura).
+- O `scripts/e2e.mjs` passou a buildar o frontend: sem isso o E2E testava o `dist` antigo (foi o que mascarou a tela nova).
+
 **Ainda não feito:**
 
 - tela de compartilhamento (quando existir, revogar deve derrubar na hora as assinaturas do WebSocket; hoje a revalidação acontece a cada 30 s);

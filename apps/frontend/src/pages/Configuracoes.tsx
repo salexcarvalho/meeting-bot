@@ -4,6 +4,7 @@ import type { MeResponse } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
 import { PageHeader, SkeletonLines } from "../components/ui";
 import { AgentTab } from "./settings/AgentTab";
+import { ConsumoTab } from "./settings/ConsumoTab";
 import { DocumentationTab, MeetingsTab } from "./settings/MeetingsTab";
 import { ProfileTab } from "./settings/ProfileTab";
 
@@ -12,6 +13,7 @@ const TABS = [
   { key: "agente", label: "Meu agente" },
   { key: "reunioes", label: "Reuniões" },
   { key: "documentacao", label: "Documentação" },
+  { key: "consumo", label: "Consumo de IA" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -57,6 +59,7 @@ export function Configuracoes() {
         {me && tab === "agente" && <AgentTab me={me} setMe={setMe} />}
         {me && tab === "reunioes" && <MeetingsTab me={me} setMe={setMe} />}
         {me && tab === "documentacao" && <DocumentationTab me={me} setMe={setMe} />}
+        {me && tab === "consumo" && <ConsumoTab />}
       </div>
     </main>
   );

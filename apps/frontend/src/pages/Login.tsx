@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { AudioLines } from "lucide-react";
+import { AudioLines, Eye, EyeOff } from "lucide-react";
 import { api, errorMessage } from "../api";
 import type { Session } from "../session";
 
 export function Login({ onLogin }: { onLogin: (s: Session) => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -55,13 +57,43 @@ export function Login({ onLogin }: { onLogin: (s: Session) => void }) {
             </label>
             <label>
               Senha
-              <input name="password" type="password" autoComplete="current-password" required />
+              <span className="password-field">
+                <input
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="ghost password-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Esconder senha" : "Mostrar senha"}
+                  aria-pressed={showPassword}
+                  title={showPassword ? "Esconder senha" : "Mostrar senha"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
             </label>
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="primary block" disabled={busy}>
               {busy ? "Entrando…" : "Entrar"}
             </button>
           </form>
+          <button type="button" className="link auth-help-link" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp}>
+            Esqueceu sua senha?
+          </button>
+          {showHelp && (
+            <div className="auth-help small" role="note">
+              <p>
+                Não há recuperação por e-mail: nada sai desta máquina. Peça a um administrador para redefinir em
+                <strong> Configurações &gt; Usuários</strong>.
+              </p>
+              <p>Se você é o único administrador, redefina no servidor:</p>
+              <code>docker compose exec backend npm run user:passwd -- seu-usuario</code>
+            </div>
+          )}
         </div>
       </main>
     </div>

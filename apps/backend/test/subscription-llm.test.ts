@@ -125,6 +125,7 @@ describe("HostCliLlm", () => {
           promptTokens: 100,
           completionTokens: 20,
           cost: null,
+          durationMs: 1500,
         },
       },
     ]);
