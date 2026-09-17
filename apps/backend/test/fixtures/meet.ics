@@ -1,0 +1,16 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+BEGIN:VEVENT
+DTSTART:20260917T170000Z
+DTEND:20260917T173000Z
+DTSTAMP:20260916T120000Z
+ORGANIZER;CN=joao@exemplo.com:mailto:joao@exemplo.com
+UID:gcal-789@google.com
+ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;CN=joao@exemplo.com:mailto:joao@exemplo.com
+DESCRIPTION:Participe com o Google Meet: https://meet.google.com/xyz-abcd-efg\n\nSaiba mais sobre o Meet em: https://support.google.com/a/users/answer/9282720
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:Alinhamento Agenith
+END:VEVENT
+END:VCALENDAR

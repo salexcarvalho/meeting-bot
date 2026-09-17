@@ -1,0 +1,89 @@
+name: meeting-bot
+
+# Agente Local de Reuniões — serviços em container (Docker Engine nativo).
+# Alertas, captura de áudio e abertura de links rodam no host-agent (apps/host-agent).
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://meetingbot:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/meetingbot
+      WORKER_URL: http://worker-gpu:8000
+      OLLAMA_URL: http://ollama:11434
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    init: true
+    shm_size: "2gb" # Chromium (Modo Agente) precisa de /dev/shm generoso
+    ports:
+      # Só acessível na própria máquina. Em rede, use o profile "https" (Caddy).
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-3000}:3000"
+    volumes:
+      - botdata:/data
+    stop_grace_period: 40s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meetingbot
+      POSTGRES_USER: meetingbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetingbot -d meetingbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Transcrição (faster-whisper) e diarização (pyannote) locais. Sem porta publicada.
+  worker-gpu:
+    build: ./apps/worker-gpu
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-large-v3-turbo}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8_float16}
+      ASR_DEVICE: ${ASR_DEVICE:-cuda}
+      HF_TOKEN: ${HF_TOKEN:-}
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - botdata:/data:ro
+      - models:/models
+    restart: unless-stopped
+
+  # LLM local (LOCAL_ONLY). Modelos ficam no volume "ollama".
+  ollama:
+    image: ollama/ollama:0.32.14
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # HTTPS automático (Let's Encrypt). Ative com: docker compose --profile https up -d
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to backend:3000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  pgdata:
+  botdata:
+  models:
+  caddy-data:

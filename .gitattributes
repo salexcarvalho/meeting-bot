@@ -1,0 +1,2 @@
+# Convites de calendário usam CRLF (RFC 5545): o git não converte.
+*.ics -text

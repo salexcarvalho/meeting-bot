@@ -1,0 +1,12 @@
+.env
+node_modules/
+dist/
+.rtk/
+.playwright-mcp/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+test-results/
+playwright-report/

@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 300
+    },
+    "context": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "problem": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "alternatives": {
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "opcao": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "pros": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "contras": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "opcao",
+          "pros",
+          "contras"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "decision": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "consequences": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "risks": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 1000
+      }
+    }
+  },
+  "additionalProperties": false
+}

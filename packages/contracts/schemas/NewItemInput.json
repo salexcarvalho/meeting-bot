@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "decisao",
+        "decisao_arquitetural",
+        "pendencia",
+        "risco",
+        "requisito_funcional",
+        "requisito_nao_funcional",
+        "regra_negocio",
+        "restricao",
+        "premissa",
+        "pergunta_aberta",
+        "debito_tecnico"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 1000
+    },
+    "owner": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 120
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "due": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 120
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attributes": {
+      "type": "object",
+      "properties": {
+        "dependencia": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 300
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status_acao": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "aberta",
+                "concluida"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "motivacao": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "impacto": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sistema": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "categoria": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "arquitetura",
+                "seguranca",
+                "infraestrutura",
+                "prazo",
+                "integracao",
+                "dados",
+                "performance",
+                "escalabilidade",
+                "governanca"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "type",
+    "description"
+  ],
+  "additionalProperties": false
+}

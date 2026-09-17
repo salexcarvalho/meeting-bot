@@ -1,0 +1,20 @@
+# GPU NVIDIA para worker-gpu e ollama (precisa do NVIDIA Container Toolkit).
+# Ative com COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml no .env
+services:
+  worker-gpu:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

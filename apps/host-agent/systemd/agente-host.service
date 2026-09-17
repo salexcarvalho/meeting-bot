@@ -1,0 +1,18 @@
+[Unit]
+Description=Agente de Reuniões — host-agent (alertas e captura de áudio)
+Documentation=file://%h/Pessoal/meeting-bot/README.md
+PartOf=graphical-session.target
+After=graphical-session.target pipewire.service pipewire-pulse.service
+Wants=pipewire-pulse.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/agente-reunioes/venv/bin/agente-host
+Restart=on-failure
+RestartSec=5
+# Grava/fecha o spool com calma ao parar.
+TimeoutStopSec=20
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=graphical-session.target

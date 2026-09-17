@@ -1,0 +1,43 @@
+{
+  "name": "@meeting-bot/backend",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run",
+    "test:db": "node scripts/test-db.mjs",
+    "user:create": "node dist/cli/user.js create",
+    "user:passwd": "node dist/cli/user.js passwd",
+    "user:delete": "node dist/cli/user.js delete",
+    "user:list": "node dist/cli/user.js list",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "dependencies": {
+    "@meeting-bot/contracts": "0.3.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "multer": "^2.4.0",
+    "node-ical": "^0.27.2",
+    "pg": "^8.23.0",
+    "playwright": "1.63.0",
+    "ws": "^8.21.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

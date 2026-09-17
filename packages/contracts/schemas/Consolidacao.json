@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "resumo": {
+      "type": "string",
+      "maxLength": 1500
+    },
+    "duplicados": {
+      "maxItems": 40,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "manter": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "remover": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 12
+            }
+          }
+        },
+        "required": [
+          "manter",
+          "remover"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "resumo",
+    "duplicados"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "titulo": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "contexto": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "problema": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "alternativas": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "opcao": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "pros": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "contras": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "opcao",
+          "pros",
+          "contras"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "decisao": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "consequencias": {
+      "type": "string",
+      "maxLength": 3000
+    },
+    "riscos": {
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 600
+      }
+    }
+  },
+  "required": [
+    "titulo",
+    "contexto",
+    "problema",
+    "alternativas",
+    "decisao",
+    "consequencias",
+    "riscos"
+  ],
+  "additionalProperties": false
+}
