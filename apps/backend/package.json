@@ -1,6 +1,6 @@
 {
   "name": "@meeting-bot/backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "scripts": {
@@ -17,7 +17,7 @@
     "test:e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {
-    "@meeting-bot/contracts": "1.0.0",
+    "@meeting-bot/contracts": "1.0.1",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
