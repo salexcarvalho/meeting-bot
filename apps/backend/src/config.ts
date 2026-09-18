@@ -1,4 +1,5 @@
 import path from "path";
+import { recorderName } from "./bot/identity";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -121,18 +122,6 @@ function generationProvider(
 const llmExternal = externalLlm();
 const llmSubscriptions = subscriptionLlm(llmExternal.allowed);
 
-// Constituição, princípio II: o bot sempre se identifica como gravação automatizada.
-function botIdentitySuffix(): string {
-  const raw = (process.env.BOT_IDENTITY_SUFFIX ?? "assistente gravando").trim();
-  if (!/grava|record/i.test(raw)) {
-    throw new Error("BOT_IDENTITY_SUFFIX precisa deixar claro que é uma gravação (ex.: \"assistente gravando\").");
-  }
-  if (!/^[\p{L}\p{N} \-'._@]{3,30}$/u.test(raw)) {
-    throw new Error("BOT_IDENTITY_SUFFIX: use 3 a 30 letras, números, espaço, hífen, apóstrofo, ponto ou @.");
-  }
-  return raw;
-}
-
 function localOnly(): boolean {
   const raw = (process.env.LOCAL_ONLY ?? "true").toLowerCase();
   if (raw !== "true") {
@@ -156,8 +145,16 @@ export const config = {
 
   // Modo Agente (bot convidado)
   /** nome usado só quando o dono da reunião não existe mais */
-  botDisplayName: process.env.BOT_DISPLAY_NAME || "Ata Bot - gravando",
-  botIdentitySuffix: botIdentitySuffix(),
+  botDisplayName: recorderName(process.env.BOT_DISPLAY_NAME || "Ata Bot"),
+  /**
+   * Câmera virtual com o ícone do agente (imagem parada). Desligada por padrão: no Teams a
+   * câmera vira um quadro de vídeo, que parece apresentação (decisão do usuário em 2026-09-17).
+   */
+  botCamera: bool("BOT_CAMERA", false),
+  /** transcrição ao vivo do áudio que o assistente grava na chamada */
+  botLiveTranscription: bool("BOT_LIVE_TRANSCRIPTION", true),
+  /** silêncio que faz o assistente sair de uma reunião sem horário previsto */
+  botSilenceStopMs: int("BOT_SILENCE_STOP_MINUTES", 10) * 60_000,
   defaultAgentName: (process.env.DEFAULT_AGENT_NAME || "Assistente").trim().slice(0, 40),
   botJoinTimeoutMs: int("BOT_JOIN_TIMEOUT_SECONDS", 45) * 1000,
   fakeMicFile: process.env.FAKE_MIC_FILE || "/app/assets/silence.wav",
@@ -196,6 +193,8 @@ export const config = {
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || "30m",
   // Gerações pós-reunião e sob demanda: local ou OpenRouter (ao vivo é sempre local)
   generationProvider: generationProvider(llmExternal.allowed, llmSubscriptions),
+  /** geração automática com assinatura: quanto esperar o host-agent/CLI voltar antes de desistir */
+  subscriptionWaitMs: int("SUBSCRIPTION_WAIT_MINUTES", 30) * 60_000,
   externalLlm: llmExternal,
   subscriptionLlm: llmSubscriptions,
   liveExtractMinSpeechSeconds: int("LIVE_EXTRACT_MIN_SPEECH_SECONDS", 90),

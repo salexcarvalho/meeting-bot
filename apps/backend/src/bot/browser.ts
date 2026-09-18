@@ -1,7 +1,8 @@
 import { Browser, chromium, Page } from "playwright";
 import { config } from "../config";
 
-export async function launchBrowser(sinkName: string): Promise<{ browser: Browser; page: Page }> {
+/** `cameraFile`: cartão .y4m que a câmera falsa mostra (sem ele, a câmera fica desligada na reunião). */
+export async function launchBrowser(sinkName: string, cameraFile?: string | null): Promise<{ browser: Browser; page: Page }> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
@@ -22,6 +23,7 @@ export async function launchBrowser(sinkName: string): Promise<{ browser: Browse
       // padrão do Chromium seria um bipe).
       "--use-fake-device-for-media-stream",
       `--use-file-for-fake-audio-capture=${config.fakeMicFile}`,
+      ...(cameraFile ? [`--use-file-for-fake-video-capture=${cameraFile}`] : []),
       "--autoplay-policy=no-user-gesture-required",
       "--disable-blink-features=AutomationControlled",
       "--disable-dev-shm-usage",

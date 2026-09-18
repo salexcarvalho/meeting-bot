@@ -30,7 +30,8 @@ export function ImportIcs({ onImported }: { onImported: () => void }) {
     try {
       const r = await api<ImportResult>("/calendar/import", { method: "POST", form });
       setResult(r);
-      toast(summary(r), r.errors.length ? "error" : "info");
+      const aviso = r.partialSeries.length ? " — sem a repetição da série, veja abaixo" : "";
+      toast(summary(r) + aviso, r.errors.length ? "error" : "info");
       onImported();
     } catch (err) {
       toast(errorMessage(err), "error");
@@ -73,6 +74,14 @@ export function ImportIcs({ onImported }: { onImported: () => void }) {
       {result && (
         <p className="small muted" style={{ marginTop: 8 }}>
           Última importação: {summary(result)}
+          {result.partialSeries.length > 0 && (
+            <span style={{ display: "block", marginTop: 4 }}>
+              ⚠ {result.partialSeries.length === 1 ? "Uma reunião veio" : `${result.partialSeries.length} reuniões vieram`}{" "}
+              só com a ocorrência do dia, sem a repetição ({result.partialSeries.join(", ")}). No Outlook, abra a
+              reunião, escolha <strong>Toda a série</strong> e salve como iCalendar — assim a agenda recebe os
+              próximos 31 dias.
+            </span>
+          )}
           {result.errors.map((e) => (
             <span key={e.file} className="error-text" style={{ display: "block" }}>
               {e.file}: {e.message}

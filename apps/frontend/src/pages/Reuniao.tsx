@@ -75,7 +75,9 @@ const GENERATION_TEXT: Record<Generation["kind"], GenerateRequest> = {
 };
 
 const PROCESSING_STATUSES = ["queued", "transcribing", "generating_ata"];
-const LIVE_STATUSES = ["recording", "stopping"];
+const RECORDING_STATUSES = ["recording", "stopping"];
+// transcrição ao vivo: gravação no PC ou assistente dentro da chamada
+const LIVE_STATUSES = [...RECORDING_STATUSES, "in_call"];
 
 const WAITING_TEXT: Partial<Record<string, string>> = {
   scheduled: "No horário, o assistente entra na chamada e grava de dentro dela.",
@@ -270,7 +272,7 @@ export function Reuniao() {
   const local = m.source === "ics" || m.source === "manual";
   const idle = IDLE_STATUSES.includes(m.status) && !m.botActive;
   const hasAudio = detail.audio.some((a) => a.format !== "pcm_s16le_16k");
-  const showPanel = isLive || PROCESSING_STATUSES.includes(m.status) || Boolean(processing?.step);
+  const showPanel = RECORDING_STATUSES.includes(m.status) || PROCESSING_STATUSES.includes(m.status) || Boolean(processing?.step);
   const duration = m.startedAt ? minutesBetween(m.startedAt, m.endedAt ?? new Date().toISOString()) : null;
   const seek = hasAudio ? (channel: Segment["channel"], t: number) => players.current?.seek(channel, t) : undefined;
   const activeItems = items.filter((i) => i.reviewStatus !== "rejeitado").length;

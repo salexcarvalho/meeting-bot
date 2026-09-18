@@ -77,6 +77,7 @@ export class OpenRouterLlm implements LLMProvider {
         promptTokens: usage.prompt_tokens ?? null,
         completionTokens: usage.completion_tokens ?? null,
         cost: usage.cost ?? null,
+        durationMs: Date.now() - started,
       });
       console.log(
         `[llm-externo] ${req.label}: ${usage.prompt_tokens ?? "?"}+${usage.completion_tokens ?? "?"} tokens em ${((Date.now() - started) / 1000).toFixed(1)}s` +

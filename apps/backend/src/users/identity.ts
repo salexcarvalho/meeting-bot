@@ -1,7 +1,8 @@
 import type { IdentityChoice, UserProfile, UserSettings, AgentProfile } from "@meeting-bot/contracts";
-import { buildBotDisplayName } from "../bot/identity";
+import { buildBotDisplayName, type BotIdentity } from "../bot/identity";
 import { config } from "../config";
-import { getAgent, getProfile, getSettings } from "./repo";
+import { profileFilePath } from "./files";
+import { getAgent, getAgentFile, getProfile, getSettings } from "./repo";
 
 export function botDisplayNameFor(
   profile: Pick<UserProfile, "name">,
@@ -11,15 +12,20 @@ export function botDisplayNameFor(
 ): string {
   const mode = choice?.mode ?? settings.meetings.displayIdentity;
   const customName = choice?.mode === "custom" ? (choice.customName ?? null) : settings.meetings.customDisplayName;
-  return buildBotDisplayName(
-    { mode, userName: profile.name, agentName: agent.name, customName },
-    config.botIdentitySuffix,
-  );
+  return buildBotDisplayName({ mode, userName: profile.name, agentName: agent.name, customName });
 }
 
-/** Nome do bot para um usuário, com a escolha da reunião (se houver) sobre a configuração dele. */
-export async function resolveBotDisplayName(userId: string, choice?: IdentityChoice): Promise<string> {
-  const [profile, agent, settings] = await Promise.all([getProfile(userId), getAgent(userId), getSettings(userId)]);
-  if (!profile) return config.botDisplayName;
-  return botDisplayNameFor(profile, agent, settings, choice);
+/** Nome e ícone do bot para um usuário, com a escolha da reunião (se houver) sobre a configuração dele. */
+export async function resolveBotIdentity(userId: string, choice?: IdentityChoice): Promise<BotIdentity> {
+  const [profile, agent, settings, avatar] = await Promise.all([
+    getProfile(userId),
+    getAgent(userId),
+    getSettings(userId),
+    getAgentFile(userId, "avatar"),
+  ]);
+  if (!profile) return { name: config.botDisplayName, avatarPath: null };
+  return {
+    name: botDisplayNameFor(profile, agent, settings, choice),
+    avatarPath: avatar ? profileFilePath(userId, avatar) : null,
+  };
 }

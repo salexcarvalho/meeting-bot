@@ -117,9 +117,12 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 
 - No horário, o **assistente** entra em toda reunião com link do Teams/Meet que não esteja marcada
   "Não gravar", com o nome configurado e o sufixo "assistente gravando". Admita-o na sala de espera.
+  - Ele entra mudo e sem câmera; a reunião mostra as iniciais do nome (convidado não tem foto).
+  - A transcrição aparece ao vivo na página da reunião, com o agente arquiteto e o resumo corrente.
   - Ele espera a admissão até o fim previsto e não sai por estar sozinho antes dele.
-  - Sai quando a chamada acaba, quando fica sozinho (5 min) depois do fim previsto, em **Parar**
-    ou em 4 h.
+  - Sai quando a chamada acaba, quando fica sozinho na chamada por 5 min (contando as pessoas na
+    barra do Teams/Meet) depois do fim previsto, quando passa do fim previsto com 3 min sem som,
+    em **Parar** ou em 4 h. Sem horário previsto (assistente enviado à mão), sai com 10 min sem som.
   - Se o backend reiniciar no meio e ainda for horário, ele entra de novo.
   - O computador não grava sozinho (`AUTO_LOCAL_RECORDING=false`); reunião sem link não é gravada,
     a não ser por **Gravar agora**.
@@ -171,7 +174,11 @@ A tela da reunião mostra as etapas ao vivo: Preparando agente, Conectando, Abri
 
 O mesmo link não recebe dois assistentes ao mesmo tempo.
 
-O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. O sufixo `BOT_IDENTITY_SUFFIX` (padrão `assistente gravando`) é sempre incluído. Meet e Teams mostram só as iniciais de convidados, sem foto.
+Na tela de login, o olho mostra a senha digitada e "Esqueceu sua senha?" explica o caminho (um
+administrador redefine em Configurações > Usuários; sozinho, use `npm run user:passwd`). Não há
+recuperação por e-mail: nada sai da máquina.
+
+O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. Não há sufixo: o nome precisa dizer que é a ata (ex.: "Ata do Sérgio"), e um nome sem "ata", "gravação" ou "transcrição" entra como "Ata de <nome>". Convidado anônimo não tem foto no Meet/Teams: aparecem as iniciais do nome. Com `BOT_CAMERA=true` o assistente liga uma câmera virtual com o avatar do agente (imagem parada), mas na chamada isso vira um quadro de vídeo.
 
 Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 
@@ -183,6 +190,9 @@ Cada usuário tem as próprias configurações:
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar e gravação do nome falado.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
+- **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.
+  Vem do `audit_log`, é só leitura e não bloqueia geração. A assinatura não cobra por chamada: só
+  tokens. Cada um vê o consumo das reuniões que enxerga.
 
 ## Configuração principal (`.env`)
 
@@ -199,9 +209,11 @@ Cada usuário tem as próprias configurações:
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Resumo corrente e deduplicação |
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Regras de parada |
 | `AGENT_OWNER` | vazio | Usuário cujas reuniões o host-agent desta máquina grava (vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo; defina sempre que houver mais de um usuário) |
-| `BOT_IDENTITY_SUFFIX` | `assistente gravando` | Sufixo obrigatório no nome do assistente (precisa conter "grava" ou "record") |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Nome inicial do agente de cada usuário |
 | `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Limite para o assistente chegar à sala ou à espera |
+| `BOT_SILENCE_STOP_MINUTES` | 10 | Silêncio que encerra uma reunião sem horário previsto |
+| `BOT_CAMERA` | `false` | Câmera virtual com o avatar do agente (imagem parada; vira quadro de vídeo na chamada) |
+| `BOT_LIVE_TRANSCRIPTION` | `true` | Transcrição ao vivo do áudio gravado pelo assistente |
 | `MAX_AVATAR_KB` / `MAX_VOICE_KB` / `MAX_VOICE_SECONDS` | 2048 / 4096 / 60 | Limites dos arquivos de perfil |
 | `EGRESS_ALLOWLIST` | `ollama,worker-gpu,localhost,127.0.0.1` | Hosts que o backend pode acessar |
 
@@ -294,8 +306,10 @@ Regras:
   reuniões de outra pessoa nunca usam o seu plano.
 - O diálogo mostra por que a opção está indisponível (host-agent desligado, CLI sem login,
   reunião de outra pessoa).
-- Na análise automática, se a assinatura não estiver disponível, a ata sai do modelo local e o
-  aviso final diz o motivo.
+- Na análise automática, se a assinatura estiver fora por um tempo (host-agent reiniciando, CLI
+  sem login), a reunião espera até `SUBSCRIPTION_WAIT_MINUTES` (30) com o aviso "Aguardando a
+  assinatura". Se não voltar, fica com erro e a transcrição salva; a ata sai pelo **Gerar ata**.
+  Nunca cai no modelo local por isso. Só reunião de outra pessoa usa o modelo local.
 - O CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
   temporária, com o texto por stdin. Consome o limite do seu plano (não tem custo por uso).
 - Cada chamada fica em `audit_log` (`external_llm`, com tokens), sem conteúdo.
@@ -308,6 +322,13 @@ Não exponha a porta 3000 sem TLS. Com o Caddy incluído:
 # .env: DOMAIN=ata.suaempresa.com.br, COOKIE_SECURE=true, TRUST_PROXY=1
 docker compose --profile https up -d
 ```
+
+### Servidor de teste (VPS com Dokploy)
+
+`docker-compose.vps.yml` sobe a mesma aplicação num servidor, sem GPU e sem desktop: a transcrição
+final vai pelo OpenRouter, a ata e os ADRs pela sua assinatura do Claude (container `agent-cli`) e
+quem grava é o assistente dentro da chamada — funciona com o seu computador desligado. Passo a
+passo, limites e cópia dos dados: [`docs/vps-dokploy.md`](docs/vps-dokploy.md).
 
 ## Desenvolvimento
 

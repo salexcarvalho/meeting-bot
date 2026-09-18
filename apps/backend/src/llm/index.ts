@@ -80,22 +80,32 @@ export function generationLabel(provider: LlmChoice): string {
   return `local:${config.ollamaModel}`;
 }
 
+export interface SubscriptionBlock {
+  reason: string;
+  /** passa sozinho (host-agent reiniciando, CLI se preparando): vale esperar */
+  transient: boolean;
+}
+
 /**
  * Por que a assinatura não pode gerar para uma reunião deste dono agora (null = pode).
  * A assinatura é pessoal: só vale para as reuniões do dono do host-agent.
  */
-export async function subscriptionUnavailable(choice: SubscriptionLlm, meetingOwnerId: string | null): Promise<string | null> {
+export async function subscriptionBlock(choice: SubscriptionLlm, meetingOwnerId: string | null): Promise<SubscriptionBlock | null> {
   if (!config.externalLlm.allowed || !config.subscriptionLlm[choice].enabled) {
-    return `${choice} desabilitado no .env.`;
+    return { reason: `${choice} desabilitado no .env.`, transient: false };
   }
   const owner = await hostAgentOwner();
   if (!owner || owner.id !== meetingOwnerId) {
-    return "A assinatura é pessoal do dono do host-agent: vale só para as reuniões dele.";
+    return { reason: "A assinatura é pessoal do dono do host-agent: vale só para as reuniões dele.", transient: false };
   }
   const status = hostAgentCli(choice);
-  if (!status) return "O host-agent está desligado nesta máquina.";
-  if (!status.available) return status.reason ?? "CLI indisponível no host-agent.";
+  if (!status) return { reason: "O host-agent está desligado nesta máquina.", transient: true };
+  if (!status.available) return { reason: status.reason ?? "CLI indisponível no host-agent.", transient: true };
   return null;
+}
+
+export async function subscriptionUnavailable(choice: SubscriptionLlm, meetingOwnerId: string | null): Promise<string | null> {
+  return (await subscriptionBlock(choice, meetingOwnerId))?.reason ?? null;
 }
 
 /** Opções para a interface; `ownerId` = dono da reunião (ou quem pergunta, na sessão). */
@@ -136,17 +146,50 @@ export function parseLlmChoice(value: unknown): { ok: true; value: LlmChoice } |
   return { ok: false, error: "Opção de modelo inválida." };
 }
 
+export class SubscriptionWaitError extends Error {}
+
+export interface AutomaticProviderOptions {
+  /** quanto esperar a assinatura voltar (host-agent reiniciando); 0 = não espera */
+  waitMs?: number;
+  pollMs?: number;
+  /** chamado uma vez, quando a espera começa */
+  onWait?: (reason: string) => void;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
 /**
- * Provedor da geração automática (sem escolha na interface). Se o padrão é uma assinatura que não
- * serve para esta reunião (host-agent desligado, reunião de outra pessoa), gera no modelo local:
- * nunca manda para fora sem a condição atendida.
+ * Provedor da geração automática (sem escolha na interface). Com uma assinatura como padrão
+ * (decisão do usuário em 2026-09-17: "gerar sempre com o Claude"):
+ * - indisponível por um tempo (host-agent reiniciando, CLI se preparando): espera; se não voltar,
+ *   falha com erro claro, sem cair no modelo local;
+ * - não serve para esta reunião (reunião de outra pessoa): gera no modelo local, porque a
+ *   assinatura é pessoal e nada vai para fora sem a condição atendida.
  */
-export async function automaticProvider(meetingOwnerId: string | null): Promise<{ provider: LlmChoice; note: string | null }> {
+export async function automaticProvider(
+  meetingOwnerId: string | null,
+  opts: AutomaticProviderOptions = {},
+): Promise<{ provider: LlmChoice; note: string | null }> {
   const preferred = config.generationProvider;
   if (!isSubscription(preferred)) return { provider: preferred, note: null };
-  const reason = await subscriptionUnavailable(preferred, meetingOwnerId);
-  if (!reason) return { provider: preferred, note: null };
-  return { provider: "local", note: `gerado no modelo local (${preferred} indisponível: ${reason})` };
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const deadline = now() + (opts.waitMs ?? 0);
+  let block = await subscriptionBlock(preferred, meetingOwnerId);
+  if (block?.transient && now() < deadline) opts.onWait?.(block.reason);
+  while (block?.transient && now() < deadline) {
+    await sleep(opts.pollMs ?? 5000);
+    block = await subscriptionBlock(preferred, meetingOwnerId);
+  }
+  if (!block) return { provider: preferred, note: null };
+  if (block.transient) {
+    const minutes = Math.round((opts.waitMs ?? 0) / 60_000);
+    throw new SubscriptionWaitError(
+      `${preferred} indisponível${minutes ? ` há ${minutes} min` : ""} (${block.reason}). ` +
+        `A transcrição está salva: use "Gerar ata" quando ele voltar.`,
+    );
+  }
+  return { provider: "local", note: `gerado no modelo local (${preferred} indisponível: ${block.reason})` };
 }
 
 // Libera a VRAM antes de cargas pesadas (diarização). Entra na fila para não

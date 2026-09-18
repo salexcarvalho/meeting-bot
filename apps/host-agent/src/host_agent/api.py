@@ -24,8 +24,8 @@ class BackendApi:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def heartbeat(self, capture: dict | None, llm: dict | None = None) -> dict | None:
-        body: dict = {"version": __version__, "capture": capture}
+    async def heartbeat(self, capture: dict | None, llm: dict | None = None, mode: str = "full") -> dict | None:
+        body: dict = {"version": __version__, "capture": capture, "mode": mode}
         if llm:
             body["llm"] = llm
         try:

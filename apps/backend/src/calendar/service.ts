@@ -55,11 +55,14 @@ function sameData(row: MeetingRow, o: Occurrence): boolean {
 }
 
 export async function importIcs(files: { name: string; text: string }[], userId: string): Promise<ImportResult> {
-  const result: ImportResult = { created: 0, updated: 0, cancelled: 0, unchanged: 0, ignored: 0, errors: [] };
+  const result: ImportResult = {
+    created: 0, updated: 0, cancelled: 0, unchanged: 0, ignored: 0, partialSeries: [], errors: [],
+  };
   const projects = await listProjectMatchers();
   const range = importRange();
   const now = Date.now();
   const touched = new Set<string>();
+  const partialSeries = new Set<string>();
 
   for (const file of files) {
     let parsed;
@@ -70,6 +73,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
       continue;
     }
     result.ignored += parsed.ignored;
+    parsed.partialSeries.forEach((title) => partialSeries.add(title));
 
     await withTransaction(async (client) => {
       for (const o of parsed.occurrences) {
@@ -144,6 +148,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
   }
 
   touched.forEach(emitMeetingChanged);
+  result.partialSeries = [...partialSeries].slice(0, 10);
   return result;
 }
 

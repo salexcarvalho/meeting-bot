@@ -6,10 +6,15 @@ import { ChildProcessWithoutNullStreams } from "child_process";
 import { config } from "../config";
 import { markEnded, markStarted, setAudioPath, setMeetingStatus } from "../db";
 import { enqueueProcessing } from "../pipeline";
+import { closeLiveSessions, liveSession } from "../recording/liveSession";
+import { dropRuntime } from "../recording/runtime";
 import { createSink, removeSink, startRecording, stopRecording } from "./audio";
 import { launchBrowser } from "./browser";
+import { createCameraCard, type CameraCard } from "./card";
+import type { BotIdentity } from "./identity";
+import { LeaveDecider } from "./leave";
 import { drivers } from "./platforms";
-import { JoinError } from "./join";
+import { JoinError, type JoinResult } from "./join";
 import { activeBots as active, removeBot, setBotStage } from "./state";
 
 export { activeBotCount, isBotActive } from "./state";
@@ -21,8 +26,11 @@ export function screenshotPath(meetingId: string): string {
   return path.join(debugDir, `${meetingId}.png`);
 }
 
+/** Tentativas de religar a câmera (o ícone) na chamada; depois disso segue sem ela. */
+const CAMERA_RETRIES = 3;
+
 export interface BotLaunch {
-  displayName: string;
+  identity: BotIdentity;
   urlKey: string;
   /** Date.now() de quando o pedido chegou, para medir cada etapa */
   requestedAt: number;
@@ -38,7 +46,7 @@ export function startBot(meetingId: string, url: string, platform: "meet" | "tea
     abort,
     done: Promise.resolve(),
     urlKey: launch.urlKey,
-    displayName: launch.displayName,
+    displayName: launch.identity.name,
     requestedAt: launch.requestedAt,
     stage: "preparing" as const,
     stageAt: launch.requestedAt,
@@ -82,6 +90,23 @@ async function screenshot(page: Page, meetingId: string): Promise<void> {
 
 class BotError extends Error {}
 
+// Som na chamada (PCM s16le): amostra esparsa, só para separar silêncio de fala.
+const SOUND_RMS = 250;
+
+function hasSound(pcm: Buffer): boolean {
+  const samples = pcm.length >> 1;
+  if (!samples) return false;
+  const step = Math.max(1, Math.floor(samples / 400));
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < samples; i += step) {
+    const v = pcm.readInt16LE(i * 2);
+    sum += v * v;
+    count++;
+  }
+  return Math.sqrt(sum / count) >= SOUND_RMS;
+}
+
 async function runBot(
   meetingId: string,
   url: string,
@@ -89,7 +114,7 @@ async function runBot(
   launch: BotLaunch,
   signal: AbortSignal,
 ) {
-  const { displayName } = launch;
+  const { identity } = launch;
   const driver = drivers[platform];
   const log = (msg: string) => console.log(`[bot ${meetingId}] ${msg}`);
   const sinkName = `mb_${meetingId.replace(/-/g, "").slice(0, 16)}`;
@@ -101,22 +126,31 @@ async function runBot(
   let sinkModule: string | null = null;
   let browser: Browser | null = null;
   let page: Page | null = null;
+  let card: CameraCard | null = null;
   let recorder: ChildProcessWithoutNullStreams | null = null;
   let failure: string | null = null;
 
   try {
+    // Sem ícone cadastrado, a câmera fica desligada (a reunião mostra as iniciais).
+    if (config.botCamera && identity.avatarPath) {
+      card = await createCameraCard(identity.avatarPath).catch((err) => {
+        log(`ícone do agente não virou imagem da câmera; entra sem ela: ${(err as Error).message}`);
+        return null;
+      });
+    }
     sinkModule = await createSink(sinkName);
     setBotStage(meetingId, "launching");
-    ({ browser, page } = await launchBrowser(sinkName));
+    ({ browser, page } = await launchBrowser(sinkName, card?.file));
     if (signal.aborted) throw new BotError("Cancelado antes de entrar na reunião.");
 
-    log(`entrando (${platform}) como "${displayName}"`);
+    log(`entrando (${platform}) como "${identity.name}"${card ? " com o ícone na câmera" : ""}`);
     setBotStage(meetingId, "opening");
+    let joined: JoinResult;
     try {
-      await driver.join(
+      joined = await driver.join(
         page,
         url,
-        displayName,
+        { name: identity.name, camera: card !== null },
         {
           timeoutMs: config.botJoinTimeoutMs,
           signal,
@@ -163,17 +197,30 @@ async function runBot(
       await sleep(1000, signal);
     }
 
-    log("na call, gravando");
+    log(`na call, gravando (câmera ${joined.camera ? "com o ícone" : "desligada"})`);
     setBotStage(meetingId, "in_call");
-    recorder = startRecording(sinkName, audioPath);
+    const live = config.botLiveTranscription ? liveSession(meetingId, "mixed") : null;
+    // O mesmo PCM serve para a transcrição ao vivo e para saber se ainda há som na chamada.
+    let lastSoundAt = Date.now();
+    recorder = startRecording(sinkName, audioPath, (pcm) => {
+      if (hasSound(pcm)) lastSoundAt = Date.now();
+      live?.push(pcm);
+    });
     await setAudioPath(meetingId, audioPath);
     await markStarted(meetingId);
     await driver.ensureMuted(page);
     await screenshot(page, meetingId);
 
     const startedAt = Date.now();
+    const decider = new LeaveDecider({
+      aloneTimeoutMs: config.aloneTimeoutMs,
+      silenceAfterEndMs: config.silenceStopMs,
+      silenceNoScheduleMs: config.botSilenceStopMs,
+      maxMeetingMs: config.maxMeetingMs,
+      stayUntil: launch.stayUntil?.getTime() ?? null,
+    });
     let missingChecks = 0;
-    let aloneSince: number | null = null;
+    let cameraRetries = 0;
     while (true) {
       await sleep(5000, signal);
       if (signal.aborted) {
@@ -188,37 +235,43 @@ async function runBot(
         log("página fechada");
         break;
       }
-      if (Date.now() - startedAt > config.maxMeetingMs) {
-        log("duração máxima atingida");
-        break;
-      }
-
       missingChecks = (await driver.isInCall(page)) ? 0 : missingChecks + 1;
       if (missingChecks >= 2) {
         log("call terminou (controles sumiram)");
         break;
       }
 
-      if (await driver.isAlone(page)) {
-        aloneSince ??= Date.now();
-        const mayLeave = Date.now() >= (launch.stayUntil?.getTime() ?? 0);
-        if (mayLeave && Date.now() - aloneSince > config.aloneTimeoutMs) {
-          log("sozinho na call, saindo");
-          break;
-        }
-      } else {
-        aloneSince = null;
+      const [ended, participants, aloneText] = await Promise.all([
+        driver.hasEnded(page).catch(() => false),
+        driver.participantCount(page).catch(() => null),
+        driver.isAlone(page).catch(() => false),
+      ]);
+      const leave = decider.check({ now: Date.now(), startedAt, ended, participants, aloneText, lastSoundAt });
+      if (leave) {
+        log(`saindo: ${leave}`);
+        break;
       }
+
+      // O ícone some se a câmera cair: religa algumas vezes (o aviso de gravação continua no nome).
+      if (joined.camera && cameraRetries < CAMERA_RETRIES && (await driver.cameraState(page).catch(() => null)) === "off") {
+        cameraRetries++;
+        log("câmera desligada na chamada; religando o ícone");
+        await driver.setCamera(page, true).catch(() => {});
+      }
+
     }
   } catch (err) {
     failure = err instanceof BotError ? err.message : `Erro no bot: ${(err as Error).message}`;
     console.error(`[bot ${meetingId}]`, err);
   } finally {
     if (recorder) await stopRecording(recorder);
+    closeLiveSessions(meetingId);
+    dropRuntime(meetingId);
     if (page && !page.isClosed()) {
       await leaveCall(page);
     }
     await browser?.close().catch(() => {});
+    await card?.dispose().catch(() => {});
     if (sinkModule) await removeSink(sinkModule);
     await markEnded(meetingId);
   }

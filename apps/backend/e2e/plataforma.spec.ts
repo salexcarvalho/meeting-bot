@@ -19,7 +19,7 @@ async function shot(page: Page, name: string) {
 async function login(page: Page, user: { username: string; password: string }) {
   await page.goto("/");
   await page.getByLabel("Usuário").fill(user.username);
-  await page.getByLabel("Senha").fill(user.password);
+  await page.getByLabel("Senha", { exact: true }).fill(user.password);
   await page.getByRole("button", { name: "Entrar" }).click();
   // desktop mostra a barra lateral; celular, o botão do menu
   const shell = page.getByRole("navigation", { name: "Principal" }).or(page.getByRole("button", { name: "Abrir menu" }));
@@ -107,6 +107,38 @@ test.describe.serial("plataforma multiusuário", () => {
     expect(status).toBe(403);
   });
 
+  test("login: olho mostra a senha e o aviso de senha esquecida explica o caminho", async ({ page }) => {
+    await page.goto("/");
+    const senha = page.getByLabel("Senha", { exact: true });
+    await senha.fill("segredo-visivel");
+    await expect(senha).toHaveAttribute("type", "password");
+    await page.getByRole("button", { name: "Mostrar senha" }).click();
+    await expect(senha).toHaveAttribute("type", "text");
+    await page.getByRole("button", { name: "Esconder senha" }).click();
+    await expect(senha).toHaveAttribute("type", "password");
+
+    await page.getByRole("button", { name: "Esqueceu sua senha?" }).click();
+    await expect(page.getByRole("note")).toContainText("Configurações > Usuários");
+    await expect(page.getByRole("note")).toContainText("user:passwd");
+    await shot(page, "login-senha");
+  });
+
+  test("consumo de IA mostra o mês e fica vazio sem geração", async ({ page }) => {
+    await login(page, BIA);
+    await page.goto("/configuracoes?aba=consumo");
+    await expect(page.getByRole("heading", { name: "Consumo de IA" })).toBeVisible();
+    await expect(page.getByText("Nada gerado neste mês")).toBeVisible();
+    const usage = await page.evaluate(async () => {
+      const res = await fetch("/api/llm/usage");
+      return { status: res.status, body: (await res.json()) as { totals: { calls: number } } };
+    });
+    expect(usage.status).toBe(200);
+    expect(usage.body.totals.calls).toBe(0);
+    const invalido = await page.evaluate(async () => (await fetch("/api/llm/usage?month=2026-13")).status);
+    expect(invalido).toBe(400);
+    await shot(page, "config-consumo");
+  });
+
   test("perfil, agente e identidade do assistente persistem", async ({ page }) => {
     await login(page, ANA);
     await page.getByRole("link", { name: "Configurações" }).click();
@@ -134,10 +166,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("radio", { name: "Nome personalizado" }).check({ force: true });
     await expect(page.getByRole("button", { name: "Salvar" })).toBeEnabled();
     await page.getByRole("textbox", { name: "Nome personalizado" }).fill("Ata <da> Ana");
-    await expect(page.getByText("Vai aparecer como")).toContainText("Ata da Ana - assistente gravando");
+    await expect(page.getByText("Vai aparecer como")).toContainText("Ata da Ana");
     await page.getByRole("radio", { name: "Nome do agente" }).check({ force: true });
-    await expect(page.getByText("Vai aparecer como")).toContainText("Orion - assistente gravando");
-    await expect(page.getByText("Hoje:")).toContainText("Orion - assistente gravando");
+    await expect(page.getByText("Vai aparecer como")).toContainText("Ata de Orion");
+    await expect(page.getByText("Hoje:")).toContainText("Ata de Orion");
     await shot(page, "config-reunioes");
 
     // recarregar mantém tudo
@@ -172,7 +204,7 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, ANA);
     await page.getByRole("link", { name: "Reuniões", exact: true }).first().click();
     const form = page.locator("form", { has: page.getByRole("heading", { name: /Modo Agente/ }) });
-    await expect(form.getByText("Vai aparecer como")).toContainText("Orion - assistente gravando");
+    await expect(form.getByText("Vai aparecer como")).toContainText("Ata de Orion");
     await form.getByLabel("Link do Google Meet ou Teams").fill("https://meet.google.com/e2e-abcd-efg");
     await form.getByRole("textbox", { name: "Título", exact: true }).fill("Reunião com assistente");
 
@@ -189,7 +221,7 @@ test.describe.serial("plataforma multiusuário", () => {
     expect(navigatedMs).toBeLessThan(5000);
 
     await expect(page.getByRole("heading", { name: "Reunião com assistente" })).toBeVisible();
-    await expect(page.getByText("assistente: Orion - assistente gravando")).toBeVisible();
+    await expect(page.getByText("assistente: Ata de Orion")).toBeVisible();
     // Sem PulseAudio no E2E o assistente falha logo na preparação, com mensagem clara.
     await expect(page.getByText(/Erro no bot|pactl/)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Enviar assistente de novo" })).toBeVisible();
@@ -449,7 +481,7 @@ test.describe.serial("plataforma multiusuário", () => {
     await bia.getByRole("link", { name: "Reuniões", exact: true }).first().click();
     await expect(bia.getByRole("heading", { name: "Entrar" })).toBeVisible();
     await bia.getByLabel("Usuário").fill(BIA.username);
-    await bia.getByLabel("Senha").fill(BIA.password);
+    await bia.getByLabel("Senha", { exact: true }).fill(BIA.password);
     await bia.getByRole("button", { name: "Entrar" }).click();
     await expect(bia.getByRole("alert")).toContainText("desativado");
 

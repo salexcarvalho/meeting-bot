@@ -375,7 +375,50 @@ export interface ImportResult {
   cancelled: number;
   unchanged: number;
   ignored: number;
+  /** Reuniões que vieram só com a ocorrência do dia, sem a regra de repetição da série. */
+  partialSeries: string[];
   errors: { file: string; message: string }[];
+}
+
+// ---------- consumo de LLM (só leitura, vem do audit_log) ----------
+
+export interface LlmUsageGroup {
+  key: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  /** null quando ninguém cobrou por chamada (assinatura pessoal) */
+  costUsd: number | null;
+}
+
+export interface LlmUsageMeeting extends Omit<LlmUsageGroup, "key"> {
+  meetingId: string;
+  title: string;
+}
+
+export interface LlmUsageCall {
+  at: string;
+  label: string | null;
+  provider: string;
+  model: string | null;
+  meetingId: string | null;
+  meetingTitle: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  costUsd: number | null;
+  durationMs: number | null;
+}
+
+export interface LlmUsageReport {
+  /** AAAA-MM no fuso da aplicação */
+  month: string;
+  from: string;
+  to: string;
+  totals: LlmUsageGroup;
+  byProvider: LlmUsageGroup[];
+  byModel: LlmUsageGroup[];
+  byMeeting: LlmUsageMeeting[];
+  recent: LlmUsageCall[];
 }
 
 // ---------- corpos de requisição validados no backend ----------
@@ -450,6 +493,8 @@ export type CliStatus = z.infer<typeof CliStatusInput>;
 
 export const HeartbeatInput = z.object({
   version: z.string().max(40),
+  /** "llm" = agente sem desktop (container do servidor): só executa gerações, não grava */
+  mode: z.enum(["full", "llm"]).optional(),
   /** CLIs de assinatura que o host-agent consegue executar */
   llm: z.object({ claude: CliStatusInput.optional(), codex: CliStatusInput.optional() }).optional(),
   capture: z

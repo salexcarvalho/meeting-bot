@@ -43,13 +43,14 @@ import {
 import { enqueueProcessing, isProcessing } from "./pipeline";
 import { adrLockReason, getItem, listItems } from "./items/service";
 import { generationLabel, isSubscription, llmOptions, parseLlmChoice, subscriptionUnavailable } from "./llm";
+import { currentMonth, llmUsage } from "./llm/usage";
 import { audit } from "./security/audit";
 import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBot } from "./bot/runner";
 import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
 import { detectPlatform } from "./bot/link";
 import { botForUrl, botUrlKey, releaseBotUrl, reserveBotUrl } from "./bot/state";
 import { meetingAccess, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
-import { resolveBotDisplayName } from "./users/identity";
+import { resolveBotIdentity } from "./users/identity";
 import { getAgent, getProfile } from "./users/repo";
 import type { User } from "./types";
 import { toMeetingSummary } from "./meetings/summary";
@@ -232,6 +233,19 @@ export function buildRouter(): Router {
     }),
   );
 
+  // Consumo de LLM do mês (só leitura, agregado do audit_log; cada um vê o que enxerga).
+  router.get(
+    "/llm/usage",
+    wrap(async (req, res) => {
+      const month = typeof req.query.month === "string" && req.query.month ? req.query.month : currentMonth();
+      try {
+        res.json(await llmUsage(req.user!, month));
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
+    }),
+  );
+
   // Toda rota /meetings/:id/* passa por aqui: dono, compartilhamento ou 404 (authz/index.ts).
   router.param(
     "id",
@@ -306,7 +320,7 @@ export function buildRouter(): Router {
             error: `Já existem ${activeBotCount() - 1} bots em reunião (limite ${config.maxConcurrentBots}). Encerre um antes.`,
           });
         }
-        const displayName = await resolveBotDisplayName(req.user!.id, identity);
+        const botIdentity = await resolveBotIdentity(req.user!.id, identity);
         const id = await createMeeting({
           title: cleanTitle(req.body?.title, "Reunião sem título"),
           platform: target.platform,
@@ -314,9 +328,9 @@ export function buildRouter(): Router {
           status: "joining",
           createdBy: req.user!.id,
           source: "bot",
-          botDisplayName: displayName,
+          botDisplayName: botIdentity.name,
         });
-        startBot(id, target.url, target.platform, { displayName, urlKey, requestedAt });
+        startBot(id, target.url, target.platform, { identity: botIdentity, urlKey, requestedAt });
         const meeting = await getMeeting(id);
         console.log(`[bot ${id}] pedido aceito em ${Date.now() - requestedAt} ms`);
         res.status(201).json(toMeetingSummary(meeting!));

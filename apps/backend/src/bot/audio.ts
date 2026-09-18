@@ -24,7 +24,15 @@ export async function removeSink(moduleId: string): Promise<void> {
   );
 }
 
-export function startRecording(sinkName: string, outPath: string): ChildProcessWithoutNullStreams {
+/**
+ * Grava o sink em Opus e, com `onPcm`, entrega a mesma captura em PCM s16le 16 kHz mono
+ * (saída padrão do ffmpeg) para a transcrição ao vivo.
+ */
+export function startRecording(
+  sinkName: string,
+  outPath: string,
+  onPcm?: (pcm: Buffer) => void,
+): ChildProcessWithoutNullStreams {
   // Opus mono 16kHz/32kbps: ~15MB por hora, suficiente pra fala.
   const ffmpeg = spawn("ffmpeg", [
     "-hide_banner",
@@ -41,7 +49,17 @@ export function startRecording(sinkName: string, outPath: string): ChildProcessW
     // Grava no disco a cada pacote: dá pra ouvir o parcial durante a call.
     "-flush_packets", "1",
     outPath,
+    ...(onPcm ? ["-ac", "1", "-ar", "16000", "-f", "s16le", "-flush_packets", "1", "pipe:1"] : []),
   ]);
+  // O stdout sempre é lido: pipe cheio travaria a gravação do arquivo.
+  ffmpeg.stdout.on("data", (data: Buffer) => {
+    if (!onPcm) return;
+    try {
+      onPcm(data);
+    } catch (err) {
+      console.error(`[ffmpeg ${sinkName}] transcrição ao vivo:`, err);
+    }
+  });
   ffmpeg.stderr.on("data", (data) => console.error(`[ffmpeg ${sinkName}] ${String(data).trim()}`));
   return ffmpeg;
 }

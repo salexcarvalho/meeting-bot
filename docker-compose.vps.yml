@@ -1,0 +1,71 @@
+name: meeting-bot
+
+# Versão de teste no servidor (VPS com Dokploy). Diferenças para o docker-compose.yml da máquina
+# do Sérgio (decisões do usuário em 2026-09-17):
+# - sem GPU: a transcrição final vai para o ASR externo (Deepgram via OpenRouter) e não há passe
+#   ao vivo (BOT_LIVE_TRANSCRIPTION=false; o ao vivo é sempre local, constituição 1.1.0);
+# - ata e ADR pela assinatura do Claude, executada no serviço "agent-cli" (o backend nunca vê o
+#   login), com AGENTE_MODE=llm: sem alertas, sem captura de áudio;
+# - quem grava é o assistente dentro da chamada; o servidor não tem desktop para gravar;
+# - a porta não é publicada: o Traefik do Dokploy entra pelo domínio configurado na interface.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://meetingbot:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/meetingbot
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+      PORT: "3000"
+      # atrás do proxy do Dokploy: cookie seguro e IP real
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    init: true
+    shm_size: "2gb" # Chromium (assistente na chamada)
+    expose:
+      - "3000"
+    volumes:
+      - botdata:/data
+    stop_grace_period: 40s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meetingbot
+      POSTGRES_USER: meetingbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetingbot -d meetingbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Executa o CLI da assinatura (login com "docker compose exec agent-cli claude login").
+  agent-cli:
+    build: ./apps/host-agent
+    environment:
+      AGENTE_MODE: llm
+      AGENTE_LLM_ENABLED: claude
+      AGENTE_BACKEND_URL: http://backend:3000
+      AGENT_TOKEN: ${AGENT_TOKEN:?defina AGENT_TOKEN no .env}
+      TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - clihome:/home/agente
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  botdata:
+  clihome:

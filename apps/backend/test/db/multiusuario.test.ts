@@ -14,12 +14,12 @@ vi.mock("../../src/bot/runner", async (importOriginal) => {
   const state = await import("../../src/bot/state");
   return {
     ...original,
-    startBot: (meetingId: string, _url: string, _platform: string, launch: { displayName: string; urlKey: string; requestedAt: number }) => {
+    startBot: (meetingId: string, _url: string, _platform: string, launch: { identity: { name: string }; urlKey: string; requestedAt: number }) => {
       state.activeBots.set(meetingId, {
         abort: new AbortController(),
         done: Promise.resolve(),
         urlKey: launch.urlKey,
-        displayName: launch.displayName,
+        displayName: launch.identity.name,
         requestedAt: launch.requestedAt,
         stage: "preparing",
         stageAt: launch.requestedAt,
@@ -427,15 +427,15 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       });
       expect(agent.status).toBe(200);
       expect(agent.json.agent).toMatchObject({ name: "Orion", tone: "direto", priorityTechnologies: ["Kafka", "PostgreSQL"] });
-      expect(agent.json.botDisplayName).toBe("Orion - assistente gravando");
+      expect(agent.json.botDisplayName).toBe("Ata de Orion");
 
       const settings = await call("mu-ana", "PATCH", "/me/settings", { meetings: { displayIdentity: "user" } });
-      expect(settings.json.botDisplayName).toBe("Ana - assistente gravando");
+      expect(settings.json.botDisplayName).toBe("Ata de Ana");
       expect((await call("mu-ana", "PATCH", "/me/settings", { meetings: { displayIdentity: "custom" } })).status).toBe(400);
       expect((await call("mu-ana", "PATCH", "/me/settings", { meetings: { hack: 1 } })).status).toBe(400);
 
       const preview = await call("mu-ana", "POST", "/me/identity-preview", { mode: "custom", customName: "Sala <3>" });
-      expect(preview.json.botDisplayName).toBe("Sala 3 - assistente gravando");
+      expect(preview.json.botDisplayName).toBe("Ata de Sala 3");
 
       // a sessão reflete o nome
       const me = await call("mu-ana", "GET", "/auth/me");
@@ -527,7 +527,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
         identity: { mode: "agent" },
       });
       expect(first.status).toBe(201);
-      expect(first.json).toMatchObject({ status: "joining", botDisplayName: "Orion - assistente gravando", botActive: true });
+      expect(first.json).toMatchObject({ status: "joining", botDisplayName: "Ata de Orion", botActive: true });
       expect(first.json.botProgress).toMatchObject({ stage: "preparing" });
 
       const again = await call("mu-ana", "POST", "/meetings", { url: `${url}?authuser=0` });

@@ -1,6 +1,6 @@
 import { config } from "../config";
 import { emitMeetingChanged, pool } from "../db";
-import { resolveBotDisplayName } from "../users/identity";
+import { resolveBotIdentity } from "../users/identity";
 import { detectPlatform } from "./link";
 import { activeBotCount, startBot } from "./runner";
 import { botUrlKey, releaseBotUrl, reserveBotUrl } from "./state";
@@ -46,19 +46,21 @@ async function launch(m: Candidate, from: string[]): Promise<LaunchResult> {
   if (!reserveBotUrl(urlKey)) return "same_link";
   try {
     if (activeBotCount() > config.maxConcurrentBots) return "limit";
-    const displayName = m.created_by ? await resolveBotDisplayName(m.created_by) : config.botDisplayName;
+    const identity = m.created_by
+      ? await resolveBotIdentity(m.created_by)
+      : { name: config.botDisplayName, avatarPath: null };
     const updated = await pool.query(
       `UPDATE meetings SET status = 'joining', skip_recording = false, error_message = NULL,
          started_at = NULL, ended_at = NULL, bot_display_name = $3
        WHERE id = $1 AND status = ANY($2)`,
-      [m.id, from, displayName],
+      [m.id, from, identity.name],
     );
     if (updated.rowCount !== 1) return "changed";
     // Perto do horário, espera a admissão e não sai por estar sozinho antes do fim previsto.
     const now = Date.now();
     const start = m.scheduled_start?.getTime() ?? Infinity;
     const end = m.scheduled_end && start - EARLY_MS <= now && now < m.scheduled_end.getTime() ? m.scheduled_end : null;
-    startBot(m.id, target.url, target.platform, { displayName, urlKey, requestedAt, admitUntil: end, stayUntil: end });
+    startBot(m.id, target.url, target.platform, { identity, urlKey, requestedAt, admitUntil: end, stayUntil: end });
     emitMeetingChanged(m.id);
     return "started";
   } finally {

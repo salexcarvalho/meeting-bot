@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { botBaseName, buildBotDisplayName, safeMeetingName } from "../src/bot/identity";
+import { botBaseName, buildBotDisplayName, identifiesRecorder, recorderName, safeMeetingName } from "../src/bot/identity";
 import {
   activeBotCount,
   activeBots,
@@ -16,11 +16,23 @@ import {
 const src = { userName: "Sérgio Carvalho", agentName: "Orion", customName: "Ata da Sala 3" };
 
 describe("nome do bot na reunião", () => {
-  it("usa a identidade escolhida e sempre marca como assistente gravando", () => {
-    const suffix = "assistente gravando";
-    expect(buildBotDisplayName({ ...src, mode: "user" }, suffix)).toBe("Sérgio Carvalho - assistente gravando");
-    expect(buildBotDisplayName({ ...src, mode: "agent" }, suffix)).toBe("Orion - assistente gravando");
-    expect(buildBotDisplayName({ ...src, mode: "custom" }, suffix)).toBe("Ata da Sala 3 - assistente gravando");
+  it("sem sufixo: o nome diz que é a ata ou ganha \"Ata de\" na frente", () => {
+    expect(buildBotDisplayName({ ...src, mode: "user" })).toBe("Ata de Sérgio Carvalho");
+    expect(buildBotDisplayName({ ...src, mode: "agent" })).toBe("Ata de Orion");
+    expect(buildBotDisplayName({ ...src, mode: "custom" })).toBe("Ata da Sala 3");
+    expect(buildBotDisplayName({ ...src, mode: "custom", customName: "Ata do Sérgio" })).toBe("Ata do Sérgio");
+    expect(buildBotDisplayName({ ...src, mode: "custom", customName: "Sérgio - gravando" })).toBe("Sérgio - gravando");
+  });
+
+  it("só conta como aviso a palavra ata, gravação ou transcrição", () => {
+    expect(identifiesRecorder("Ata do Sérgio")).toBe(true);
+    expect(identifiesRecorder("Atas - Portal SES")).toBe(true);
+    expect(identifiesRecorder("Notetaker recording")).toBe(true);
+    expect(identifiesRecorder("Transcrição da daily")).toBe(true);
+    expect(identifiesRecorder("Beata")).toBe(false);
+    expect(identifiesRecorder("Agente de Arquitetura - Sergio")).toBe(false);
+    expect(recorderName("Agente de Arquitetura - Sergio")).toBe("Ata de Agente de Arquitetura - Sergio");
+    expect(recorderName("🤖")).toBe("Ata de Assistente");
   });
 
   it("remove caracteres que o Teams recusa e limita o tamanho", () => {
@@ -63,7 +75,7 @@ describe("estado dos bots", () => {
       abort: new AbortController(),
       done: Promise.resolve(),
       urlKey,
-      displayName: "Orion - assistente gravando",
+      displayName: "Ata de Orion",
       requestedAt,
       stage: "preparing",
       stageAt: requestedAt,
@@ -91,7 +103,7 @@ describe("estado dos bots", () => {
     setBotStage("m1", "launching");
     setBotStage("m1", "launching");
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener.mock.calls[0][1]).toMatchObject({ stage: "launching", displayName: "Orion - assistente gravando" });
+    expect(listener.mock.calls[0][1]).toMatchObject({ stage: "launching", displayName: "Ata de Orion" });
     expect(listener.mock.calls[0][1].elapsedMs).toBeGreaterThanOrEqual(1000);
     expect(botProgress("m1")?.stage).toBe("launching");
     setBotStage("m1", "in_call");

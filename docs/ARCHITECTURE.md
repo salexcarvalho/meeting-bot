@@ -37,6 +37,9 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
 
 ## Fluxos
 
+> Servidor de teste (Dokploy): `docker-compose.vps.yml` troca worker-gpu e Ollama pelo ASR externo
+> e pelo container `agent-cli` (host-agent em `AGENTE_MODE=llm`, só geração). Ver `docs/vps-dokploy.md`.
+
 1. **Agenda**
    - `.ics`: o node-ical expande recorrências.
    - O upsert usa `(UID, RECURRENCE-ID)` e `SEQUENCE`.
@@ -46,6 +49,14 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
    - No horário, o scheduler põe o **assistente** (`bot/autoJoin.ts`) em toda reunião da agenda com link
      do Teams/Meet e sem "Não gravar": a reunião passa a `joining` e segue o Modo Agente (canal misto).
      A admissão espera até o fim previsto; limite de `MAX_CONCURRENT_BOTS` e um assistente por link.
+   - Imagem do assistente (opcional, `BOT_CAMERA=true`, padrão desligado): `bot/card.ts` gera com o
+     ffmpeg um quadro `.y4m` com o avatar do agente e o Chromium o usa como webcam
+     (`--use-file-for-fake-video-capture`). O nome diz que é a ata (`recorderName` em `bot/identity.ts`).
+   - O ffmpeg do assistente grava o Opus e, na mesma captura, entrega PCM 16 kHz ao backend: serve
+     para a transcrição ao vivo (canal `mixed`, `LiveSession`; o LiveAgent roda em `in_call`) e para
+     medir silêncio.
+   - `bot/leave.ts` decide a saída: tela de fim da chamada, contagem de pessoas na barra
+     (o texto "você é o único aqui" é só reserva), silêncio e limite de 4 h.
    - O PC não grava sozinho (`AUTO_LOCAL_RECORDING=false`); a gravação local vem de **Gravar agora**.
    - Na gravação local, o scheduler decide a gravação desejada e o host-agent converge a partir do heartbeat.
    - O áudio é PCM s16le 16 kHz por canal, alinhado ao relógio de parede (lacunas viram zeros).
@@ -94,6 +105,8 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - ficam em `DATA_DIR/profiles/<userId>/`;
   - o tipo é conferido pelos bytes iniciais (sem SVG);
   - nomes seguem um padrão fixo (sem path traversal) e a gravação usa modo 0600.
+- **Consumo de LLM:** `GET /llm/usage?month=AAAA-MM` agrega o próprio `audit_log` (`llm/usage.ts`),
+  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração.
 - **Ações administrativas:** criar, editar, trocar papel, ativar, redefinir senha e redefinir configurações; todas vão para `audit_log`.
 - host-agent autenticado por `AGENT_TOKEN` (Bearer, comparação em tempo constante, limite de
   falhas auditado).

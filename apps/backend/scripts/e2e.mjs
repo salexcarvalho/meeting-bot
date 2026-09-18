@@ -52,6 +52,10 @@ const env = {
   PATH: `${fakeBin}:${process.env.PATH}`,
 };
 
+// O frontend servido é o dist: sem rebuildar, o E2E testaria a tela antiga.
+console.log("[e2e] buildando o frontend…");
+execFileSync("npm", ["run", "build", "-w", "@meeting-bot/frontend"], { cwd: path.resolve(root, "../.."), stdio: "inherit" });
+
 stopDb();
 docker([
   "run", "--rm", "-d", "--name", NAME,

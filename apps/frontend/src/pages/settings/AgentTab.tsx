@@ -181,7 +181,7 @@ export function AgentTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
             busy={busy || readOnly}
             onUpload={(file) => void run("/me/agent/avatar", { method: "PUT", form: fileForm(file, file.name) }, "Avatar do agente atualizado.")}
             onRemove={() => void run("/me/agent/avatar", { method: "DELETE" }, "Avatar do agente removido.")}
-            hint="Usado dentro deste sistema. Meet e Teams não exibem foto de convidado."
+            hint="Usado dentro deste sistema. Convidado anônimo não exibe foto no Meet e no Teams."
           />
         </section>
         <section className="card">

@@ -60,6 +60,19 @@ describe("parseIcs", () => {
     expect(starts).not.toContain("2026-09-16T12:00:00.000Z");
   });
 
+  it("avisa quando o arquivo traz só a ocorrência do dia, sem a regra da série", () => {
+    // Outlook exportando "esta ocorrência" em vez de "toda a série" (relato de 2026-09-17)
+    const { occurrences, partialSeries } = parseIcs(fixture("ocorrencia-solta.ics"), range);
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0].recurrenceKey).toBe("2026-09-17T13:45:00.000Z");
+    expect(partialSeries).toEqual(["RADAR - Daily"]);
+  });
+
+  it("série completa não vira aviso de ocorrência solta", () => {
+    expect(parseIcs(fixture("recorrente.ics"), range).partialSeries).toEqual([]);
+    expect(parseIcs(fixture("outlook-teams.ics"), range).partialSeries).toEqual([]);
+  });
+
   it("chave de recorrência é estável entre importações", () => {
     const a = parseIcs(fixture("recorrente.ics"), range).occurrences.map((o) => o.recurrenceKey);
     const b = parseIcs(fixture("recorrente.ics"), range).occurrences.map((o) => o.recurrenceKey);

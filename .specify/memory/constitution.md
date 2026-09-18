@@ -1,5 +1,41 @@
 <!--
 Sync Impact Report
+- Versão: 2.0.0 → 2.1.0 (MINOR: o aviso de gravação sai do sufixo e passa para o próprio nome;
+  decisão do usuário em 2026-09-17)
+- Princípio modificado: II. Respeito às Políticas da Organização — sem sufixo; o nome do bot MUST
+  dizer que é a ata ou a gravação (ex.: "Ata do Sérgio"); nome que não diz ganha "Ata de" na frente.
+- Artefatos dependentes: apps/backend/src/bot/identity.ts, apps/backend/src/config.ts, .env.example,
+  .env.vps.example, README.md, CLAUDE.md, docs/ARCHITECTURE.md
+- TODOs adiados: nenhum
+
+Histórico anterior (1.6.0 → 2.0.0)
+- Versão: 1.6.0 → 2.0.0 (MAJOR: o Princípio I passa a falar de "infraestrutura do dono" e não só
+  "a máquina"; decisão do usuário em 2026-09-17 para o ambiente de teste no VPS com Dokploy)
+- Princípio redefinido: I. Local-first e Privacidade — o conteúdo pode viver num servidor alugado
+  pelo dono (VPS de teste), com requisitos próprios (HTTPS, segredos por ambiente, apagar ao fim);
+  continua proibido mandar conteúdo para serviços de terceiros fora das exceções de ASR/LLM.
+- Princípio modificado: VI. Desktop Nativo, Serviços em Container — o agente ganha o modo "llm"
+  (container sem desktop, só executa a assinatura); alertas e captura continuam nativos.
+- Seção modificada: Regras Operacionais → "Gravação": no servidor só grava o assistente na chamada.
+- Artefatos dependentes: docker-compose.vps.yml, .env.vps.example, docs/vps-dokploy.md, README.md,
+  CLAUDE.md, docs/ARCHITECTURE.md
+- TODOs adiados: nenhum
+
+Histórico anterior (1.5.0 → 1.6.0)
+- Versão: 1.5.0 → 1.6.0 (MINOR: o assistente mostra o ícone do agente na reunião e transcreve ao
+  vivo; decisão do usuário em 2026-09-17)
+- Princípio modificado: II. Respeito às Políticas da Organização — "não exibe imagem nem câmera"
+  passa a "a câmera virtual mostra só o ícone do agente, parado"; nada é filmado e o sufixo de
+  gravação continua obrigatório no nome.
+- Princípio I (assinatura pessoal): nas reuniões do dono, a geração automática espera a assinatura
+  voltar em vez de trocar para o modelo local ("gerar sempre com o Claude").
+- Seção modificada: Regras Operacionais → "Transcrição": a gravação pelo assistente também tem o
+  passe ao vivo (local), com o agente arquiteto ao vivo.
+- Artefatos dependentes: README.md, CLAUDE.md, .env.example, docs/ARCHITECTURE.md,
+  docs/analise/plataforma-multiusuario.md
+- TODOs adiados: nenhum
+
+Histórico anterior (1.4.0 → 1.5.0)
 - Versão: 1.4.0 → 1.5.0 (MINOR: regra operacional de gravação — quem grava no horário é o assistente
   convidado, de dentro da chamada; decisão do usuário em 2026-09-17)
 - Seção modificada: Regras Operacionais → "Gravação", "Canais de áudio" e "Agente do desktop":
@@ -79,8 +115,14 @@ Histórico
 
 ### I. Local-first e Privacidade (NÃO NEGOCIÁVEL)
 
-- `LOCAL_ONLY=true` é o único modo suportado. Nenhum áudio, transcrição, ata, item
-  extraído ou documento pode sair da máquina, salvo as exceções de ASR e LLM abaixo.
+- `LOCAL_ONLY=true` é o único modo suportado. Áudio, transcrição, ata, itens extraídos e
+  documentos ficam na **infraestrutura do dono** — o computador dele ou um servidor que ele
+  controla — e não podem ir para serviços de terceiros, salvo as exceções de ASR e LLM abaixo.
+- **Fora do computador do dono (servidor de teste):** só com decisão explícita dele, e então
+  MUST ter HTTPS em todo acesso, segredos próprios daquele ambiente (nunca os do computador),
+  cópia apenas do que o teste precisa e remoção dos volumes quando o teste acabar. Sem GPU no
+  servidor, o passe ao vivo fica desligado (ele é sempre local) e o passe final usa a exceção de
+  ASR externo.
 - Todo LLM, modelo de fala, diarização e embedding MUST rodar localmente (Ollama, faster-whisper,
   pyannote etc.). Adaptadores para provedores externos não podem ser habilitados por padrão
   e qualquer chamada externa MUST ser bloqueada e registrada em log de auditoria.
@@ -110,7 +152,8 @@ Histórico
   - quem executa é o host-agent nativo, com o CLI oficial sem modificação e o login feito pelo
     fluxo do próprio fornecedor; o backend nunca lê, guarda ou repassa credenciais;
   - vale só para as reuniões do dono do host-agent (`AGENT_OWNER`); reunião de outra pessoa
-    nunca usa essa assinatura (a geração automática volta para o modelo local);
+    nunca usa essa assinatura (a geração automática dela usa o modelo local); nas reuniões do dono,
+    assinatura fora do ar faz a geração automática esperar, sem trocar de modelo;
   - o CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
     temporária, com o conteúdo por stdin;
   - a UI MUST avisar que planos pessoais seguem os termos de consumidor.
@@ -139,8 +182,13 @@ a política da organização permite enviar.
   entram com aval formal da TI. Até lá, o calendário entra por importação `.ics` e cadastro
   manual.
 - O bot convidado (Modo Agente) só entra por admissão explícita na reunião e MUST se identificar
-  como gravação. O nome na sala sempre leva o sufixo configurado (padrão "assistente gravando").
-  O bot MUST NOT se passar por uma pessoa presente e não exibe imagem nem câmera na reunião.
+  como gravação: o próprio nome na sala MUST dizer que é a ata ou a gravação (ex.: "Ata do
+  Sérgio"), sem sufixo. Nome sem "ata", "gravação", "record" ou "transcrição" entra com "Ata de" na
+  frente; entrar só com o nome de uma pessoa não é permitido. O bot MUST NOT se passar por uma
+  pessoa presente. Ele entra como convidado anônimo, então a
+  reunião mostra as iniciais do nome — convidado não tem foto. Com `BOT_CAMERA=true` (desligado
+  por padrão, porque no Teams vira um quadro de vídeo) a câmera virtual mostra só o ícone do
+  agente, parado. O bot MUST NOT filmar nem transmitir vídeo de ninguém.
 
 Racional: o tenant bloqueia apps e acesso por e-mail; o usuário exigiu nunca burlar políticas.
 
@@ -189,6 +237,9 @@ uso simultâneo.
 - Backend, workers, banco, filas, LLM e UI rodam no Docker Engine nativo (contexto `default`)
   com NVIDIA Container Toolkit. Docker Desktop MUST NOT ser usado para este projeto.
 - A comunicação host-agent ↔ backend é local (loopback) e autenticada.
+- No servidor sem desktop, o agente roda em container no modo `llm` (`AGENTE_MODE=llm`): executa
+  só as gerações com a assinatura, não emite alertas nem captura áudio, e o backend recusa a
+  gravação pelo computador enquanto for esse o agente conectado.
 - A gravação MUST continuar mesmo com o navegador da aplicação fechado.
 
 Racional: a VM do Docker Desktop não acessa GPU, PipeWire nem DBus e limita a CPU.
@@ -225,6 +276,8 @@ Racional: aproveita o código validado e a stack principal do usuário.
   até o fim previsto e sai quando a chamada acaba ou quando fica sozinho depois do fim previsto.
   O computador MUST NOT gravar sozinho: reunião sem link só grava por ação manual ("Gravar
   agora"), que para quando o horário previsto passou e houve 3 minutos sem fala, ou por comando.
+  Num servidor (sem desktop) existe só o assistente na chamada. O assistente MUST sair quando a
+  chamada termina, quando fica sozinho ou quando não há mais som, para não gravar sala vazia.
   Limite de segurança de 4 horas nos dois casos.
 - **Retenção**: o áudio de cada canal é guardado indefinidamente; exclusão só por ação do
   usuário.
@@ -233,8 +286,8 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - **Canais de áudio**: na gravação pelo computador, microfone do usuário e áudio remoto são
   capturados separadamente, e o canal do microfone é atribuído ao usuário sem diarização; na
   gravação pelo assistente, o áudio da chamada vem num canal só, com diarização.
-- **Transcrição**: dois passes — ao vivo (VAD + trechos de 10–30 s) e final no áudio completo com
-  diarização do canal remoto. O passe final e os uploads podem, por escolha explícita, usar o
+- **Transcrição**: dois passes — ao vivo (VAD + trechos de 10–30 s, também na gravação pelo
+  assistente) e final no áudio completo com diarização do canal remoto. O passe final e os uploads podem, por escolha explícita, usar o
   ASR externo de teste (Princípio I).
 - **Acesso**:
   - login com usuário e senha (hash scrypt), com sessões em cookie `httpOnly`;
@@ -270,4 +323,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 1.5.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-17
+**Version**: 2.1.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-17

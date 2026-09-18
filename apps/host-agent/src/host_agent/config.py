@@ -18,6 +18,8 @@ STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "stat
 class Config:
     backend_url: str
     agent_token: str
+    """full = desktop (alertas + captura + geração); llm = só geração (container do servidor)"""
+    mode: str
     spool_dir: Path
     state_dir: Path
     env_file: Path
@@ -49,7 +51,9 @@ def _path(value: str | None) -> Path | None:
 def load_llm_config(data: dict) -> LlmCliConfig:
     """Seção [llm] do config.toml (assinaturas pessoais: claude/codex)."""
     section = data.get("llm", {})
-    enabled = tuple(p for p in section.get("enabled", PROVIDERS) if p in PROVIDERS)
+    raw = os.environ.get("AGENTE_LLM_ENABLED")
+    listed = [p.strip() for p in raw.split(",")] if raw else section.get("enabled", PROVIDERS)
+    enabled = tuple(p for p in listed if p in PROVIDERS)
     return LlmCliConfig(
         enabled=enabled,
         claude_bin=section.get("claude_bin", ""),
@@ -79,9 +83,13 @@ def load_config(path: Path | None = None) -> Config:
         raise SystemExit(
             f"AGENT_TOKEN não encontrado. Configure env_file em {path} apontando para o .env do projeto."
         )
+    mode = (os.environ.get("AGENTE_MODE") or data.get("mode") or "full").strip().lower()
+    if mode not in ("full", "llm"):
+        raise SystemExit(f"AGENTE_MODE inválido: {mode!r} (use full ou llm)")
     return Config(
         backend_url=backend_url.rstrip("/"),
         agent_token=token,
+        mode=mode,
         spool_dir=Path(os.path.expanduser(data.get("spool_dir", DATA_DIR / "spool"))),
         state_dir=Path(os.path.expanduser(data.get("state_dir", STATE_DIR))),
         env_file=env_file or Path(),
