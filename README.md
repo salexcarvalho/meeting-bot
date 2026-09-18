@@ -191,11 +191,12 @@ recuperação por e-mail: nada sai da máquina.
 
 O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. Não há sufixo: o nome precisa dizer que é a ata (ex.: "Ata do Sérgio"), e um nome sem "ata", "gravação" ou "transcrição" entra como "Ata de <nome>". Convidado anônimo não tem foto no Meet/Teams: aparecem as iniciais do nome. Com `BOT_CAMERA=true` o assistente liga uma câmera virtual com o avatar do agente (imagem parada), mas na chamada isso vira um quadro de vídeo.
 
-**Conta do agente no Teams** (Configurações > Meu agente): sem ela, o assistente entra no Teams como convidado sem conta, e o Teams marca isso. Com uma conta Microsoft **só do agente** (nunca a sua), ele entra logado e aparece com o nome da conta, que também precisa dizer que é a ata (ex.: "Ata do Sérgio"; o sistema recusa nome que não diz).
+**Conta do agente no Teams** (Configurações > Meu agente): sem ela, o assistente entra no Teams como convidado sem conta, e o Teams marca isso. Com uma conta Microsoft **só do agente** (nunca a sua), ele entra logado e aparece com o nome da conta, que também precisa dizer que é a ata (ex.: "Ata do Sérgio"; o sistema lê o nome real da conta na sessão e recusa quem não diz, inclusive a conta de uma pessoa).
 1. Na máquina do projeto: `npm run teams:login`. No navegador que abrir, entre com a conta do agente e marque "Manter conectado"; volte ao terminal e aperte Enter. Sai o arquivo `teams-session.json`.
 2. Em Meu agente, informe o nome da conta e envie o arquivo. Depois apague o arquivo: ele vale como uma senha.
 3. A senha nunca passa pelo sistema. Fica só a sessão, cifrada (AES-256-GCM, chave derivada do `AGENT_TOKEN`) e por usuário; trocar o `AGENT_TOKEN` exige conectar de novo. A cada reunião o Teams renova a sessão e o sistema guarda a nova.
-4. Se a sessão vencer, o assistente cai para convidado, a tela mostra "Sessão vencida" e você repete o passo 1. A conta vale só para Teams; no Meet o assistente continua convidado.
+4. Sessão da conta de uma pessoa (nome sem "ata") é recusada; se já estava salva, a tela mostra "Não usada" e o assistente entra como convidado.
+5. Se a sessão vencer, o assistente cai para convidado, a tela mostra "Sessão vencida" e você repete o passo 1. A conta vale só para Teams; no Meet o assistente continua convidado.
 
 Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 
@@ -227,7 +228,7 @@ Cada usuário tem as próprias configurações:
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Regras de parada |
 | `AGENT_OWNER` | vazio | Usuário cujas reuniões o host-agent desta máquina grava (vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo; defina sempre que houver mais de um usuário) |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Nome inicial do agente de cada usuário |
-| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Limite para o assistente chegar à sala ou à espera |
+| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Limite para o assistente chegar à sala ou à espera (com a conta do agente no Teams, no mínimo 120 s) |
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silêncio que encerra uma reunião sem horário previsto |
 | `BOT_CAMERA` | `false` | Câmera virtual com o avatar do agente (imagem parada; vira quadro de vídeo na chamada) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Transcrição ao vivo do áudio gravado pelo assistente |

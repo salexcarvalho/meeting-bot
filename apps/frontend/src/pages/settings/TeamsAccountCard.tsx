@@ -37,14 +37,17 @@ export function TeamsAccountCard({ me, setMe, readOnly }: { me: MeResponse; setM
 
       {account.connected ? (
         <p className="small">
-          <span className={`badge ${account.expired ? "warn" : "ok"}`}>{account.expired ? "Sessão vencida" : "Conectada"}</span>{" "}
+          <span className={`badge ${account.problem ? "error" : account.expired ? "warn" : "ok"}`}>
+            {account.problem ? "Não usada" : account.expired ? "Sessão vencida" : "Conectada"}
+          </span>{" "}
           <strong>{account.accountName}</strong>
           {account.updatedAt && <span className="muted"> · sessão de {formatDateTime(account.updatedAt)}</span>}
         </p>
       ) : (
         <p className="small muted">Nenhuma conta conectada: o assistente entra como convidado.</p>
       )}
-      {account.expired && (
+      {account.problem && <div className="banner error">{account.problem} O assistente entra como convidado enquanto isso.</div>}
+      {account.expired && !account.problem && (
         <div className="banner warn">
           A última entrada caiu para convidado porque a sessão venceu. Gere e envie a sessão de novo.
         </div>

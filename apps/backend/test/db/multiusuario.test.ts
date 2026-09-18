@@ -477,6 +477,16 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       const stored = (await pool.query(`SELECT session_enc FROM teams_accounts WHERE user_id = $1`, [ids["mu-ana"]])).rows[0];
       expect((stored.session_enc as Buffer).includes(Buffer.from("valor-secreto-123"))).toBe(false);
 
+      // conta de uma pessoa (o nome real da sessão não diz que é a ata): recusada, mesmo com nome digitado certo
+      const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const tokenState = (name: string) => ({
+        ...state,
+        origins: [{ origin: "https://teams.microsoft.com", localStorage: [{ name: "t", value: `eyJhbGciOiJub25lIn0.${b64({ name, preferred_username: "x@empresa.com" })}.assinatura` }] }],
+      });
+      const person = await send({ accountName: "Ata do Sérgio" }, JSON.stringify(tokenState("Sergio Alexandre De Carvalho")));
+      expect(person.status).toBe(400);
+      expect(person.json.error).toMatch(/Sergio Alexandre De Carvalho/);
+
       // outro usuário não vê a conta
       expect((await call("mu-bia", "GET", "/me")).json.teamsAccount.connected).toBe(false);
 
@@ -487,6 +497,17 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       const meet = await resolveBotIdentity(ids["mu-ana"], undefined, "meet");
       expect(meet.account).toBeUndefined();
       expect(meet.name).toMatch(/^Ata de /);
+
+      // sessão antiga de uma conta de pessoa: a tela avisa e o bot não a usa
+      const { seal } = await import("../../src/users/teamsAccount");
+      await pool.query(`UPDATE teams_accounts SET session_enc = $2 WHERE user_id = $1`, [
+        ids["mu-ana"],
+        seal(Buffer.from(JSON.stringify(tokenState("Ana Souza")))),
+      ]);
+      const flagged = (await call("mu-ana", "GET", "/me")).json.teamsAccount;
+      expect(flagged.problem).toMatch(/Ana Souza/);
+      expect((await resolveBotIdentity(ids["mu-ana"], undefined, "teams")).account).toBeUndefined();
+      expect((await send({ accountName: "Ata do Sérgio" })).json.teamsAccount.problem).toBeNull();
 
       // sessão vencida aparece na tela e some ao reconectar
       const { markTeamsSessionExpired } = await import("../../src/users/teamsAccount");

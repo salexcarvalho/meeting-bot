@@ -196,11 +196,12 @@ entered as "Ata de <nome>" ("<name>'s minutes"). An anonymous guest has no photo
 show up. With `BOT_CAMERA=true`, the assistant turns on a virtual camera with the agent's avatar (a still image),
 but on the call this becomes a video frame.
 
-**Agent account on Teams** (Configurações > Meu agente, "Settings > My agent"): without it, the assistant joins Teams as a guest with no account, and Teams flags that. With a Microsoft account **dedicated to the agent** (never your own), it joins signed in and shows up under the account's name, which must also say it's the minutes (e.g., "Ata do Sérgio"; the system rejects a name that doesn't).
+**Agent account on Teams** (Configurações > Meu agente, "Settings > My agent"): without it, the assistant joins Teams as a guest with no account, and Teams flags that. With a Microsoft account **dedicated to the agent** (never your own), it joins signed in and shows up under the account's name, which must also say it's the minutes (e.g., "Ata do Sérgio"; the system reads the account's real name from the session and rejects one that doesn't say so, including a person's own account).
 1. On the project machine: `npm run teams:login`. In the browser that opens, sign in with the agent's account and choose "Stay signed in"; go back to the terminal and press Enter. This produces the `teams-session.json` file.
 2. In My agent, enter the account name and upload the file. Then delete the file: it is as sensitive as a password.
 3. The password never goes through the system. Only the session is kept, encrypted (AES-256-GCM, key derived from `AGENT_TOKEN`) and per user; changing `AGENT_TOKEN` means connecting again. On every meeting Teams renews the session and the system stores the new one.
-4. If the session expires, the assistant falls back to guest, the screen shows "Sessão vencida" ("Session expired"), and you repeat step 1. The account only applies to Teams; on Meet the assistant remains a guest.
+4. A session from a person's account (name without "ata") is rejected; if it was already saved, the screen shows "Não usada" ("Not used") and the assistant joins as a guest.
+5. If the session expires, the assistant falls back to guest, the screen shows "Sessão vencida" ("Session expired"), and you repeat step 1. The account only applies to Teams; on Meet the assistant remains a guest.
 
 When the assistant doesn't join, check the screenshot under **Áudio e debug** ("Audio and debug").
 
@@ -232,7 +233,7 @@ Each user has their own settings:
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Stop rules |
 | `AGENT_OWNER` | empty | User whose meetings this machine's host-agent records (empty = first registered user, if still an active SUPER_ADMIN; always set it when there's more than one user) |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Initial agent name for each user |
-| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Time limit for the assistant to reach the room or the waiting area |
+| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Time limit for the assistant to reach the room or the waiting area (at least 120 s with the agent's Teams account) |
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silence that ends a meeting with no scheduled time |
 | `BOT_CAMERA` | `false` | Virtual camera with the agent's avatar (still image; becomes a video frame on the call) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Live transcription of the audio recorded by the assistant |

@@ -192,11 +192,12 @@ electrónico: nada sale de la máquina.
 
 El nombre en la sala sigue **Configurações > Reuniões** ("Configuración > Reuniones"): mi nombre, nombre del agente o un nombre personalizado. No hay sufijo: el nombre debe decir que es el acta (ej.: "Ata do Sérgio" ("Acta de Sérgio")), y un nombre sin "ata" ("acta"), "gravação" ("grabación") o "transcrição" ("transcripción") entra como "Ata de <nome>" ("Acta de <nombre>"). El invitado anónimo no tiene foto en Meet/Teams: aparecen las iniciales del nombre. Con `BOT_CAMERA=true` el asistente enciende una cámara virtual con el avatar del agente (imagen fija), pero en la llamada eso se convierte en un cuadro de video.
 
-**Cuenta del agente en Teams** (Configurações > Meu agente, "Configuración > Mi agente"): sin ella, el asistente entra a Teams como invitado sin cuenta, y Teams lo marca. Con una cuenta Microsoft **solo del agente** (nunca la tuya), entra con sesión iniciada y aparece con el nombre de la cuenta, que también debe decir que es el acta (ej.: "Ata do Sérgio"; el sistema rechaza un nombre que no lo dice).
+**Cuenta del agente en Teams** (Configurações > Meu agente, "Configuración > Mi agente"): sin ella, el asistente entra a Teams como invitado sin cuenta, y Teams lo marca. Con una cuenta Microsoft **solo del agente** (nunca la tuya), entra con sesión iniciada y aparece con el nombre de la cuenta, que también debe decir que es el acta (ej.: "Ata do Sérgio"; el sistema lee el nombre real de la cuenta en la sesión y rechaza la que no lo dice, incluida la cuenta de una persona).
 1. En la máquina del proyecto: `npm run teams:login`. En el navegador que se abra, entra con la cuenta del agente y elige "Mantener la sesión iniciada"; vuelve a la terminal y pulsa Enter. Se genera el archivo `teams-session.json`.
 2. En Mi agente, indica el nombre de la cuenta y sube el archivo. Después borra el archivo: vale como una contraseña.
 3. La contraseña nunca pasa por el sistema. Solo se guarda la sesión, cifrada (AES-256-GCM, clave derivada de `AGENT_TOKEN`) y por usuario; cambiar `AGENT_TOKEN` exige conectar de nuevo. En cada reunión Teams renueva la sesión y el sistema guarda la nueva.
-4. Si la sesión vence, el asistente vuelve a entrar como invitado, la pantalla muestra "Sessão vencida" ("Sesión vencida") y repites el paso 1. La cuenta vale solo para Teams; en Meet el asistente sigue como invitado.
+4. Una sesión de la cuenta de una persona (nombre sin "ata") se rechaza; si ya estaba guardada, la pantalla muestra "Não usada" ("No usada") y el asistente entra como invitado.
+5. Si la sesión vence, el asistente vuelve a entrar como invitado, la pantalla muestra "Sessão vencida" ("Sesión vencida") y repites el paso 1. La cuenta vale solo para Teams; en Meet el asistente sigue como invitado.
 
 Cuando el asistente no entre, revisa la captura de pantalla en **Áudio e debug** ("Audio y debug").
 
@@ -228,7 +229,7 @@ Cada usuario tiene su propia configuración:
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Reglas de parada |
 | `AGENT_OWNER` | vacío | Usuario cuyas reuniones graba el host-agent de esta máquina (vacío = primer usuario registrado, si sigue siendo SUPER_ADMIN activo; defínelo siempre que haya más de un usuario) |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Nombre inicial del agente de cada usuario |
-| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Límite para que el asistente llegue a la sala o a la espera |
+| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Límite para que el asistente llegue a la sala o a la espera (con la cuenta del agente en Teams, mínimo 120 s) |
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silencio que termina una reunión sin horario previsto |
 | `BOT_CAMERA` | `false` | Cámara virtual con el avatar del agente (imagen fija; se convierte en cuadro de video en la llamada) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Transcripción en vivo del audio grabado por el asistente |

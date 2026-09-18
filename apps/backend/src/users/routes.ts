@@ -35,6 +35,7 @@ import {
 } from "./files";
 import { botDisplayNameFor } from "./identity";
 import {
+  accountNameFor,
   getTeamsAccountStatus,
   MAX_SESSION_BYTES,
   parseSession,
@@ -224,8 +225,9 @@ function registerMe(router: Router): void {
     wrap(async (req, res) => {
       if (!req.file) return badRequest(res, "Envie o arquivo da sessão no campo 'file'.");
       try {
-        const name = validateAccountName(String(req.body?.accountName ?? ""));
-        await saveTeamsAccount(req.user!.id, name, parseSession(req.file.buffer));
+        const typed = validateAccountName(String(req.body?.accountName ?? ""));
+        const session = parseSession(req.file.buffer);
+        await saveTeamsAccount(req.user!.id, accountNameFor(typed, session), session);
       } catch (err) {
         if (err instanceof TeamsAccountError) return badRequest(res, err.message);
         throw err;

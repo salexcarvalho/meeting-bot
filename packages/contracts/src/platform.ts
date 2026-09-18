@@ -107,6 +107,8 @@ export interface TeamsAccountStatus {
   updatedAt: string | null;
   /** a última entrada precisou cair para convidado: a sessão venceu */
   expired: boolean;
+  /** por que o assistente não usa a sessão salva (ex.: a conta é de uma pessoa); null quando está tudo certo */
+  problem: string | null;
 }
 
 export const DETAIL_LEVELS = ["resumido", "normal", "detalhado"] as const;

@@ -1,6 +1,15 @@
 import { randomBytes } from "crypto";
 import { describe, expect, it } from "vitest";
-import { parseSession, seal, TeamsAccountError, unseal, validateAccountName } from "../src/users/teamsAccount";
+import {
+  accountNameFor,
+  detectAccountName,
+  parseSession,
+  seal,
+  sessionProblem,
+  TeamsAccountError,
+  unseal,
+  validateAccountName,
+} from "../src/users/teamsAccount";
 
 const SECRET = "a".repeat(40);
 const cookie = (domain: string) => ({ name: "ESTSAUTHPERSISTENT", value: "x", domain, path: "/" });
@@ -54,5 +63,47 @@ describe("validateAccountName", () => {
     expect(() => validateAccountName("Sérgio Carvalho")).toThrow(/dizer que é a ata/);
     expect(() => validateAccountName("A")).toThrow(TeamsAccountError);
     expect(() => validateAccountName("Ata " + "x".repeat(70))).toThrow(TeamsAccountError);
+  });
+});
+
+const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const jwt = (claims: Record<string, unknown>) => `eyJhbGciOiJub25lIn0.${b64(claims)}.assinatura-de-teste`;
+const withTokens = (...tokens: string[]) => ({
+  cookies: [cookie(".login.microsoftonline.com")],
+  origins: [{ origin: "https://teams.microsoft.com", localStorage: tokens.map((t, i) => ({ name: `k${i}`, value: JSON.stringify({ secret: t }) })) }],
+});
+
+describe("nome real da conta", () => {
+  it("lê o claim name dos tokens de identidade e ignora token sem pessoa", () => {
+    const state = parseSession(
+      file(
+        withTokens(
+          jwt({ name: "Ata do Sérgio", preferred_username: "ata@empresa.com" }),
+          jwt({ name: "Ata do Sérgio", upn: "ata@empresa.com" }),
+          jwt({ name: "Outro Nome" }),
+          "eyJinvalido.eyJinvalido.xxxxx",
+        ),
+      ),
+    );
+    expect(detectAccountName(state)).toBe("Ata do Sérgio");
+  });
+
+  it("sem token na sessão, não sabe o nome e deixa passar", () => {
+    const state = parseSession(file({ cookies: [cookie(".microsoft.com")], origins: [] }));
+    expect(detectAccountName(state)).toBeNull();
+    expect(sessionProblem(state)).toBeNull();
+    expect(accountNameFor("Ata do Sérgio", state)).toBe("Ata do Sérgio");
+  });
+
+  it("recusa a sessão da conta de uma pessoa", () => {
+    const state = parseSession(file(withTokens(jwt({ name: "Sergio Alexandre De Carvalho", preferred_username: "sergio@empresa.com" }))));
+    expect(sessionProblem(state)).toMatch(/Sergio Alexandre De Carvalho.*dizer que é a ata/);
+    expect(() => accountNameFor("Ata do Sérgio", state)).toThrow(TeamsAccountError);
+  });
+
+  it("aceita conta cujo nome diz que é a ata e usa esse nome", () => {
+    const state = parseSession(file(withTokens(jwt({ name: "Ata Sérgio", preferred_username: "ata@empresa.com" }))));
+    expect(sessionProblem(state)).toBeNull();
+    expect(accountNameFor("Ata do Sérgio", state)).toBe("Ata Sérgio");
   });
 });

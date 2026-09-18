@@ -203,7 +203,7 @@ a política da organização permite enviar.
 - No Teams, o dono MAY conectar uma conta Microsoft dedicada ao agente, para o assistente entrar
   logado em vez de convidado sem conta. A conta MUST ser só do agente (nunca a do usuário nem a de
   outra pessoa) e MUST ter um nome que diga que é a ata ou a gravação; o sistema recusa nome que
-  não diz. O usuário faz o login na própria máquina (`npm run teams:login`); o sistema MUST NOT
+  não diz e, quando a sessão traz o nome real da conta, confere esse nome e recusa conta de pessoa. O usuário faz o login na própria máquina (`npm run teams:login`); o sistema MUST NOT
   pedir, ver ou guardar a senha — guarda só a sessão (cookies e localStorage), cifrada em repouso
   (AES-256-GCM, chave derivada do `AGENT_TOKEN`), por usuário, MUST NOT aparecer em log nem no
   `audit_log` (só os eventos de conectar, remover e vencer), e pode ser removida a qualquer hora.

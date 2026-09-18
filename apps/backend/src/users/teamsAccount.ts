@@ -78,19 +78,65 @@ export function validateAccountName(name: string): string {
   return trimmed;
 }
 
+const JWT = /eyJ[\w-]{5,}\.(eyJ[\w-]{5,})\.[\w-]{5,}/g;
+
+/**
+ * Nome real da conta, lido dos tokens de identidade guardados na sessão (claim "name"). O nome que
+ * o usuário digita não basta: se a sessão for da conta de uma pessoa, o Teams mostraria o nome
+ * dela na reunião. null quando a sessão não traz o nome.
+ */
+export function detectAccountName(state: SessionState): string | null {
+  const counts = new Map<string, number>();
+  for (const raw of JSON.stringify(state.origins).matchAll(JWT)) {
+    try {
+      const payload = JSON.parse(Buffer.from(raw[1], "base64url").toString("utf8")) as { name?: unknown; preferred_username?: unknown; upn?: unknown };
+      const person = payload.preferred_username ?? payload.upn;
+      if (typeof payload.name === "string" && payload.name.trim() && typeof person === "string") {
+        counts.set(payload.name.trim(), (counts.get(payload.name.trim()) ?? 0) + 1);
+      }
+    } catch {
+      // token que não é JWT de identidade
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+const notRecorder = (real: string) =>
+  `A conta desta sessão se chama "${real}", e o nome precisa dizer que é a ata. Use uma conta só do agente (nunca a sua) ou peça à TI para criar uma.`;
+
+/** Por que a sessão não pode ser usada (conta de uma pessoa), ou null. */
+export function sessionProblem(state: SessionState): string | null {
+  const real = detectAccountName(state);
+  return real && !identifiesRecorder(real) ? notRecorder(real) : null;
+}
+
 export async function getTeamsAccountStatus(userId: string): Promise<TeamsAccountStatus> {
   const { rows } = await pool.query(
-    `SELECT account_name, updated_at, expired_at FROM teams_accounts WHERE user_id = $1`,
+    `SELECT account_name, session_enc, updated_at, expired_at FROM teams_accounts WHERE user_id = $1`,
     [userId],
   );
   const row = rows[0];
-  if (!row) return { connected: false, accountName: null, updatedAt: null, expired: false };
+  if (!row) return { connected: false, accountName: null, updatedAt: null, expired: false, problem: null };
+  let problem: string | null = null;
+  try {
+    problem = sessionProblem(JSON.parse(unseal(row.session_enc as Buffer).toString("utf8")) as SessionState);
+  } catch {
+    problem = "A sessão salva não abre (o AGENT_TOKEN mudou?). Conecte a conta de novo.";
+  }
   return {
     connected: true,
     accountName: row.account_name,
     updatedAt: (row.updated_at as Date).toISOString(),
     expired: row.expired_at !== null,
+    problem,
   };
+}
+
+/** Nome que o Teams mostra: o da sessão, quando dá para ler; senão o digitado. Recusa conta de pessoa. */
+export function accountNameFor(typed: string, session: SessionState): string {
+  const problem = sessionProblem(session);
+  if (problem) throw new TeamsAccountError(problem);
+  return detectAccountName(session) ?? typed;
 }
 
 export async function saveTeamsAccount(userId: string, accountName: string, session: SessionState): Promise<void> {
@@ -115,7 +161,12 @@ export async function loadTeamsAccount(userId: string): Promise<TeamsAccount | n
   if (!rows[0]) return null;
   try {
     const state = JSON.parse(unseal(rows[0].session_enc as Buffer).toString("utf8")) as SessionState;
-    return { userId, name: rows[0].account_name, state };
+    const problem = sessionProblem(state);
+    if (problem) {
+      console.error(`[teams-account] sessão de ${userId} não usada: ${problem}`);
+      return null;
+    }
+    return { userId, name: detectAccountName(state) ?? rows[0].account_name, state };
   } catch {
     console.error(`[teams-account] sessão de ${userId} não abriu (AGENT_TOKEN mudou?); conecte a conta de novo`);
     return null;

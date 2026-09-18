@@ -28,6 +28,9 @@ export function screenshotPath(meetingId: string): string {
   return path.join(debugDir, `${meetingId}.png`);
 }
 
+// Logado, o Teams carrega o app inteiro (36 s medidos; como convidado, ~6 s): 45 s não bastam.
+const ACCOUNT_JOIN_TIMEOUT_MS = 120_000;
+
 /** Tentativas de religar a câmera (o ícone) na chamada; depois disso segue sem ela. */
 const CAMERA_RETRIES = 3;
 
@@ -155,7 +158,7 @@ async function runBot(
         url,
         { name: identity.name, camera: card !== null },
         {
-          timeoutMs: config.botJoinTimeoutMs,
+          timeoutMs: identity.account ? Math.max(config.botJoinTimeoutMs, ACCOUNT_JOIN_TIMEOUT_MS) : config.botJoinTimeoutMs,
           signal,
           onJoining: () => setBotStage(meetingId, "joining"),
         },
