@@ -8,8 +8,8 @@ Agente **local** de reuniões e arquitetura de software. Ele:
 - avisa no desktop 15, 5 e 1 minuto antes de cada reunião;
 - no horário, manda o **assistente** para dentro da chamada (Teams/Meet), que grava mesmo se você não entrar;
 - transcreve ao vivo e, no fim, faz uma transcrição final melhor, com separação de falantes;
-- extrai durante a reunião decisões, pendências, riscos e requisitos, sempre com o trecho de origem;
-- gera a ata (template de 19 seções) e sugestões de ADR;
+- extrai decisões, pendências, riscos e requisitos, sempre com o trecho de origem, nas reuniões em que você liga a chave **Itens** (vem desligada);
+- gera a ata (template de 19 seções; só o resumo quando os itens estão desligados) e sugestões de ADR;
 - deixa tudo como **proposto** até você revisar.
 
 Tudo roda na máquina: Whisper (faster-whisper) e LLM (Ollama, `qwen3.5:4b`) na GPU local. A
@@ -118,8 +118,9 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 ### Durante a reunião
 
 - No horário, o **assistente** entra em toda reunião com link do Teams/Meet que não esteja marcada
-  "Não gravar", com o nome configurado e o sufixo "assistente gravando". Admita-o na sala de espera.
+  "Não gravar", com o nome configurado, que já diz que é a ata (ex.: "Ata do Sérgio"). Admita-o na sala de espera.
   - Ele entra mudo e sem câmera; a reunião mostra as iniciais do nome (convidado não tem foto).
+  - Se a rede cair ao abrir o link, ele tenta de novo (3 vezes). Reunião que falhou só por rede é reenviada sozinha, dentro do horário, até 3 vezes com 1 min entre elas.
   - A transcrição aparece ao vivo na página da reunião, com o agente arquiteto e o resumo corrente.
   - Ele espera a admissão até o fim previsto e não sai por estar sozinho antes dele.
   - Sai quando a chamada acaba, quando fica sozinho na chamada por 5 min (contando as pessoas na
@@ -131,13 +132,13 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 - A gravação pelo computador para quando o horário previsto passou e houve 3 min sem fala, ao
   clicar em **Parar**, ou ao atingir 4 h.
 - A aba **Ao vivo** mostra a transcrição (alguns segundos de atraso), o estado dos canais, a GPU,
-  o resumo corrente e os painéis de itens.
+  o resumo corrente e os painéis de itens. Com **Itens** desligado, a extração ao vivo não roda.
 - Clicar num horário ou na evidência de um item leva ao trecho e toca o áudio.
 
 ### Depois da reunião
 
 - A transcrição final substitui a ao vivo. As evidências dos itens são remapeadas.
-- O agente reanalisa a reunião, consolida os itens e gera a ata e os ADRs sugeridos.
+- O agente reanalisa a reunião, consolida os itens e gera a ata e os ADRs sugeridos. Com **Itens** desligado, gera só o resumo (sem itens nem ADR).
 - **Itens**: aprovar, rejeitar, reabrir, editar e ver o histórico. Itens criados à mão já
   nascem aprovados. O histórico é uma linha do tempo: quem fez o quê e quando, com o texto de antes
   riscado nas edições.
@@ -384,8 +385,9 @@ scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
 - **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o
   upload ou o assistente convidado.
 - **Compartilhar reunião** ainda não tem tela (a estrutura `meeting_shares` já existe no backend).
-- **O assistente aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
-  nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo.
+- **O assistente convidado aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
+  nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo. No Teams, a
+  conta do agente troca o convidado pelo nome da conta.
 - **Convite `.ics` de uma só ocorrência** não traz a repetição da série. A importação avisa; exporte
   a série inteira no Outlook.
 - **Docker Desktop no Linux** não serve: a VM dele não enxerga a GPU nem mostra os containers do

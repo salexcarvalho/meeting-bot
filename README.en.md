@@ -8,8 +8,8 @@
 - alerts on the desktop 15, 5, and 1 minute before each meeting;
 - at the scheduled time, sends the **assistant** into the call (Teams/Meet), which records even if you don't join;
 - transcribes live and, at the end, produces a better final transcription, with speaker diarization;
-- extracts decisions, pending items, risks, and requirements during the meeting, always with the source excerpt;
-- generates the meeting minutes (19-section template) and ADR suggestions;
+- extracts decisions, pending items, risks, and requirements, always with the source excerpt, in the meetings where you turn on the **Itens** ("Items") switch (off by default);
+- generates the meeting minutes (19-section template; just the summary when items are off) and ADR suggestions;
 - leaves everything as **proposed** until you review it.
 
 Everything runs on the machine: Whisper (faster-whisper) and LLM (Ollama, `qwen3.5:4b`) on the local GPU. The
@@ -118,8 +118,9 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
 ### During the Meeting
 
 - At the scheduled time, the **assistant** joins every meeting with a Teams/Meet link that isn't marked
-  "Não gravar" ("Don't record"), with the configured name and the suffix "assistente gravando" ("assistant recording"). Admit it from the waiting room.
+  "Não gravar" ("Don't record"), with the configured name, which already says it is the minutes (e.g., "Ata do Sérgio"). Admit it from the waiting room.
   - It joins muted and without a camera; the meeting shows the initials of the name (guests have no photo).
+  - If the network drops while opening the link, it retries (3 attempts). A meeting that failed only because of the network is resent automatically, within the scheduled time, up to 3 times with 1 min between them.
   - The transcription appears live on the meeting page, along with the architect agent and the running summary.
   - It waits to be admitted until the scheduled end time and doesn't leave for being alone before then.
   - It leaves when the call ends, when it's alone on the call for 5 min (counting the people in the
@@ -131,13 +132,13 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
 - Recording via the computer stops when the scheduled time has passed and there have been 3 min without speech, on
   clicking **Parar**, or upon reaching 4 h.
 - The **Ao vivo** ("Live") tab shows the transcription (a few seconds of delay), the channel status, the GPU,
-  the running summary, and the item panels.
+  the running summary, and the item panels. With **Itens** off, live extraction does not run.
 - Clicking a timestamp or an item's evidence jumps to the excerpt and plays the audio.
 
 ### After the Meeting
 
 - The final transcription replaces the live one. Item evidence is remapped.
-- The agent re-analyzes the meeting, consolidates the items, and generates the meeting minutes and suggested ADRs.
+- The agent re-analyzes the meeting, consolidates the items, and generates the meeting minutes and suggested ADRs. With **Itens** off, it produces only the summary (no items or ADRs).
 - **Itens** ("Items"): approve, reject, reopen, edit, and view the history. Manually created items are already
   born approved. The history is a timeline: who did what and when, with the previous text
   struck through on edits.
@@ -391,8 +392,9 @@ scripts/fixture-ics.sh 20      # test invite starting in 20 min
 - **One host-agent per machine**, tied to a single user (`AGENT_OWNER`). Other users use the
   upload or the guest assistant.
 - **Sharing a meeting** doesn't have a screen yet (the `meeting_shares` structure already exists in the backend).
-- **The assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
-  or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame.
+- **The guest assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
+  or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame. On Teams, the
+  agent account replaces the guest with the account's name.
 - **A single-occurrence `.ics` invite** doesn't bring the series' recurrence. The import warns about it;
   export the entire series from Outlook.
 - **Docker Desktop on Linux** doesn't work: its VM can't see the GPU or show the native
