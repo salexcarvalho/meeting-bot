@@ -2,6 +2,7 @@ import { config } from "../config";
 import { emitMeetingChanged, pool } from "../db";
 import { resolveBotIdentity } from "../users/identity";
 import { detectPlatform } from "./link";
+import { isTransientNetworkError } from "./navigate";
 import { activeBotCount, startBot } from "./runner";
 import { botUrlKey, releaseBotUrl, reserveBotUrl } from "./state";
 
@@ -28,6 +29,7 @@ interface Candidate {
   created_by: string | null;
   scheduled_start: Date | null;
   scheduled_end: Date | null;
+  error_message?: string | null;
 }
 
 type LaunchResult = "started" | "link" | "same_link" | "limit" | "changed";
@@ -78,6 +80,11 @@ async function note(meetingId: string, message: string): Promise<void> {
   if (r.rowCount) emitMeetingChanged(meetingId);
 }
 
+/** Nova tentativa depois de falha de rede: quantas vezes e quanto esperar entre elas. */
+export const NETWORK_RETRIES = 3;
+export const NETWORK_RETRY_WAIT_MS = 60_000;
+const networkRetries = new Map<string, number>();
+
 let ticking = false;
 
 /** Ciclo do agendador: põe o assistente nas reuniões que começaram e ainda não terminaram. */
@@ -97,6 +104,27 @@ export async function tickAutoAssistant(now = new Date()): Promise<void> {
       if (result === "started") console.log(`[assistente] entrando na reunião da agenda ${m.id}`);
       const message = NOTES[result];
       if (message) await note(m.id, message);
+    }
+
+    // Falha de rede ao abrir o link (sem ter entrado): tenta de novo enquanto a reunião dura.
+    const { rows: failed } = await pool.query<Candidate>(
+      `SELECT id, url, created_by, scheduled_start, scheduled_end, error_message FROM meetings
+       WHERE source = ANY($1) AND status = 'error' AND NOT skip_recording AND url IS NOT NULL
+         AND started_at IS NULL AND ended_at <= $3
+         AND scheduled_start <= $2 AND scheduled_end > $2
+         AND NOT EXISTS (SELECT 1 FROM meeting_audio a WHERE a.meeting_id = meetings.id)
+       ORDER BY scheduled_start, id`,
+      [AGENDA_SOURCES, now, new Date(now.getTime() - NETWORK_RETRY_WAIT_MS)],
+    );
+    for (const m of failed) {
+      if (!isTransientNetworkError(m.error_message)) continue;
+      const used = networkRetries.get(m.id) ?? 0;
+      if (used >= NETWORK_RETRIES) continue;
+      const result = await launch(m, ["error"]);
+      if (result === "started") {
+        networkRetries.set(m.id, used + 1);
+        console.log(`[assistente] rede falhou; nova tentativa ${used + 1}/${NETWORK_RETRIES} na reunião ${m.id}`);
+      }
     }
   } catch (err) {
     console.error("[assistente] erro no ciclo:", err);
