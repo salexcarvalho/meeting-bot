@@ -1,6 +1,7 @@
 {
   "name": "@meeting-bot/frontend",
-  "version": "0.3.0",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@meeting-bot/contracts": "0.3.0",
+    "@meeting-bot/contracts": "1.0.0",
     "lucide-react": "^1.46.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

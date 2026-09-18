@@ -1,0 +1,27 @@
+name: "Funcionalidade · Feature · Funcionalidad"
+description: "Proposta de algo novo · Propose something new · Proponer algo nuevo"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: "Problema · Problem · Problema"
+      description: "O que você não consegue fazer hoje · What you can't do today · Qué no puedes hacer hoy"
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: "Proposta · Proposal · Propuesta"
+    validations:
+      required: true
+  - type: checkboxes
+    id: constituicao
+    attributes:
+      label: "Regras do projeto · Project rules · Reglas del proyecto"
+      description: "[CONTRIBUTING.md](https://github.com/salexcarvalho/meeting-bot/blob/main/CONTRIBUTING.md)"
+      options:
+        - label: "Não manda dados para fora sem opção explícita · Sends no data out without an explicit option · No envía datos fuera sin opción explícita"
+          required: true
+        - label: "Não esconde a gravação nem contorna políticas de organizações · Doesn't hide recording or bypass organization policies · No oculta la grabación ni elude políticas de organizaciones"
+          required: true

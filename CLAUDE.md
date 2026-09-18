@@ -10,6 +10,7 @@ agente arquiteto, memória pesquisável.
 - Estado atual do código: monorepo `apps/{backend,frontend,worker-gpu,host-agent}` + `packages/contracts` (Node 24 + TS, React, Python 3.12); visão geral em `docs/ARCHITECTURE.md`
 - Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
 - Fluxo de trabalho: Spec Kit (`/speckit-*`), commits em português
+- Git: repositório público `github.com/salexcarvalho/meeting-bot` (AGPL-3.0-or-later). Branches `feat/*` → `develop` → `homolog` → `main`; tag `vX.Y.Z` em `main` (ver `CONTRIBUTING.md`). README em 3 idiomas (`README.md`, `README.en.md`, `README.es.md`): mudança de comportamento atualiza os três
 
 ## Regras do projeto (decididas pelo usuário)
 

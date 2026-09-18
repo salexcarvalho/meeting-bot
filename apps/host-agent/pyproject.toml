@@ -1,6 +1,7 @@
 [project]
 name = "host-agent"
-version = "0.3.0"
+version = "1.0.0"
+license = "AGPL-3.0-or-later"
 description = "Agente nativo do desktop: alertas, abertura de reuniões e captura de áudio (PipeWire)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
