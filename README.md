@@ -1,5 +1,7 @@
 # Agente de Reuniões (meeting-bot)
 
+**Português** · [English](README.en.md) · [Español](README.es.md)
+
 Agente **local** de reuniões e arquitetura de software. Ele:
 
 - traz a agenda do dia por convites `.ics` ou cadastro manual;
@@ -354,14 +356,39 @@ scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
 
 ## Limitações conhecidas
 
-- **Seletores do Meet/Teams quebram** (Modo Agente). Eles ficam em
-  `apps/backend/src/bot/platforms.ts`.
-- **Uma gravação local por vez.** Numa reunião emendada na outra, a segunda espera a primeira
-  parar (3 min sem fala depois do horário) ou o **Parar**. O host-agent avisa o conflito.
-- O **LLM de 4B** erra e duplica. Por isso todo item nasce proposto, com evidência validada.
-  Para atas e ADRs melhores, use o LLM externo (opcional, acima).
+- **Seletores do Meet/Teams quebram** quando as plataformas mudam a tela (assistente e Modo
+  Agente). Eles ficam em `apps/backend/src/bot/platforms.ts`.
+- **Uma gravação pelo computador por vez** ("Gravar agora" ou `AUTO_LOCAL_RECORDING=true`). Numa
+  reunião emendada na outra, a segunda espera a primeira parar (3 min sem fala depois do horário)
+  ou o **Parar**; o host-agent avisa o conflito. O assistente dentro da chamada não tem esse
+  limite: entra em até `MAX_CONCURRENT_BOTS` reuniões ao mesmo tempo.
+- **A análise ao vivo usa o modelo local de 4B**, que erra e repete itens. Por isso todo item nasce
+  proposto, com evidência validada, e itens repetidos são mesclados na análise final. Ata e ADRs
+  saem melhores com o LLM externo ou a assinatura (`LLM_GENERATION_PROVIDER`).
 - **Decisão arquitetural criada à mão** não tem trecho da transcrição associado: o ADR dela é
   gerado só com a descrição e o resumo da reunião.
-- **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o upload ou o assistente convidado.
+- **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o
+  upload ou o assistente convidado.
 - **Compartilhar reunião** ainda não tem tela (a estrutura `meeting_shares` já existe no backend).
-- **Avise os participantes** de que a reunião está sendo gravada e transcrita (LGPD).
+- **O assistente aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
+  nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo.
+- **Convite `.ics` de uma só ocorrência** não traz a repetição da série. A importação avisa; exporte
+  a série inteira no Outlook.
+- **Docker Desktop no Linux** não serve: a VM dele não enxerga a GPU nem mostra os containers do
+  Docker nativo. Use o Docker Engine nativo.
+- **Servidor de teste (VPS)** não tem transcrição ao vivo nem gravação pelo computador: só o
+  assistente na chamada e o passe final pelo OpenRouter.
+
+**Avise os participantes** de que a reunião está sendo gravada e transcrita (LGPD). O nome do
+assistente já diz que é a ata, mas isso não substitui o aviso.
+
+## Contribuir
+
+Veja [CONTRIBUTING.md](CONTRIBUTING.md): fluxo de branches (`develop` → `homolog` → `main`),
+testes exigidos e regras que nenhuma mudança pode quebrar. Falhas de segurança:
+[SECURITY.md](SECURITY.md). Convivência: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+## Licença
+
+[GNU Affero General Public License v3.0 ou posterior](LICENSE). Quem modificar e oferecer o sistema
+como serviço, inclusive pela web, precisa disponibilizar o código-fonte das mudanças.
