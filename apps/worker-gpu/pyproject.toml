@@ -1,6 +1,6 @@
 [project]
 name = "worker-gpu"
-version = "1.0.0"
+version = "1.0.1"
 license = "AGPL-3.0-or-later"
 description = "ASR (faster-whisper) e diarização (pyannote) locais na GPU para o Agente de Reuniões"
 requires-python = ">=3.12,<3.13"
