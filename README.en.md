@@ -195,6 +195,12 @@ entered as "Ata de <nome>" ("<name>'s minutes"). An anonymous guest has no photo
 show up. With `BOT_CAMERA=true`, the assistant turns on a virtual camera with the agent's avatar (a still image),
 but on the call this becomes a video frame.
 
+**Agent account on Teams** (Configurações > Meu agente, "Settings > My agent"): without it, the assistant joins Teams as a guest with no account, and Teams flags that. With a Microsoft account **dedicated to the agent** (never your own), it joins signed in and shows up under the account's name, which must also say it's the minutes (e.g., "Ata do Sérgio"; the system rejects a name that doesn't).
+1. On the project machine: `npm run teams:login`. In the browser that opens, sign in with the agent's account and choose "Stay signed in"; go back to the terminal and press Enter. This produces the `teams-session.json` file.
+2. In My agent, enter the account name and upload the file. Then delete the file: it is as sensitive as a password.
+3. The password never goes through the system. Only the session is kept, encrypted (AES-256-GCM, key derived from `AGENT_TOKEN`) and per user; changing `AGENT_TOKEN` means connecting again. On every meeting Teams renews the session and the system stores the new one.
+4. If the session expires, the assistant falls back to guest, the screen shows "Sessão vencida" ("Session expired"), and you repeat step 1. The account only applies to Teams; on Meet the assistant remains a guest.
+
 When the assistant doesn't join, check the screenshot under **Áudio e debug** ("Audio and debug").
 
 ### Settings
@@ -202,7 +208,7 @@ When the assistant doesn't join, check the screenshot under **Áudio e debug** (
 Each user has their own settings:
 
 - **Perfil** ("Profile"): real name, display name, email, language, timezone, and photo. The email (the same one on your Outlook/Teams invites) recognizes you among the `.ics` participants: your invite is not listed twice next to your microphone channel in the minutes.
-- **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, and spoken name recording.
+- **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, spoken name recording, and the agent's Teams account.
 - **Reuniões:** identity in the room.
 - **Documentação** ("Documentation"): level of detail and formats.
 - **Consumo de IA** ("AI usage"): tokens and cost for the month per provider, model, and meeting, plus the latest calls.

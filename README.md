@@ -190,6 +190,12 @@ recuperação por e-mail: nada sai da máquina.
 
 O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. Não há sufixo: o nome precisa dizer que é a ata (ex.: "Ata do Sérgio"), e um nome sem "ata", "gravação" ou "transcrição" entra como "Ata de <nome>". Convidado anônimo não tem foto no Meet/Teams: aparecem as iniciais do nome. Com `BOT_CAMERA=true` o assistente liga uma câmera virtual com o avatar do agente (imagem parada), mas na chamada isso vira um quadro de vídeo.
 
+**Conta do agente no Teams** (Configurações > Meu agente): sem ela, o assistente entra no Teams como convidado sem conta, e o Teams marca isso. Com uma conta Microsoft **só do agente** (nunca a sua), ele entra logado e aparece com o nome da conta, que também precisa dizer que é a ata (ex.: "Ata do Sérgio"; o sistema recusa nome que não diz).
+1. Na máquina do projeto: `npm run teams:login`. No navegador que abrir, entre com a conta do agente e marque "Manter conectado"; volte ao terminal e aperte Enter. Sai o arquivo `teams-session.json`.
+2. Em Meu agente, informe o nome da conta e envie o arquivo. Depois apague o arquivo: ele vale como uma senha.
+3. A senha nunca passa pelo sistema. Fica só a sessão, cifrada (AES-256-GCM, chave derivada do `AGENT_TOKEN`) e por usuário; trocar o `AGENT_TOKEN` exige conectar de novo. A cada reunião o Teams renova a sessão e o sistema guarda a nova.
+4. Se a sessão vencer, o assistente cai para convidado, a tela mostra "Sessão vencida" e você repete o passo 1. A conta vale só para Teams; no Meet o assistente continua convidado.
+
 Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 
 ### Configurações
@@ -197,7 +203,7 @@ Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 Cada usuário tem as próprias configurações:
 
 - **Perfil:** nome real, nome de exibição, e-mail, idioma, fuso e foto. O e-mail (o mesmo dos convites do Outlook/Teams) reconhece você entre os participantes do `.ics`: seu convite não aparece duplicado ao lado do canal do seu microfone na ata.
-- **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar e gravação do nome falado.
+- **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar, gravação do nome falado e conta do agente no Teams.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
 - **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.

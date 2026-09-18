@@ -41,11 +41,20 @@ export function botBaseName(src: IdentitySource): string {
   return safeMeetingName(src.agentName).slice(0, MAX_BASE).trim() || "Assistente";
 }
 
+/** Conta Microsoft do agente no Teams: o nome na reunião é o da conta, e a sessão abre o navegador já logado. */
+export interface BotAccount {
+  userId: string;
+  name: string;
+  state: unknown;
+}
+
 export interface BotIdentity {
   /** nome na reunião, já identificando o gravador */
   name: string;
   /** ícone do agente para a câmera virtual (null = câmera desligada) */
   avatarPath: string | null;
+  /** só no Teams, quando o dono conectou a conta do agente */
+  account?: BotAccount | null;
 }
 
 export function buildBotDisplayName(src: IdentitySource): string {

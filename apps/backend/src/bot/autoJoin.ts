@@ -49,7 +49,7 @@ async function launch(m: Candidate, from: string[]): Promise<LaunchResult> {
   try {
     if (activeBotCount() > config.maxConcurrentBots) return "limit";
     const identity = m.created_by
-      ? await resolveBotIdentity(m.created_by)
+      ? await resolveBotIdentity(m.created_by, undefined, target.platform)
       : { name: config.botDisplayName, avatarPath: null };
     const updated = await pool.query(
       `UPDATE meetings SET status = 'joining', skip_recording = false, error_message = NULL,

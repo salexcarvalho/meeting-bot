@@ -191,6 +191,12 @@ electrónico: nada sale de la máquina.
 
 El nombre en la sala sigue **Configurações > Reuniões** ("Configuración > Reuniones"): mi nombre, nombre del agente o un nombre personalizado. No hay sufijo: el nombre debe decir que es el acta (ej.: "Ata do Sérgio" ("Acta de Sérgio")), y un nombre sin "ata" ("acta"), "gravação" ("grabación") o "transcrição" ("transcripción") entra como "Ata de <nome>" ("Acta de <nombre>"). El invitado anónimo no tiene foto en Meet/Teams: aparecen las iniciales del nombre. Con `BOT_CAMERA=true` el asistente enciende una cámara virtual con el avatar del agente (imagen fija), pero en la llamada eso se convierte en un cuadro de video.
 
+**Cuenta del agente en Teams** (Configurações > Meu agente, "Configuración > Mi agente"): sin ella, el asistente entra a Teams como invitado sin cuenta, y Teams lo marca. Con una cuenta Microsoft **solo del agente** (nunca la tuya), entra con sesión iniciada y aparece con el nombre de la cuenta, que también debe decir que es el acta (ej.: "Ata do Sérgio"; el sistema rechaza un nombre que no lo dice).
+1. En la máquina del proyecto: `npm run teams:login`. En el navegador que se abra, entra con la cuenta del agente y elige "Mantener la sesión iniciada"; vuelve a la terminal y pulsa Enter. Se genera el archivo `teams-session.json`.
+2. En Mi agente, indica el nombre de la cuenta y sube el archivo. Después borra el archivo: vale como una contraseña.
+3. La contraseña nunca pasa por el sistema. Solo se guarda la sesión, cifrada (AES-256-GCM, clave derivada de `AGENT_TOKEN`) y por usuario; cambiar `AGENT_TOKEN` exige conectar de nuevo. En cada reunión Teams renueva la sesión y el sistema guarda la nueva.
+4. Si la sesión vence, el asistente vuelve a entrar como invitado, la pantalla muestra "Sessão vencida" ("Sesión vencida") y repites el paso 1. La cuenta vale solo para Teams; en Meet el asistente sigue como invitado.
+
 Cuando el asistente no entre, revisa la captura de pantalla en **Áudio e debug** ("Audio y debug").
 
 ### Configuración
@@ -198,7 +204,7 @@ Cuando el asistente no entre, revisa la captura de pantalla en **Áudio e debug*
 Cada usuario tiene su propia configuración:
 
 - **Perfil:** nombre real, nombre de visualización, correo, idioma, zona horaria y foto. El correo (el mismo de las invitaciones de Outlook/Teams) te reconoce entre los participantes del `.ics`: tu invitación no aparece duplicada junto al canal de tu micrófono en el acta.
-- **Meu agente** ("Mi agente"): persona del agente arquitecto, tecnologías, tipos de decisión, prompt base, avatar y grabación del nombre hablado.
+- **Meu agente** ("Mi agente"): persona del agente arquitecto, tecnologías, tipos de decisión, prompt base, avatar, grabación del nombre hablado y cuenta del agente en Teams.
 - **Reuniões** ("Reuniones"): identidad en la sala.
 - **Documentação** ("Documentación"): nivel de detalle y formatos.
 - **Consumo de IA:** tokens y costo del mes por proveedor, modelo y reunión, más las últimas llamadas.

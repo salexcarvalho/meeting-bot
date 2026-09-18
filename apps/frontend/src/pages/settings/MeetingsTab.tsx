@@ -52,7 +52,9 @@ export function MeetingsTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
         <ul className="plain-list small">
           <li>
             O assistente entra como <strong>convidado anônimo</strong> com um nome que diz que é a ata (ex.: "Ata do
-            Sérgio"). Nome sem "ata" ou "gravação" ganha "Ata de" na frente; não há opção para esconder isso.
+            Sérgio"). Nome sem "ata" ou "gravação" ganha "Ata de" na frente; não há opção para esconder isso. No
+            Teams, com a conta do agente conectada (Meu agente), ele entra logado com o nome da conta, que também
+            precisa dizer que é a ata.
           </li>
           <li>O nome é definido antes de entrar; Meet e Teams não deixam convidados trocarem de nome depois.</li>
           <li>

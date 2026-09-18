@@ -230,6 +230,43 @@ test.describe.serial("plataforma multiusuário", () => {
     await shot(page, "reuniao-bot-erro");
   });
 
+  test("conta do agente no Teams: recusa nome sem ata, conecta, avisa sessão vencida e remove", async ({ page }) => {
+    await login(page, ANA);
+    await page.goto("/configuracoes?aba=agente");
+    const card = page.locator("form.card", { hasText: "Conta do agente no Teams" });
+    await expect(card).toContainText("Nenhuma conta conectada");
+
+    const session = {
+      cookies: [{ name: "ESTSAUTHPERSISTENT", value: "x", domain: ".login.microsoftonline.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "None" }],
+      origins: [],
+    };
+    const file = { name: "teams-session.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(session)) };
+
+    await card.getByLabel("Nome da conta no Teams").fill("Ana Souza");
+    await card.getByLabel("Arquivo da sessão").setInputFiles(file);
+    await card.getByRole("button", { name: "Conectar conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "dizer que é a ata" })).toBeVisible();
+    await expect(card).toContainText("Nenhuma conta conectada");
+
+    await card.getByLabel("Nome da conta no Teams").fill("Ata da Ana");
+    await card.getByRole("button", { name: "Conectar conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Conta do agente conectada." })).toBeVisible();
+    await expect(card.getByText("Conectada", { exact: true })).toBeVisible();
+    await expect(card).toContainText("Ata da Ana");
+    await expect(card.getByRole("button", { name: "Trocar sessão" })).toBeDisabled();
+    await shot(page, "config-conta-teams");
+
+    // o nome que o bot usa no Teams passa a ser o da conta
+    const me = await page.evaluate(async () => (await (await fetch("/api/me")).json()) as { teamsAccount: { accountName: string } });
+    expect(me.teamsAccount.accountName).toBe("Ata da Ana");
+
+    await page.reload();
+    await expect(card.getByText("Conectada", { exact: true })).toBeVisible();
+    await card.getByRole("button", { name: "Remover conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Conta do agente removida." })).toBeVisible();
+    await expect(card).toContainText("Nenhuma conta conectada");
+  });
+
   test("gerar ata e ADR pergunta onde gerar e só envia depois de confirmar", async ({ page }) => {
     await login(page, ANA);
     const id = await doneMeeting(page, "Revisão de arquitetura E2E");

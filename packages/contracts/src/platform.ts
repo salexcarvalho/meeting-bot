@@ -99,6 +99,16 @@ export type ProfilePatch = z.infer<typeof ProfilePatch>;
 
 // ---------- agente ----------
 
+/** Conta Microsoft do agente no Teams (a sessão em si nunca sai do backend). */
+export interface TeamsAccountStatus {
+  connected: boolean;
+  /** nome da conta como aparece no Teams */
+  accountName: string | null;
+  updatedAt: string | null;
+  /** a última entrada precisou cair para convidado: a sessão venceu */
+  expired: boolean;
+}
+
 export const DETAIL_LEVELS = ["resumido", "normal", "detalhado"] as const;
 export type DetailLevel = (typeof DETAIL_LEVELS)[number];
 
@@ -206,6 +216,7 @@ export interface MeResponse {
   profile: UserProfile;
   settings: UserSettings;
   agent: AgentProfile;
+  teamsAccount: TeamsAccountStatus;
   permissions: Permission[];
   /** como o bot aparecerá na reunião com a configuração atual */
   botDisplayName: string;

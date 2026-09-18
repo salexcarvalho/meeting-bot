@@ -26,6 +26,7 @@ agente arquiteto, memória pesquisável.
   - RBAC e isolamento por dono;
   - admin não lê conteúdo alheio;
   - assistente sem sufixo, mas com nome que diz que é a ata (ex.: "Ata do Sérgio"; sem "ata"/"gravação" entra como "Ata de <nome>") e sem foto na reunião (convidado anônimo só mostra iniciais); câmera virtual com o ícone do agente existe, mas desligada por padrão (`BOT_CAMERA`);
+  - no Teams, o dono pode conectar uma conta Microsoft dedicada ao agente (constituição 2.2.0): o bot entra logado com o nome da conta (que precisa dizer que é a ata); sessão cifrada por usuário gerada com `npm run teams:login`, sem senha guardada;
   - host-agent grava só as reuniões de `AGENT_OWNER` (host-agent do sócio fica para o futuro).
 
 - Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados nas reuniões com a chave "Itens" ligada (`meetings.extract_items`, padrão desligada; ligada por "Gerar itens" na reunião). Desligada: sem extração ao vivo e análise final só com resumo.

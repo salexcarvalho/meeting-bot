@@ -323,7 +323,7 @@ export function buildRouter(): Router {
             error: `Já existem ${activeBotCount() - 1} bots em reunião (limite ${config.maxConcurrentBots}). Encerre um antes.`,
           });
         }
-        const botIdentity = await resolveBotIdentity(req.user!.id, identity);
+        const botIdentity = await resolveBotIdentity(req.user!.id, identity, target.platform);
         const id = await createMeeting({
           title: cleanTitle(req.body?.title, "Reunião sem título"),
           platform: target.platform,
