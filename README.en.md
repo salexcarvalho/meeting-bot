@@ -201,7 +201,7 @@ When the assistant doesn't join, check the screenshot under **Áudio e debug** (
 
 Each user has their own settings:
 
-- **Perfil** ("Profile"): real name, display name, language, timezone, and photo.
+- **Perfil** ("Profile"): real name, display name, email, language, timezone, and photo. The email (the same one on your Outlook/Teams invites) recognizes you among the `.ics` participants: your invite is not listed twice next to your microphone channel in the minutes.
 - **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, and spoken name recording.
 - **Reuniões:** identity in the room.
 - **Documentação** ("Documentation"): level of detail and formats.

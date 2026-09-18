@@ -133,6 +133,23 @@ describe("renderAta", () => {
     expect(body).toContain("- Ana Souza");
   });
 
+  it("o convite do dono não repete o nome dele nos participantes", () => {
+    const withSelf = renderAta({
+      meeting: { ...meeting, attendees: [{ name: "Sérgio Alex Carvalho", email: "sergio@example.com" }, ...meeting.attendees] },
+      timezone: "America/Sao_Paulo",
+      items,
+      adrs,
+      speakers: ["Sérgio", "Carlos"],
+      self: { name: "Sérgio", email: "Sergio@Example.com" },
+      analysis,
+      legacyAta: null,
+    });
+    const body = withSelf.slice(withSelf.indexOf("## Participantes"), withSelf.indexOf("## Objetivo"));
+    expect(body.match(/Sérgio/g)).toHaveLength(1);
+    expect(body).not.toContain("Sérgio Alex Carvalho");
+    expect(body).toContain("- Ana Souza");
+  });
+
   it("mostra código de ADR só quando aprovado", () => {
     const body = sectionBody("Possíveis ADRs");
     expect(body).toContain("**Filas na integração** — ADR-007 (aprovado); REST síncrono");

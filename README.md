@@ -196,7 +196,7 @@ Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 
 Cada usuário tem as próprias configurações:
 
-- **Perfil:** nome real, nome de exibição, idioma, fuso e foto.
+- **Perfil:** nome real, nome de exibição, e-mail, idioma, fuso e foto. O e-mail (o mesmo dos convites do Outlook/Teams) reconhece você entre os participantes do `.ics`: seu convite não aparece duplicado ao lado do canal do seu microfone na ata.
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar e gravação do nome falado.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.

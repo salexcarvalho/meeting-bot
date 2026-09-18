@@ -419,6 +419,12 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       expect(profile.json.profile).toMatchObject({ realName: "Ana Souza", displayName: "Ana", name: "Ana" });
       expect((await call("mu-ana", "PATCH", "/me/profile", { timezone: "Marte/Olympus" })).status).toBe(400);
 
+      const email = await call("mu-ana", "PATCH", "/me/profile", { email: "  Ana.Souza@Empresa.com " });
+      expect(email.status).toBe(200);
+      expect(email.json.profile.email).toBe("ana.souza@empresa.com");
+      expect((await call("mu-ana", "PATCH", "/me/profile", { email: "isso-nao-e-email" })).status).toBe(400);
+      expect((await call("mu-ana", "PATCH", "/me/profile", { email: "" })).json.profile.email).toBeNull();
+
       const agent = await call("mu-ana", "PATCH", "/me/agent", {
         name: "Orion",
         description: "Arquiteto de software",

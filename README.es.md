@@ -197,7 +197,7 @@ Cuando el asistente no entre, revisa la captura de pantalla en **Áudio e debug*
 
 Cada usuario tiene su propia configuración:
 
-- **Perfil:** nombre real, nombre de visualización, idioma, zona horaria y foto.
+- **Perfil:** nombre real, nombre de visualización, correo, idioma, zona horaria y foto. El correo (el mismo de las invitaciones de Outlook/Teams) te reconoce entre los participantes del `.ics`: tu invitación no aparece duplicada junto al canal de tu micrófono en el acta.
 - **Meu agente** ("Mi agente"): persona del agente arquitecto, tecnologías, tipos de decisión, prompt base, avatar y grabación del nombre hablado.
 - **Reuniões** ("Reuniones"): identidad en la sala.
 - **Documentação** ("Documentación"): nivel de detalle y formatos.

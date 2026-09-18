@@ -213,6 +213,7 @@ const statements = [
   `ALTER TABLE users
      ADD COLUMN IF NOT EXISTS real_name TEXT,
      ADD COLUMN IF NOT EXISTS display_name TEXT,
+     ADD COLUMN IF NOT EXISTS email TEXT,
      ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'pt-BR',
      ADD COLUMN IF NOT EXISTS timezone TEXT,
      ADD COLUMN IF NOT EXISTS avatar_file TEXT,

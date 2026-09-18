@@ -143,8 +143,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, ANA);
     await page.getByRole("link", { name: "Configurações" }).click();
     await page.getByLabel("Nome de exibição").fill("Ana");
+    await page.getByLabel("E-mail").fill("Ana.Souza@Empresa.com");
     await page.getByRole("button", { name: "Salvar" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Perfil salvo." })).toBeVisible();
+    await expect(page.getByLabel("E-mail")).toHaveValue("ana.souza@empresa.com");
     await expect(page.locator("aside.sidebar .user-box-name")).toHaveText("Ana");
 
     await page.getByLabel("Sua foto").setInputFiles({ name: "ana.png", mimeType: "image/png", buffer: PNG_1PX });

@@ -6,6 +6,7 @@ import {
   type ItemType,
   type MeetingSummary,
 } from "@meeting-bot/contracts";
+import { participantNames, type Self } from "../meetings/participants";
 
 // Ata no template de 19 seções (FR-026), montada do estado atual dos itens (FR-027, R9).
 
@@ -22,6 +23,8 @@ export interface AtaInput {
   items: Item[];
   adrs: Adr[];
   speakers: string[];
+  /** dono da reunião, para o convite dele não duplicar o canal do microfone */
+  self?: Self | null;
   analysis: AtaAnalysis | null;
   legacyAta: string | null;
 }
@@ -71,7 +74,7 @@ export function renderAta(input: AtaInput): string {
   const durationMin = m.startedAt && m.endedAt
     ? Math.round((new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime()) / 60_000)
     : null;
-  const participants = [...new Set([...input.speakers, ...m.attendees.map((a) => a.name || a.email || "").filter(Boolean)])];
+  const participants = participantNames(input.speakers, m.attendees, input.self ?? null);
 
   const pendencias = byType("pendencia");
   const owners = new Map<string, Item[]>();

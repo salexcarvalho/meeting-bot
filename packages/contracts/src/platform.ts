@@ -45,6 +45,8 @@ export interface UserProfile {
   username: string;
   realName: string | null;
   displayName: string | null;
+  /** e-mail do convite (Outlook/Teams), para reconhecer o dono entre os participantes */
+  email: string | null;
   /** nome efetivo: exibição > real > usuário */
   name: string;
   language: Language;
@@ -64,10 +66,19 @@ const optionalText = (max: number) =>
     .transform((v) => (v === "" ? null : v))
     .nullable();
 
+const optionalEmail = z
+  .string()
+  .trim()
+  .max(254)
+  .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "e-mail inválido")
+  .transform((v) => (v === "" ? null : v.toLowerCase()))
+  .nullable();
+
 export const ProfilePatch = z
   .object({
     realName: optionalText(120),
     displayName: optionalText(60),
+    email: optionalEmail,
     language: z.enum(LANGUAGES),
     timezone: z
       .string()
