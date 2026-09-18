@@ -8,6 +8,10 @@ Formato: [Keep a Changelog](https://keepachangelog.com/). Versões: [SemVer](htt
 
 ## Português
 
+### [1.0.1] — 2026-09-18
+
+- `.env.example`: o exemplo de `USER_DISPLAY_NAME` passa a indicar o nome de quem usa o sistema, não o do agente.
+
 ### [1.0.0] — 2026-09-18
 
 Primeira versão pública.
@@ -31,6 +35,10 @@ Primeira versão pública.
 ---
 
 ## English
+
+### [1.0.1] — 2026-09-18
+
+- `.env.example`: the `USER_DISPLAY_NAME` example now points to the name of the person using the system, not the agent's.
 
 ### [1.0.0] — 2026-09-18
 
@@ -57,6 +65,10 @@ First public release.
 
 ## Español
 
+### [1.0.1] — 2026-09-18
+
+- `.env.example`: el ejemplo de `USER_DISPLAY_NAME` ahora indica el nombre de quien usa el sistema, no el del agente.
+
 ### [1.0.0] — 2026-09-18
 
 Primera versión pública.
@@ -78,4 +90,5 @@ Primera versión pública.
 - **Servidor de pruebas** con Dokploy (`docker-compose.vps.yml`).
 - Licencia AGPL-3.0-or-later.
 
+[1.0.1]: https://github.com/salexcarvalho/meeting-bot/releases/tag/v1.0.1
 [1.0.0]: https://github.com/salexcarvalho/meeting-bot/releases/tag/v1.0.0
