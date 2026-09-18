@@ -143,6 +143,19 @@ const statements = [
      reviewed_at TIMESTAMPTZ
    )`,
   `CREATE INDEX IF NOT EXISTS idx_items_meeting ON meeting_items (meeting_id, type)`,
+  // Itens (decisões, pendências, riscos…) só saem em reunião com a chave ligada; o padrão é desligado.
+  // Reuniões que já tinham itens ou análise ficam ligadas, só na criação da coluna.
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'meetings' AND column_name = 'extract_items'
+     ) THEN
+       ALTER TABLE meetings ADD COLUMN extract_items BOOLEAN NOT NULL DEFAULT false;
+       UPDATE meetings SET extract_items = true
+        WHERE analyzed_at IS NOT NULL OR EXISTS (SELECT 1 FROM meeting_items i WHERE i.meeting_id = meetings.id);
+     END IF;
+   END $$`,
 
   `CREATE TABLE IF NOT EXISTS item_evidence (
      id BIGSERIAL PRIMARY KEY,

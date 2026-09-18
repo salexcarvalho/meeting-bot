@@ -152,6 +152,18 @@ Se o backend reinicia no meio, a reunião é retomada no boot: quem estava em `g
 transcrição final) refaz só a análise; os demais refazem tudo. O provedor escolhido na tela não
 sobrevive ao reinício: a retomada usa o provedor automático (`LLM_GENERATION_PROVIDER`).
 
+### Itens sob confirmação (`meetings.extract_items`)
+
+Decisões, pendências, riscos, requisitos, ADRs e demais itens só são gerados nas reuniões com a chave
+ligada. Padrão `false`; `PUT /meetings/:id/extract-items` `{enabled}` (só o dono, `meetings.manage`;
+409 durante processamento).
+
+- Desligada: `tickAll`/`flushLiveAgent` não extraem ao vivo; `runPostAnalysis` cai em `runSummaryOnly`
+  (resumo por trecho → narrativa com `items: []`), sem consolidação, itens nem ADR, e não apaga itens existentes.
+- A ata (`renderAta`) sem itens e com a chave desligada sai só com o resumo e uma nota explicando.
+- **Gerar itens** = `PUT extract-items {enabled:true}` + `POST /reprocess {step:"analysis", llm}`.
+- Migração: a coluna nasce `false`; no ato da criação, reuniões com `analyzed_at` ou itens viram `true`.
+
 ### Geração sob demanda e provedor
 
 Só o dono da reunião, com `documents.generate`, pode pedir.

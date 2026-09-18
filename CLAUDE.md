@@ -28,6 +28,7 @@ agente arquiteto, memória pesquisável.
   - assistente sem sufixo, mas com nome que diz que é a ata (ex.: "Ata do Sérgio"; sem "ata"/"gravação" entra como "Ata de <nome>") e sem foto na reunião (convidado anônimo só mostra iniciais); câmera virtual com o ícone do agente existe, mas desligada por padrão (`BOT_CAMERA`);
   - host-agent grava só as reuniões de `AGENT_OWNER` (host-agent do sócio fica para o futuro).
 
+- Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados nas reuniões com a chave "Itens" ligada (`meetings.extract_items`, padrão desligada; ligada por "Gerar itens" na reunião). Desligada: sem extração ao vivo e análise final só com resumo.
 - Servidor de teste (constituição 2.0.0): VPS com Dokploy, `docker-compose.vps.yml` + `.env.vps.example`; transcrição final pelo OpenRouter (sem GPU), ata/ADR pela assinatura do Claude no container `agent-cli` (`AGENTE_MODE=llm`), sem passe ao vivo e sem gravação pelo PC. Guia: `docs/vps-dokploy.md`.
 
 ## Ambiente

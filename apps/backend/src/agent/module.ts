@@ -38,6 +38,7 @@ function depsFor(provider: LlmChoice): PostAnalysisDeps {
         liveSummary: meeting.live_summary,
         analysisSummary: typeof analysis?.resumo_executivo === "string" ? analysis.resumo_executivo : null,
         regenerating: meeting.analyzed_at !== null || Boolean(previous.rows[0].any),
+        extractItems: meeting.extract_items,
         segments: segments.map((s) => ({ ...s, speakerName: nameOf(s.speaker) })),
       };
     },

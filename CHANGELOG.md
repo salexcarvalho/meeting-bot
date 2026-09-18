@@ -8,6 +8,11 @@ Formato: [Keep a Changelog](https://keepachangelog.com/). Versões: [SemVer](htt
 
 ## Português
 
+### [Não lançado]
+
+- Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados após você ligar "Gerar itens" na reunião; o padrão é desligado, e a ata sai só com o resumo.
+- O assistente repete a abertura do link da reunião quando a rede cai (`ERR_TIMED_OUT` etc.), e o auto-assistente reenvia sozinho reuniões que falharam por rede.
+
 ### [1.0.1] — 2026-09-18
 
 - `.env.example`: o exemplo de `USER_DISPLAY_NAME` passa a indicar o nome de quem usa o sistema, não o do agente.
@@ -35,6 +40,11 @@ Primeira versão pública.
 ---
 
 ## English
+
+### [Unreleased]
+
+- Items (decisions, action items, risks, requirements, ADRs) are only generated after you turn on "Gerar itens" in the meeting; off by default, and the minutes carry only the summary.
+- The assistant retries opening the meeting link when the network drops (`ERR_TIMED_OUT`, etc.), and the auto-assistant resends meetings that failed because of the network.
 
 ### [1.0.1] — 2026-09-18
 
@@ -64,6 +74,11 @@ First public release.
 ---
 
 ## Español
+
+### [Sin publicar]
+
+- Los ítems (decisiones, pendientes, riesgos, requisitos, ADR) solo se generan después de activar "Gerar itens" en la reunión; viene desactivado y el acta trae solo el resumen.
+- El asistente reintenta abrir el enlace de la reunión cuando la red se cae (`ERR_TIMED_OUT`, etc.), y el auto-asistente reenvía las reuniones que fallaron por la red.
 
 ### [1.0.1] — 2026-09-18
 

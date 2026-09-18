@@ -154,6 +154,14 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
   - El enlace de la decisión de origen abre la pestaña Itens ya en su tarjeta.
 - **Falantes** ("Hablantes"): cambia el nombre de "Speaker 1", etc., en la pestaña Transcrição ("Transcripción").
 - **Reprocessar** ("Reprocesar"): rehace la transcripción final y el análisis.
+- **Itens activados/desactivados** (interruptor bajo el panel en vivo, solo el dueño): decisiones, pendientes,
+  riesgos, requisitos y ADR solo se generan en las reuniones donde activas el interruptor. Viene
+  **desactivado**; una reunión de prueba asistida o de entrega queda solo con transcripción y acta con el resumen.
+  - Desactivado: la extracción en vivo no corre y el análisis posterior a la reunión genera solo el resumen (sin ítems, sin ADR).
+  - **Gerar itens** ("Generar ítems") activa el interruptor y pregunta dónde generar (local, OpenRouter o suscripción), como Gerar ata.
+    Activado a mitad de la reunión, la extracción en vivo empieza desde ahí.
+  - **Desligar itens** ("Desactivar ítems") no borra nada: lo que existe se mantiene y crear ítems a mano sigue funcionando.
+  - Las reuniones anteriores a este interruptor que ya tenían ítems o análisis quedan como activadas.
 - **Gerar ata** ("Generar acta") (pestaña Ata): rehace solo el análisis sobre la transcripción final, sin transcribir de nuevo.
   - Generar de nuevo empieza desde cero: borra los elementos propuestos por la IA que nadie tocó (y los ADR
     sugeridos de ellos). Quedan los aprobados, los rechazados, los editados y los creados a mano.

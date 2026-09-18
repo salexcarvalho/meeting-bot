@@ -154,6 +154,14 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   - The link to the source decision opens the Itens ("Items") tab already on its card.
 - **Falantes** ("Speakers"): rename "Speaker 1", etc., on the Transcrição ("Transcript") tab.
 - **Reprocessar** ("Reprocess"): redoes the final transcription and the analysis.
+- **Items on/off** (switch below the live panel, owner only): decisions, action items, risks,
+  requirements and ADRs are only generated in meetings where you turn the switch on. It starts **off**;
+  a test-assist or delivery meeting ends up with just the transcript and minutes with the summary.
+  - Off: live extraction does not run, and the post-meeting analysis produces only the summary (no items, no ADR).
+  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (local, OpenRouter or subscription), like Gerar ata.
+    Turned on mid-meeting, live extraction starts from that point.
+  - **Desligar itens** ("Turn items off") deletes nothing: what exists stays, and creating items by hand still works.
+  - Meetings that predate this switch and already had items or an analysis are marked as on.
 - **Gerar ata** ("Generate meeting minutes") (Ata tab): redoes only the analysis on the final transcription, without transcribing again.
   - Generating again starts from scratch: it deletes the AI-proposed items that no one touched (and the ADRs
     suggested from them). The approved, rejected, edited, and manually created ones remain.

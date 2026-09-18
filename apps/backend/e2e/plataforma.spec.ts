@@ -276,6 +276,52 @@ test.describe.serial("plataforma multiusuário", () => {
     await shot(page, "gerar-adr-falha");
   });
 
+  test("itens da reunião: desligados por padrão; gerar itens pergunta onde gerar, liga e envia; desligar não apaga", async ({ page }) => {
+    await login(page, ANA);
+    const id = await doneMeeting(page, "Teste assistido E2E");
+    const manual = await postJson(page, `/api/meetings/${id}/items`, { type: "pendencia", description: "Anotada à mão" });
+    expect(manual.status).toBe(201);
+
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    page.on("request", (req) => {
+      const path = new URL(req.url()).pathname;
+      if (["PUT", "POST"].includes(req.method()) && (path.endsWith("/extract-items") || path.endsWith("/reprocess"))) {
+        calls.push({ method: req.method(), path: path.split("/").pop()!, body: req.postDataJSON() });
+      }
+    });
+    await page.goto(`/reunioes/${id}`);
+    const chave = page.getByRole("group", { name: "Itens da reunião" });
+    await expect(chave).toContainText("Itens desligados");
+    await expect(chave).toContainText("o que já existe continua");
+    await shot(page, "itens-desligados");
+
+    // cancelar não envia nada
+    await chave.getByRole("button", { name: "Gerar itens" }).click();
+    const dialog = page.getByRole("dialog", { name: "Gerar itens" });
+    await expect(dialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
+    await expect(dialog).toBeHidden();
+    expect(calls).toEqual([]);
+    await expect(chave).toContainText("Itens desligados");
+
+    // confirmar liga a chave e pede a análise; sem Ollama no E2E ela falha, mas a chave fica ligada
+    await chave.getByRole("button", { name: "Gerar itens" }).click();
+    await dialog.getByRole("button", { name: "Gerar itens" }).click();
+    await expect(chave).toContainText("Itens ligados", { timeout: 30_000 });
+    expect(calls).toEqual([
+      { method: "PUT", path: "extract-items", body: { enabled: true } },
+      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "local" } },
+    ]);
+
+    // desligar (quando o processamento acaba) não apaga o que existe
+    const desligar = chave.getByRole("button", { name: "Desligar itens" });
+    await expect(desligar).toBeEnabled({ timeout: 30_000 });
+    await desligar.click();
+    await expect(chave).toContainText("Itens desligados");
+    const lista = await page.evaluate(async (mid) => (await (await fetch(`/api/meetings/${mid}/items`)).json()) as { items: unknown[] }, id);
+    expect(lista.items.length).toBeGreaterThanOrEqual(1);
+  });
+
   test("resumo para enviar mostra só o aprovado e copia", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await login(page, ANA);

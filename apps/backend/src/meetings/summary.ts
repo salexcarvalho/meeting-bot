@@ -19,6 +19,7 @@ export function toMeetingSummary(m: MeetingRow): MeetingSummary {
     endedAt: iso(m.ended_at),
     project: m.project_id ? { id: m.project_id, name: m.project_name ?? "", suggested: m.project_suggested } : null,
     skipRecording: m.skip_recording,
+    itemsEnabled: m.extract_items,
     organizer: m.organizer,
     attendees: Array.isArray(m.attendees) ? m.attendees : [],
     errorMessage: m.error_message,

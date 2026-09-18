@@ -11,6 +11,7 @@ const SECTIONS = [
 
 const meeting: MeetingSummary = {
   id: "m1",
+  itemsEnabled: true,
   title: "Portal SES - Arquitetura",
   platform: "teams",
   url: null,
@@ -149,6 +150,23 @@ describe("renderAta", () => {
     expect(sectionBody("Riscos")).toContain("(Integração)");
     expect(sectionBody("Requisitos identificados")).toContain("Responder em até 2 s (Requisito não funcional)");
     expect(sectionBody("Observações do Arquiteto")).toContain("Planejar a migração");
+  });
+
+  it("itens desligados e nenhum item: ata só com resumo, sem seções vazias de decisões e riscos", () => {
+    const off = { ...meeting, itemsEnabled: false };
+    const text = renderAta({ meeting: off, timezone: "America/Sao_Paulo", items: [], adrs: [], speakers: [], analysis, legacyAta: null });
+    expect(text).toContain("não gera itens");
+    for (const kept of ["Data", "Resumo executivo", "Assuntos discutidos"]) expect(text).toContain(`## ${kept}`);
+    for (const dropped of ["Decisões", "Riscos", "Pendências", "Próximas ações", "Possíveis ADRs", "Observações do Arquiteto"]) {
+      expect(text).not.toContain(`## ${dropped}`);
+    }
+  });
+
+  it("itens desligados depois de já existirem: a ata continua mostrando o que foi gerado", () => {
+    const off = { ...meeting, itemsEnabled: false };
+    const text = renderAta({ meeting: off, timezone: "America/Sao_Paulo", items, adrs, speakers: [], analysis, legacyAta: null });
+    expect(text).not.toContain("não gera itens");
+    expect(text).toContain("## Riscos");
   });
 
   it("ata antiga aparece como anexo quando não há análise nova", () => {

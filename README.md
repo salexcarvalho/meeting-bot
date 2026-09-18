@@ -154,6 +154,14 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   - O link da decisão de origem abre a aba Itens já no cartão dela.
 - **Falantes**: renomeie "Speaker 1" etc. na aba Transcrição.
 - **Reprocessar**: refaz a transcrição final e a análise.
+- **Itens ligados/desligados** (chave abaixo do painel ao vivo, só para o dono): decisões, pendências,
+  riscos, requisitos e ADRs só são gerados nas reuniões em que você liga a chave. Vem **desligada**;
+  reunião de teste assistido ou de entrega fica só com transcrição e ata com o resumo.
+  - Desligada: a extração ao vivo não roda, e a análise pós-reunião gera só o resumo (sem itens, sem ADR).
+  - **Gerar itens** liga a chave e pergunta onde gerar (local, OpenRouter ou assinatura), como o Gerar ata.
+    Ligada no meio da reunião, a extração ao vivo começa dali.
+  - **Desligar itens** não apaga nada: o que já existe fica, e criar item à mão continua valendo.
+  - Reuniões anteriores a esta chave que já tinham itens ou análise entram como ligadas.
 - **Gerar ata** (aba Ata): refaz só a análise sobre a transcrição final, sem transcrever de novo.
   - Gerar de novo começa do zero: apaga os itens propostos pela IA que ninguém tocou (e os ADRs
     sugeridos deles). Ficam os aprovados, os rejeitados, os editados e os criados à mão.

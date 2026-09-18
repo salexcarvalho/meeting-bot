@@ -83,9 +83,14 @@ export function renderAta(input: AtaInput): string {
   const adrByItem = new Map(input.adrs.map((a) => [a.itemId, a]));
   const adrItems = byType("decisao_arquitetural");
 
+  // Itens desligados e nenhum item gerado: a ata traz só o resumo, sem seções vazias de decisões e riscos.
+  const summaryOnly = !m.itemsEnabled && items.length === 0;
+
   const parts: string[] = [];
   parts.push(`# Ata — ${oneLine(m.title)}\n`);
-  if (!analysis && input.legacyAta) {
+  if (summaryOnly) {
+    parts.push('> Esta reunião não gera itens (decisões, pendências, riscos e ADRs): a ata traz só o resumo. Ligue "Gerar itens" na reunião para incluí-los.\n');
+  } else if (!analysis && input.legacyAta) {
     parts.push("> Ata gerada pela versão anterior do sistema; as seções abaixo refletem os itens atuais, se houver.\n");
   } else if (items.some((i) => i.reviewStatus === "proposto")) {
     parts.push("> Itens marcados como _(proposto)_ foram sugeridos pela IA e ainda não foram revisados.\n");
@@ -108,6 +113,7 @@ export function renderAta(input: AtaInput): string {
       (analysis?.assuntos ?? []).map((a) => `- **${oneLine(a.titulo)}**: ${oneLine(a.resumo)}`),
     ),
   );
+  const itemSectionsStart = parts.length;
   parts.push(section("Decisões", byType("decisao").map((i) => line(i, [i.attributes.motivacao ? `motivação: ${i.attributes.motivacao}` : ""]))));
   parts.push(
     section(
@@ -179,6 +185,7 @@ export function renderAta(input: AtaInput): string {
     ),
   );
   parts.push(section("Observações do Arquiteto", (analysis?.observacoes_arquiteto ?? []).map((o) => `- ${oneLine(o)}`)));
+  if (summaryOnly) parts.splice(itemSectionsStart);
 
   if (!analysis && input.legacyAta) {
     parts.push(`---\n\n### Ata original\n\n${input.legacyAta.trim()}\n`);

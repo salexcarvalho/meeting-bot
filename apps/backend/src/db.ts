@@ -187,6 +187,8 @@ export interface MeetingRow {
   project_name: string | null;
   project_suggested: boolean;
   skip_recording: boolean;
+  /** gera itens (decisões, pendências, riscos…) ao vivo e na análise final */
+  extract_items: boolean;
   stop_requested: boolean;
   last_speech_at: Date | null;
   live_summary: string | null;

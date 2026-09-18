@@ -163,6 +163,8 @@ export interface MeetingSummary {
   endedAt: string | null;
   project: ProjectRef | null;
   skipRecording: boolean;
+  /** gera decisões, pendências, riscos etc. nesta reunião (padrão: desligado) */
+  itemsEnabled: boolean;
   organizer: string | null;
   attendees: Attendee[];
   errorMessage: string | null;
@@ -348,6 +350,9 @@ export interface LlmOptions {
   /** assinaturas habilitadas no .env (a disponibilidade depende da reunião e do host-agent) */
   subscriptions: SubscriptionLlmOption[];
 }
+
+export const ExtractItemsRequest = z.object({ enabled: z.boolean() });
+export type ExtractItemsRequest = z.infer<typeof ExtractItemsRequest>;
 
 export const GenerateAdrsRequest = z.object({
   llm: z.enum(LLM_CHOICES).optional(),

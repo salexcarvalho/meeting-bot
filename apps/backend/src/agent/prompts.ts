@@ -96,6 +96,17 @@ export function extractionUser(input: {
     .join("\n");
 }
 
+export const SYSTEM_RESUMO_TRECHO = `Você resume um trecho de reunião em português do Brasil.
+${DATA_RULE}
+- "resumo_trecho": até 500 caracteres com o que foi tratado neste trecho.
+- Não liste decisões, pendências, riscos nem requisitos; só resuma o assunto.`;
+
+export function summaryUser(input: { title: string; project: string | null; window: string }): string {
+  return [`Reunião: ${input.title}`, input.project ? `Projeto: ${input.project}` : null, "", input.window]
+    .filter((l) => l !== null)
+    .join("\n");
+}
+
 export const SYSTEM_CONSOLIDACAO = `Você mantém a memória de uma reunião em andamento (pt-BR).
 Recebe o resumo corrente, os resumos dos trechos novos, os itens propostos (I<n>) e, às vezes, itens já
 revisados por uma pessoa (R<n>).
