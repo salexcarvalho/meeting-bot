@@ -1,4 +1,17 @@
+import type { RecurrenceRule } from "@meeting-bot/contracts";
+
 const TZ = "America/Sao_Paulo";
+
+const RECURRENCE_LABEL: Record<RecurrenceRule["freq"], { one: string; many: string }> = {
+  daily: { one: "todo dia", many: "dias" },
+  weekly: { one: "toda semana", many: "semanas" },
+  monthly: { one: "todo mês", many: "meses" },
+};
+
+export function recurrenceLabel(rule: RecurrenceRule): string {
+  const l = RECURRENCE_LABEL[rule.freq];
+  return rule.interval > 1 ? `a cada ${rule.interval} ${l.many}` : l.one;
+}
 
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return "—";

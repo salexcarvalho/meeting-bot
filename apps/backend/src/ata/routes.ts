@@ -6,6 +6,7 @@ import { features } from "../features";
 import { listAdrs, listItems } from "../items/service";
 import { hub } from "../live/hub";
 import { toMeetingSummary } from "../meetings/summary";
+import { getSelf } from "../users/repo";
 import { parseBody, wrap } from "../routes";
 import { getSegments, getSpeakers, renameSpeaker, speakerNameResolver } from "../repo/transcripts";
 import { renderAta, renderResumo, type AtaAnalysis, type AtaInput } from "./render";
@@ -15,11 +16,12 @@ const SpeakerRename = z.object({ displayName: z.string().trim().min(1, "Informe 
 async function buildAta(meetingId: string) {
   const meeting = await getMeeting(meetingId);
   if (!meeting) return null;
-  const [items, adrs, speakers, segments] = await Promise.all([
+  const [items, adrs, speakers, segments, self] = await Promise.all([
     listItems(meetingId),
     listAdrs(meetingId),
     getSpeakers(meetingId),
     getSegments(meetingId),
+    getSelf(meeting.created_by),
   ]);
   const nameOf = speakerNameResolver(speakers);
   const labels = [...new Set(segments.map((s) => s.speaker).filter((s): s is string => Boolean(s)))];
@@ -30,6 +32,7 @@ async function buildAta(meetingId: string) {
     items,
     adrs,
     speakers: labels.map((l) => nameOf(l) ?? l),
+    self,
     analysis,
     legacyAta: meeting.ata_markdown,
   };

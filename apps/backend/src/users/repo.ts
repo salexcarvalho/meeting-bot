@@ -22,6 +22,7 @@ interface UserRow {
   username: string;
   real_name: string | null;
   display_name: string | null;
+  email: string | null;
   language: string;
   timezone: string | null;
   avatar_file: string | null;
@@ -34,7 +35,7 @@ interface UserRow {
 }
 
 const PROFILE_SELECT = `
-  SELECT u.id, u.username, u.real_name, u.display_name, u.language, u.timezone, u.avatar_file,
+  SELECT u.id, u.username, u.real_name, u.display_name, u.email, u.language, u.timezone, u.avatar_file,
          u.avatar_updated_at, u.active, u.created_at, u.last_seen_at,
          COALESCE(array_agg(r.key ORDER BY r.id) FILTER (WHERE r.key IS NOT NULL), '{}') AS roles
     FROM users u
@@ -53,6 +54,7 @@ function toProfile(row: UserRow): UserProfile {
     username: row.username,
     realName: row.real_name,
     displayName: row.display_name,
+    email: row.email,
     name: effectiveName(row),
     language: row.language as Language,
     timezone: row.timezone ?? config.appTimezone,
@@ -72,6 +74,7 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
 const PROFILE_COLUMNS: Record<keyof ProfilePatch, string> = {
   realName: "real_name",
   displayName: "display_name",
+  email: "email",
   language: "language",
   timezone: "timezone",
 };
@@ -86,6 +89,13 @@ export async function updateProfile(userId: string, patch: ProfilePatch): Promis
   }
   if (!sets.length) return;
   await pool.query(`UPDATE users SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`, values);
+}
+
+/** Nome e e-mail de quem é dono da reunião (para reconhecê-lo entre os participantes do convite). */
+export async function getSelf(userId: string | null): Promise<{ name: string; email: string | null } | null> {
+  if (!userId) return null;
+  const { rows } = await pool.query(`SELECT username, real_name, display_name, email FROM users WHERE id = $1`, [userId]);
+  return rows[0] ? { name: effectiveName(rows[0]), email: rows[0].email } : null;
 }
 
 export async function getAvatarFile(userId: string): Promise<string | null> {

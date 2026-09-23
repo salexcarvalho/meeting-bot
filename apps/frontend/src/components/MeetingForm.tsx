@@ -6,6 +6,12 @@ import { Dialog } from "./Dialog";
 import { useToast } from "./Toast";
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
+const REPEAT_OPTIONS: { value: "none" | "daily" | "weekly" | "monthly"; label: string }[] = [
+  { value: "none", label: "Não repete" },
+  { value: "daily", label: "Diariamente" },
+  { value: "weekly", label: "Semanalmente" },
+  { value: "monthly", label: "Mensalmente" },
+];
 
 export function MeetingForm({
   open,
@@ -23,6 +29,7 @@ export function MeetingForm({
   const toast = useToast();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [repeat, setRepeat] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const editing = Boolean(meeting);
   const scheduleLocked =
     editing &&
@@ -46,6 +53,14 @@ export function MeetingForm({
       body.start = fromLocalInput(String(form.get("start")));
       body.durationMinutes = Number(form.get("duration"));
       body.url = String(form.get("url") ?? "").trim() || null;
+    }
+    if (!editing && repeat !== "none") {
+      const until = String(form.get("recurrenceUntil") ?? "");
+      body.recurrence = {
+        freq: repeat,
+        interval: Number(form.get("recurrenceInterval")) || 1,
+        until: until ? fromLocalInput(`${until}T23:59`) : null,
+      };
     }
     setBusy(true);
     setError("");
@@ -97,6 +112,36 @@ export function MeetingForm({
             disabled={scheduleLocked}
           />
         </label>
+        {!editing && (
+          <div className="grid-2">
+            <label>
+              Repetir
+              <select
+                name="repeat"
+                value={repeat}
+                onChange={(e) => setRepeat(e.target.value as typeof repeat)}
+              >
+                {REPEAT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {repeat !== "none" && (
+              <label>
+                A cada
+                <input name="recurrenceInterval" type="number" min={1} max={30} defaultValue={1} required />
+              </label>
+            )}
+          </div>
+        )}
+        {!editing && repeat !== "none" && (
+          <label>
+            Repetir até (opcional — em branco repete sem data final)
+            <input name="recurrenceUntil" type="date" />
+          </label>
+        )}
         <label>
           Projeto
           <select name="projectId" defaultValue={meeting?.project?.id ?? ""}>

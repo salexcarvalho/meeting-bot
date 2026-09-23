@@ -1,8 +1,13 @@
-import { Browser, chromium, Page } from "playwright";
+import { Browser, BrowserContextOptions, chromium, Page } from "playwright";
 import { config } from "../config";
 
 /** `cameraFile`: cartão .y4m que a câmera falsa mostra (sem ele, a câmera fica desligada na reunião). */
-export async function launchBrowser(sinkName: string, cameraFile?: string | null): Promise<{ browser: Browser; page: Page }> {
+/** `storageState`: sessão da conta do agente (cookies e localStorage); sem ela, entra como convidado. */
+export async function launchBrowser(
+  sinkName: string,
+  cameraFile?: string | null,
+  storageState?: unknown,
+): Promise<{ browser: Browser; page: Page }> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
@@ -34,6 +39,7 @@ export async function launchBrowser(sinkName: string, cameraFile?: string | null
     locale: "en-US",
     viewport: { width: 1280, height: 720 },
     permissions: ["microphone", "camera"],
+    ...(storageState ? { storageState: storageState as BrowserContextOptions["storageState"] } : {}),
   });
   const page = await context.newPage();
   return { browser, page };

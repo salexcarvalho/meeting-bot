@@ -1,5 +1,16 @@
 <!--
 Sync Impact Report
+- Versão: 2.1.0 → 2.2.0 (MINOR: o assistente pode entrar no Teams logado numa conta Microsoft
+  dedicada ao agente, em vez de convidado sem conta; decisão do usuário em 2026-09-18)
+- Princípio modificado: II. Respeito às Políticas da Organização — conta dedicada do agente (nunca a
+  do usuário nem de outra pessoa); o sistema não vê nem guarda a senha, só a sessão cifrada aberta
+  pelo usuário na própria máquina; o nome da conta MUST dizer que é a ata; removível a qualquer hora.
+- Artefatos dependentes: apps/backend/src/users/teamsAccount.ts, apps/backend/src/bot/{runner,browser,
+  join,identity}.ts, scripts/teams-login.mjs, apps/frontend/src/pages/settings/TeamsAccountCard.tsx,
+  README.md (3 idiomas), CLAUDE.md, CHANGELOG.md
+- TODOs adiados: conta equivalente para o Meet (hoje só Teams)
+
+Histórico anterior (2.0.0 → 2.1.0)
 - Versão: 2.0.0 → 2.1.0 (MINOR: o aviso de gravação sai do sufixo e passa para o próprio nome;
   decisão do usuário em 2026-09-17)
 - Princípio modificado: II. Respeito às Políticas da Organização — sem sufixo; o nome do bot MUST
@@ -185,10 +196,18 @@ a política da organização permite enviar.
   como gravação: o próprio nome na sala MUST dizer que é a ata ou a gravação (ex.: "Ata do
   Sérgio"), sem sufixo. Nome sem "ata", "gravação", "record" ou "transcrição" entra com "Ata de" na
   frente; entrar só com o nome de uma pessoa não é permitido. O bot MUST NOT se passar por uma
-  pessoa presente. Ele entra como convidado anônimo, então a
+  pessoa presente. Sem conta conectada, ele entra como convidado anônimo, então a
   reunião mostra as iniciais do nome — convidado não tem foto. Com `BOT_CAMERA=true` (desligado
   por padrão, porque no Teams vira um quadro de vídeo) a câmera virtual mostra só o ícone do
   agente, parado. O bot MUST NOT filmar nem transmitir vídeo de ninguém.
+- No Teams, o dono MAY conectar uma conta Microsoft dedicada ao agente, para o assistente entrar
+  logado em vez de convidado sem conta. A conta MUST ser só do agente (nunca a do usuário nem a de
+  outra pessoa) e MUST ter um nome que diga que é a ata ou a gravação; o sistema recusa nome que
+  não diz e, quando a sessão traz o nome real da conta, confere esse nome e recusa conta de pessoa. O usuário faz o login na própria máquina (`npm run teams:login`); o sistema MUST NOT
+  pedir, ver ou guardar a senha — guarda só a sessão (cookies e localStorage), cifrada em repouso
+  (AES-256-GCM, chave derivada do `AGENT_TOKEN`), por usuário, MUST NOT aparecer em log nem no
+  `audit_log` (só os eventos de conectar, remover e vencer), e pode ser removida a qualquer hora.
+  Sessão vencida faz o bot cair para convidado e avisa o dono; nunca tenta refazer o login sozinho.
 
 Racional: o tenant bloqueia apps e acesso por e-mail; o usuário exigiu nunca burlar políticas.
 
@@ -323,4 +342,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 2.1.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-17
+**Version**: 2.2.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-18

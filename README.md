@@ -8,8 +8,8 @@ Agente **local** de reuniões e arquitetura de software. Ele:
 - avisa no desktop 15, 5 e 1 minuto antes de cada reunião;
 - no horário, manda o **assistente** para dentro da chamada (Teams/Meet), que grava mesmo se você não entrar;
 - transcreve ao vivo e, no fim, faz uma transcrição final melhor, com separação de falantes;
-- extrai durante a reunião decisões, pendências, riscos e requisitos, sempre com o trecho de origem;
-- gera a ata (template de 19 seções) e sugestões de ADR;
+- extrai decisões, pendências, riscos e requisitos, sempre com o trecho de origem, nas reuniões em que você liga a chave **Itens** (vem desligada);
+- gera a ata (template de 19 seções; só o resumo quando os itens estão desligados) e sugestões de ADR;
 - deixa tudo como **proposto** até você revisar.
 
 Tudo roda na máquina: Whisper (faster-whisper) e LLM (Ollama, `qwen3.5:4b`) na GPU local. A
@@ -118,8 +118,9 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 ### Durante a reunião
 
 - No horário, o **assistente** entra em toda reunião com link do Teams/Meet que não esteja marcada
-  "Não gravar", com o nome configurado e o sufixo "assistente gravando". Admita-o na sala de espera.
+  "Não gravar", com o nome configurado, que já diz que é a ata (ex.: "Ata do Sérgio"). Admita-o na sala de espera.
   - Ele entra mudo e sem câmera; a reunião mostra as iniciais do nome (convidado não tem foto).
+  - Se a rede cair ao abrir o link, ele tenta de novo (3 vezes). Reunião que falhou só por rede é reenviada sozinha, dentro do horário, até 3 vezes com 1 min entre elas.
   - A transcrição aparece ao vivo na página da reunião, com o agente arquiteto e o resumo corrente.
   - Ele espera a admissão até o fim previsto e não sai por estar sozinho antes dele.
   - Sai quando a chamada acaba, quando fica sozinho na chamada por 5 min (contando as pessoas na
@@ -131,13 +132,13 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 - A gravação pelo computador para quando o horário previsto passou e houve 3 min sem fala, ao
   clicar em **Parar**, ou ao atingir 4 h.
 - A aba **Ao vivo** mostra a transcrição (alguns segundos de atraso), o estado dos canais, a GPU,
-  o resumo corrente e os painéis de itens.
+  o resumo corrente e os painéis de itens. Com **Itens** desligado, a extração ao vivo não roda.
 - Clicar num horário ou na evidência de um item leva ao trecho e toca o áudio.
 
 ### Depois da reunião
 
 - A transcrição final substitui a ao vivo. As evidências dos itens são remapeadas.
-- O agente reanalisa a reunião, consolida os itens e gera a ata e os ADRs sugeridos.
+- O agente reanalisa a reunião, consolida os itens e gera a ata e os ADRs sugeridos. Com **Itens** desligado, gera só o resumo (sem itens nem ADR).
 - **Itens**: aprovar, rejeitar, reabrir, editar e ver o histórico. Itens criados à mão já
   nascem aprovados. O histórico é uma linha do tempo: quem fez o quê e quando, com o texto de antes
   riscado nas edições.
@@ -154,6 +155,14 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   - O link da decisão de origem abre a aba Itens já no cartão dela.
 - **Falantes**: renomeie "Speaker 1" etc. na aba Transcrição.
 - **Reprocessar**: refaz a transcrição final e a análise.
+- **Itens ligados/desligados** (chave abaixo do painel ao vivo, só para o dono): decisões, pendências,
+  riscos, requisitos e ADRs só são gerados nas reuniões em que você liga a chave. Vem **desligada**;
+  reunião de teste assistido ou de entrega fica só com transcrição e ata com o resumo.
+  - Desligada: a extração ao vivo não roda, e a análise pós-reunião gera só o resumo (sem itens, sem ADR).
+  - **Gerar itens** liga a chave e pergunta onde gerar (local, OpenRouter ou assinatura), como o Gerar ata.
+    Ligada no meio da reunião, a extração ao vivo começa dali.
+  - **Desligar itens** não apaga nada: o que já existe fica, e criar item à mão continua valendo.
+  - Reuniões anteriores a esta chave que já tinham itens ou análise entram como ligadas.
 - **Gerar ata** (aba Ata): refaz só a análise sobre a transcrição final, sem transcrever de novo.
   - Gerar de novo começa do zero: apaga os itens propostos pela IA que ninguém tocou (e os ADRs
     sugeridos deles). Ficam os aprovados, os rejeitados, os editados e os criados à mão.
@@ -182,14 +191,21 @@ recuperação por e-mail: nada sai da máquina.
 
 O nome na sala segue **Configurações > Reuniões**: meu nome, nome do agente ou um nome personalizado. Não há sufixo: o nome precisa dizer que é a ata (ex.: "Ata do Sérgio"), e um nome sem "ata", "gravação" ou "transcrição" entra como "Ata de <nome>". Convidado anônimo não tem foto no Meet/Teams: aparecem as iniciais do nome. Com `BOT_CAMERA=true` o assistente liga uma câmera virtual com o avatar do agente (imagem parada), mas na chamada isso vira um quadro de vídeo.
 
+**Conta do agente no Teams** (Configurações > Meu agente): sem ela, o assistente entra no Teams como convidado sem conta, e o Teams marca isso. Com uma conta Microsoft **só do agente** (nunca a sua), ele entra logado e aparece com o nome da conta, que também precisa dizer que é a ata (ex.: "Ata do Sérgio"; o sistema lê o nome real da conta na sessão e recusa quem não diz, inclusive a conta de uma pessoa).
+1. Na máquina do projeto: `npm run teams:login`. No navegador que abrir, entre com a conta do agente e marque "Manter conectado"; volte ao terminal e aperte Enter. Sai o arquivo `teams-session.json`.
+2. Em Meu agente, informe o nome da conta e envie o arquivo. Depois apague o arquivo: ele vale como uma senha.
+3. A senha nunca passa pelo sistema. Fica só a sessão, cifrada (AES-256-GCM, chave derivada do `AGENT_TOKEN`) e por usuário; trocar o `AGENT_TOKEN` exige conectar de novo. A cada reunião o Teams renova a sessão e o sistema guarda a nova.
+4. Sessão da conta de uma pessoa (nome sem "ata") é recusada; se já estava salva, a tela mostra "Não usada" e o assistente entra como convidado.
+5. Se a sessão vencer, o assistente cai para convidado, a tela mostra "Sessão vencida" e você repete o passo 1. A conta vale só para Teams; no Meet o assistente continua convidado.
+
 Quando o assistente não entrar, veja a captura de tela em **Áudio e debug**.
 
 ### Configurações
 
 Cada usuário tem as próprias configurações:
 
-- **Perfil:** nome real, nome de exibição, idioma, fuso e foto.
-- **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar e gravação do nome falado.
+- **Perfil:** nome real, nome de exibição, e-mail, idioma, fuso e foto. O e-mail (o mesmo dos convites do Outlook/Teams) reconhece você entre os participantes do `.ics`: seu convite não aparece duplicado ao lado do canal do seu microfone na ata.
+- **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar, gravação do nome falado e conta do agente no Teams.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
 - **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.
@@ -212,7 +228,7 @@ Cada usuário tem as próprias configurações:
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Regras de parada |
 | `AGENT_OWNER` | vazio | Usuário cujas reuniões o host-agent desta máquina grava (vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo; defina sempre que houver mais de um usuário) |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Nome inicial do agente de cada usuário |
-| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Limite para o assistente chegar à sala ou à espera |
+| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Limite para o assistente chegar à sala ou à espera (com a conta do agente no Teams, no mínimo 120 s) |
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silêncio que encerra uma reunião sem horário previsto |
 | `BOT_CAMERA` | `false` | Câmera virtual com o avatar do agente (imagem parada; vira quadro de vídeo na chamada) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Transcrição ao vivo do áudio gravado pelo assistente |
@@ -370,8 +386,9 @@ scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
 - **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o
   upload ou o assistente convidado.
 - **Compartilhar reunião** ainda não tem tela (a estrutura `meeting_shares` já existe no backend).
-- **O assistente aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
-  nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo.
+- **O assistente convidado aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
+  nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo. No Teams, a
+  conta do agente troca o convidado pelo nome da conta.
 - **Convite `.ics` de uma só ocorrência** não traz a repetição da série. A importação avisa; exporte
   a série inteira no Outlook.
 - **Docker Desktop no Linux** não serve: a VM dele não enxerga a GPU nem mostra os containers do

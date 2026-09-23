@@ -3,6 +3,7 @@ import {
   AdrSugerido,
   Consolidacao,
   Extracao,
+  ResumoTrecho,
   Narrativa,
   type Adr,
   type Item,
@@ -88,7 +89,7 @@ const liveItem = (over: Partial<Item>): Item => ({
   ...over,
 });
 
-function setup(initial: Item[], opts: { regenerating?: boolean } = {}) {
+function setup(initial: Item[], opts: { regenerating?: boolean; extractItems?: boolean } = {}) {
   const store = fakeStore(initial);
   const calls: { label: string; user: string; meetingId?: string }[] = [];
   const deps: PostAnalysisDeps = {
@@ -99,6 +100,7 @@ function setup(initial: Item[], opts: { regenerating?: boolean } = {}) {
       liveSummary: null,
       analysisSummary: null,
       regenerating: Boolean(opts.regenerating),
+      extractItems: opts.extractItems ?? true,
       segments,
     }),
     async generate<T>(req: GenerateRequest<T>): Promise<T> {
@@ -124,6 +126,7 @@ function setup(initial: Item[], opts: { regenerating?: boolean } = {}) {
         }
         return Extracao.parse({ resumo_trecho: `trecho ${calls.length}`, itens }) as T;
       }
+      if (req.schema === (ResumoTrecho as unknown)) return ResumoTrecho.parse({ resumo_trecho: `resumo ${calls.length}` }) as T;
       if (req.schema === (Consolidacao as unknown)) return Consolidacao.parse({ resumo: "resumo final", duplicados: [] }) as T;
       if (req.schema === (Narrativa as unknown)) {
         return Narrativa.parse({ objetivo: "o", resumo_executivo: "r", assuntos: [{ titulo: "t", resumo: "r" }], observacoes_arquiteto: [] }) as T;
@@ -269,6 +272,44 @@ describe("batchByType", () => {
   });
 });
 
+describe("runPostAnalysis com itens desligados", () => {
+  it("gera só resumo e ata: sem itens, sem consolidação, sem ADR e sem apagar nada", async () => {
+    const reviewedByHand = liveItem({ id: "manual1", origin: "manual", reviewStatus: "proposto" });
+    const { store, calls, deps } = setup([reviewedByHand], { extractItems: false, regenerating: true });
+    const saved: Narrativa[] = [];
+    await runPostAnalysis("m", () => {}, {
+      ...deps,
+      saveAnalysis: async (_m, analysis) => {
+        saved.push(analysis);
+      },
+    });
+
+    const labels = calls.map((c) => c.label);
+    expect(labels.some((l) => l.startsWith("resumo "))).toBe(true);
+    expect(labels.some((l) => l.startsWith("narrativa"))).toBe(true);
+    for (const forbidden of ["extração final", "consolidação", "limpeza", "adr"]) {
+      expect(labels.filter((l) => l.toLowerCase().startsWith(forbidden))).toEqual([]);
+    }
+    // nada foi criado nem removido, mesmo com "regenerating"
+    expect(store.items.map((i) => i.id)).toEqual(["manual1"]);
+    expect(store.adrs).toEqual([]);
+    // a narrativa não leva itens e as observações do arquiteto (que dependem deles) ficam de fora
+    const narrative = calls.find((c) => c.label.startsWith("narrativa"))!;
+    expect(narrative.user).toContain("Itens:\n(nenhum)");
+    expect(saved).toHaveLength(1);
+    expect(saved[0].observacoes_arquiteto).toEqual([]);
+  });
+
+  it("os resumos por trecho alimentam a narrativa", async () => {
+    const { calls, deps } = setup([], { extractItems: false });
+    await runPostAnalysis("m", () => {}, deps);
+    const summaries = calls.filter((c) => c.label.startsWith("resumo "));
+    expect(summaries.length).toBeGreaterThan(2);
+    const narrative = calls.find((c) => c.label.startsWith("narrativa"))!;
+    expect(narrative.user).toMatch(/Resumos em ordem:\n1\. resumo /);
+  });
+});
+
 describe("runAdrGeneration (sob demanda)", () => {
   it("gera só a decisão pedida e usa o resumo da última análise", async () => {
     const { store, calls, deps } = setup([
@@ -284,6 +325,7 @@ describe("runAdrGeneration (sob demanda)", () => {
         liveSummary: "resumo ao vivo",
         analysisSummary: "resumo executivo salvo",
         regenerating: false,
+        extractItems: true,
         segments,
       }),
     }, { itemId: "outra" });

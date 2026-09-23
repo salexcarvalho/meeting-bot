@@ -13,7 +13,8 @@
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:backend": "npm run dev -w @meeting-bot/backend",
-    "dev:frontend": "npm run dev -w @meeting-bot/frontend"
+    "dev:frontend": "npm run dev -w @meeting-bot/frontend",
+    "teams:login": "node scripts/teams-login.mjs"
   },
   "engines": {
     "node": ">=24"

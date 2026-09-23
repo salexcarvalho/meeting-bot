@@ -27,6 +27,10 @@ export const Extracao = z.object({
 });
 export type Extracao = z.infer<typeof Extracao>;
 
+// Reunião com itens desligados: só o resumo do trecho, sem decisões, pendências ou riscos.
+export const ResumoTrecho = z.object({ resumo_trecho: z.string().max(600) });
+export type ResumoTrecho = z.infer<typeof ResumoTrecho>;
+
 export const Consolidacao = z.object({
   resumo: z.string().max(1500),
   duplicados: z
@@ -64,4 +68,4 @@ export const AdrSugerido = z.object({
 });
 export type AdrSugerido = z.infer<typeof AdrSugerido>;
 
-export const LLM_SCHEMAS = { Extracao, Consolidacao, Narrativa, AdrSugerido } as const;
+export const LLM_SCHEMAS = { Extracao, ResumoTrecho, Consolidacao, Narrativa, AdrSugerido } as const;

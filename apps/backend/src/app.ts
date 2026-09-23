@@ -48,7 +48,17 @@ export function createApp(): express.Express {
   });
 
   // SPA (build do React): arquivos estáticos + fallback para o index.html.
-  app.use(express.static(config.publicDir, { index: "index.html", maxAge: "1h" }));
+  // index.html sempre revalida: ele aponta para os arquivos com hash do build; com cache de 1 h o
+  // navegador seguia com a tela antiga depois de um deploy.
+  app.use(
+    express.static(config.publicDir, {
+      index: "index.html",
+      maxAge: "1h",
+      setHeaders: (res, file) => {
+        if (path.basename(file) === "index.html") res.setHeader("Cache-Control", "no-cache");
+      },
+    }),
+  );
   app.get(/^\/(?!api\/|healthz).*/, (_req, res, next) => {
     res.sendFile(path.join(config.publicDir, "index.html"), (err) => err && next());
   });

@@ -6,6 +6,7 @@ import {
   type ItemType,
   type MeetingSummary,
 } from "@meeting-bot/contracts";
+import { participantNames, type Self } from "../meetings/participants";
 
 // Ata no template de 19 seções (FR-026), montada do estado atual dos itens (FR-027, R9).
 
@@ -22,6 +23,8 @@ export interface AtaInput {
   items: Item[];
   adrs: Adr[];
   speakers: string[];
+  /** dono da reunião, para o convite dele não duplicar o canal do microfone */
+  self?: Self | null;
   analysis: AtaAnalysis | null;
   legacyAta: string | null;
 }
@@ -71,7 +74,7 @@ export function renderAta(input: AtaInput): string {
   const durationMin = m.startedAt && m.endedAt
     ? Math.round((new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime()) / 60_000)
     : null;
-  const participants = [...new Set([...input.speakers, ...m.attendees.map((a) => a.name || a.email || "").filter(Boolean)])];
+  const participants = participantNames(input.speakers, m.attendees, input.self ?? null);
 
   const pendencias = byType("pendencia");
   const owners = new Map<string, Item[]>();
@@ -83,9 +86,14 @@ export function renderAta(input: AtaInput): string {
   const adrByItem = new Map(input.adrs.map((a) => [a.itemId, a]));
   const adrItems = byType("decisao_arquitetural");
 
+  // Itens desligados e nenhum item gerado: a ata traz só o resumo, sem seções vazias de decisões e riscos.
+  const summaryOnly = !m.itemsEnabled && items.length === 0;
+
   const parts: string[] = [];
   parts.push(`# Ata — ${oneLine(m.title)}\n`);
-  if (!analysis && input.legacyAta) {
+  if (summaryOnly) {
+    parts.push('> Esta reunião não gera itens (decisões, pendências, riscos e ADRs): a ata traz só o resumo. Ligue "Gerar itens" na reunião para incluí-los.\n');
+  } else if (!analysis && input.legacyAta) {
     parts.push("> Ata gerada pela versão anterior do sistema; as seções abaixo refletem os itens atuais, se houver.\n");
   } else if (items.some((i) => i.reviewStatus === "proposto")) {
     parts.push("> Itens marcados como _(proposto)_ foram sugeridos pela IA e ainda não foram revisados.\n");
@@ -108,6 +116,7 @@ export function renderAta(input: AtaInput): string {
       (analysis?.assuntos ?? []).map((a) => `- **${oneLine(a.titulo)}**: ${oneLine(a.resumo)}`),
     ),
   );
+  const itemSectionsStart = parts.length;
   parts.push(section("Decisões", byType("decisao").map((i) => line(i, [i.attributes.motivacao ? `motivação: ${i.attributes.motivacao}` : ""]))));
   parts.push(
     section(
@@ -179,6 +188,7 @@ export function renderAta(input: AtaInput): string {
     ),
   );
   parts.push(section("Observações do Arquiteto", (analysis?.observacoes_arquiteto ?? []).map((o) => `- ${oneLine(o)}`)));
+  if (summaryOnly) parts.splice(itemSectionsStart);
 
   if (!analysis && input.legacyAta) {
     parts.push(`---\n\n### Ata original\n\n${input.legacyAta.trim()}\n`);

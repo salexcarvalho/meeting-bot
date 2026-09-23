@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Bot, Circle, ExternalLink, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
 import {
   IDLE_STATUSES,
   type Adr,
@@ -51,9 +51,16 @@ import {
 
 type Tab = "transcricao" | "itens" | "ata" | "adrs" | "audio";
 
-type Generation = { kind: "ata" } | { kind: "adrs" } | { kind: "adr"; item: Item };
+type Generation = { kind: "ata" } | { kind: "itens" } | { kind: "adrs" } | { kind: "adr"; item: Item };
 
 const GENERATION_TEXT: Record<Generation["kind"], GenerateRequest> = {
+  itens: {
+    title: "Gerar itens",
+    message:
+      "Liga os itens desta reunião e refaz a análise sobre a transcrição final: decisões, pendências, riscos, requisitos, resumo, ata e ADRs sugeridos. Tudo nasce como proposto.",
+    confirmLabel: "Gerar itens",
+    scope: "ata",
+  },
   ata: {
     title: "Gerar ata",
     message: "Refaz a análise sobre a transcrição final: itens, resumo, ata e ADRs sugeridos. Itens e ADRs já revisados são mantidos.",
@@ -288,6 +295,36 @@ export function Reuniao() {
   const canGenerateAdrs = readyToGenerate && hasFinal;
   const archDecisions = items.filter((i) => i.type === "decisao_arquitetural" && i.reviewStatus !== "rejeitado").length;
   const onGenerateAdr = canGenerateAdrs ? (item: Item) => setGeneration({ kind: "adr", item }) : undefined;
+  const generationRequest: GenerateRequest | null = !generation
+    ? null
+    : generation.kind === "ata" && !m.itemsEnabled
+      ? {
+          ...GENERATION_TEXT.ata,
+          message:
+            "Refaz o resumo e a ata sobre a transcrição final. Esta reunião não gera itens (decisões, pendências, riscos e ADRs); para incluí-los, use “Gerar itens”.",
+        }
+      : GENERATION_TEXT[generation.kind];
+
+  async function toggleItems() {
+    if (m.itemsEnabled) {
+      await action(
+        `/meetings/${m.id}/extract-items`,
+        { enabled: false },
+        "Itens desligados. O que já foi gerado continua; nada novo será criado.",
+        "PUT",
+      );
+    } else if (readyToGenerate && hasFinal) {
+      // reunião pronta: escolhe onde gerar e já roda a análise com os itens
+      setGeneration({ kind: "itens" });
+    } else {
+      await action(
+        `/meetings/${m.id}/extract-items`,
+        { enabled: true },
+        "Itens ligados: serão gerados ao vivo e na análise final.",
+        "PUT",
+      );
+    }
+  }
   const canDelete = detail.access === "owner" && can("meetings.manage") && can("transcripts.delete");
   const showBotProgress = Boolean(m.botProgress) || (m.botActive && m.status === "in_call");
   // Reunião da agenda com link: quem grava é o assistente (o PC só com "Gravar agora", sem link).
@@ -435,6 +472,14 @@ export function Reuniao() {
       {showBotProgress && <BotProgress progress={m.botProgress} status={m.status} />}
       {showPanel && <LivePanel meeting={m} recording={recording} processing={processing} gpu={gpu} />}
 
+      <ItemsSwitch
+        enabled={m.itemsEnabled}
+        hasItems={items.length > 0}
+        canEdit={ownerActions}
+        busy={busy || PROCESSING_STATUSES.includes(m.status)}
+        onToggle={() => void toggleItems()}
+      />
+
       <div className="tabs" role="tablist">
         {([
           ["transcricao", isLive ? "Ao vivo" : "Transcrição"],
@@ -477,7 +522,11 @@ export function Reuniao() {
                     <p className="small muted">atualizado às {formatTime(detail.liveSummaryAt)}</p>
                   </>
                 ) : (
-                  <p className="muted">O agente arquiteto resume a reunião periodicamente.</p>
+                  <p className="muted">
+                    {m.itemsEnabled
+                      ? "O agente arquiteto resume a reunião periodicamente."
+                      : "Sem resumo ao vivo: os itens estão desligados. A ata sai só com o resumo, depois da reunião."}
+                  </p>
                 )}
               </section>
               <ItemsBoard
@@ -635,14 +684,25 @@ export function Reuniao() {
       </Dialog>
       <GenerateDialog
         meetingId={m.id}
-        request={generation ? GENERATION_TEXT[generation.kind] : null}
+        request={generationRequest}
         onClose={() => setGeneration(null)}
         onConfirm={(choice) => {
           if (!generation) return;
           const before = finishedRuns.current;
           // não cobre o resultado se a geração já terminou antes da resposta
           const pending = (text: string) => () => (finishedRuns.current === before ? text : null);
-          if (generation.kind === "ata") {
+          if (generation.kind === "itens") {
+            void (async () => {
+              // liga a chave e, se deu certo, roda a análise completa; se a análise falhar, a chave fica ligada
+              if (!(await action(`/meetings/${m.id}/extract-items`, { enabled: true }, () => null, "PUT"))) return;
+              const queued = await action(
+                `/meetings/${m.id}/reprocess`,
+                { step: "analysis", llm: choice },
+                pending("Gerando itens, resumo e ata…"),
+              );
+              if (queued) load();
+            })();
+          } else if (generation.kind === "ata") {
             void action(`/meetings/${m.id}/reprocess`, { step: "analysis", llm: choice }, pending("Gerando a ata…")).then(
               (ok) => ok && load(),
             );
@@ -668,6 +728,41 @@ export function Reuniao() {
         }
       />
     </main>
+  );
+}
+
+function ItemsSwitch({
+  enabled,
+  hasItems,
+  canEdit,
+  busy,
+  onToggle,
+}: {
+  enabled: boolean;
+  hasItems: boolean;
+  canEdit: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={`items-switch ${enabled ? "on" : "off"}`} role="group" aria-label="Itens da reunião">
+      <ListChecks aria-hidden="true" />
+      <div>
+        <strong>{enabled ? "Itens ligados" : "Itens desligados"}</strong>
+        <span className="small muted">
+          {enabled
+            ? "Decisões, pendências, riscos e requisitos são gerados ao vivo e na análise final."
+            : hasItems
+              ? "Nada novo será gerado; o que já existe continua."
+              : "Esta reunião não gera decisões, pendências, riscos nem ADRs; a ata sai só com o resumo."}
+        </span>
+      </div>
+      {canEdit && (
+        <button type="button" className={enabled ? "" : "primary"} disabled={busy} onClick={onToggle}>
+          {enabled ? "Desligar itens" : "Gerar itens"}
+        </button>
+      )}
+    </div>
   );
 }
 

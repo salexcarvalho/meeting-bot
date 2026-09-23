@@ -3,8 +3,10 @@ import { getMeeting, pool } from "../db";
 import { clearUnreviewedAiItems, createAiItems, listAdrs, listItems, mergeInto, upsertSuggestedAdr } from "../items/service";
 import { generate, generationLabel } from "../llm";
 import { hub } from "../live/hub";
+import { participantNames } from "../meetings/participants";
 import { setAdrGeneration, setEvidenceRemapper, setPostAnalysis } from "../pipeline";
 import { getSegments, getSpeakers, speakerNameResolver, type EvidenceRemapper } from "../repo/transcripts";
+import { getSelf } from "../users/repo";
 import { runAdrGeneration, runPostAnalysis, type PostAnalysisDeps } from "./postAnalysis";
 import { remapEvidence } from "./remap";
 
@@ -20,12 +22,10 @@ function depsFor(provider: LlmChoice): PostAnalysisDeps {
     async loadContext(meetingId) {
       const meeting = await getMeeting(meetingId);
       if (!meeting) return null;
-      const [segments, speakers] = await Promise.all([getSegments(meetingId), getSpeakers(meetingId)]);
+      const [segments, speakers, self] = await Promise.all([getSegments(meetingId), getSpeakers(meetingId), getSelf(meeting.created_by)]);
       const nameOf = speakerNameResolver(speakers);
       const labels = [...new Set(segments.map((s) => s.speaker).filter((s): s is string => Boolean(s)))];
-      const attendees = (Array.isArray(meeting.attendees) ? meeting.attendees : [])
-        .map((a) => a.name || a.email || "")
-        .filter(Boolean);
+      const attendees = Array.isArray(meeting.attendees) ? meeting.attendees : [];
       const analysis = meeting.analysis as { resumo_executivo?: unknown } | null;
       const previous = await pool.query(
         `SELECT EXISTS (SELECT 1 FROM meeting_items WHERE meeting_id = $1 AND origin = 'final') AS any`,
@@ -34,10 +34,11 @@ function depsFor(provider: LlmChoice): PostAnalysisDeps {
       return {
         title: meeting.title,
         project: meeting.project_name,
-        participants: [...new Set([...labels.map((l) => nameOf(l) ?? l), ...attendees])],
+        participants: participantNames(labels.map((l) => nameOf(l) ?? l), attendees, self),
         liveSummary: meeting.live_summary,
         analysisSummary: typeof analysis?.resumo_executivo === "string" ? analysis.resumo_executivo : null,
         regenerating: meeting.analyzed_at !== null || Boolean(previous.rows[0].any),
+        extractItems: meeting.extract_items,
         segments: segments.map((s) => ({ ...s, speakerName: nameOf(s.speaker) })),
       };
     },

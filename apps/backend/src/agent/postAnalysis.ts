@@ -3,6 +3,7 @@ import {
   Consolidacao,
   Extracao,
   Narrativa,
+  ResumoTrecho,
   type Adr,
   type Item,
   type ProcessingStep,
@@ -17,10 +18,12 @@ import {
   extractionUser,
   formatWindow,
   narrativeUser,
+  summaryUser,
   SYSTEM_ADR,
   SYSTEM_CONSOLIDACAO,
   SYSTEM_EXTRACAO,
   SYSTEM_NARRATIVA,
+  SYSTEM_RESUMO_TRECHO,
   type WindowSegment,
 } from "./prompts";
 
@@ -35,6 +38,8 @@ export interface PostContext {
   analysisSummary: string | null;
   /** já houve análise pós-reunião: gerar de novo substitui o que ninguém revisou */
   regenerating: boolean;
+  /** itens ligados nesta reunião; desligados, a análise é só resumo e ata (sem itens nem ADRs) */
+  extractItems: boolean;
   segments: WindowSegment[];
 }
 
@@ -82,6 +87,7 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
   const ctx = await deps.loadContext(meetingId);
   if (!ctx) return;
   const tag = meetingId.slice(0, 8);
+  if (!ctx.extractItems) return runSummaryOnly(meetingId, tag, ctx, report, deps);
 
   // 0. Gerar de novo começa do zero: sai o que a IA propôs e ninguém revisou.
   if (ctx.regenerating) {
@@ -193,6 +199,64 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
 
   // 4. ADR sugerido por decisão arquitetural não rejeitada.
   await runAdrGeneration(meetingId, report, deps, { ctx, items, summary: narrative.resumo_executivo });
+}
+
+/**
+ * Reunião com itens desligados (decisão do usuário em 2026-09-17: teste assistido e entrega não
+ * geram decisões): só o resumo e a ata. Não cria, mescla nem apaga itens, e não gera ADR.
+ */
+async function runSummaryOnly(
+  meetingId: string,
+  tag: string,
+  ctx: PostContext,
+  report: Report,
+  deps: PostAnalysisDeps,
+): Promise<void> {
+  await deps.resetChunkNotes(meetingId);
+  const chunks = chunkSegments(ctx.segments, deps.chunkTokens ?? CHUNK_TOKENS, CHUNK_OVERLAP);
+  const summaries: string[] = [];
+  for (const [i, chunk] of chunks.entries()) {
+    report("analisando", i / Math.max(chunks.length, 1));
+    const context = i > 0 ? chunk.slice(0, CHUNK_OVERLAP) : [];
+    const citeable = i > 0 ? chunk.slice(CHUNK_OVERLAP) : chunk;
+    if (!citeable.length) continue;
+    const { text } = formatWindow(citeable, context);
+    try {
+      const result = await deps.generate({
+        system: SYSTEM_RESUMO_TRECHO,
+        user: summaryUser({ title: ctx.title, project: ctx.project, window: text }),
+        schema: ResumoTrecho,
+        numCtx: POST_NUM_CTX,
+        label: `resumo ${tag} ${i + 1}/${chunks.length}`,
+        meetingId,
+      });
+      const summary = result.resumo_trecho.trim();
+      if (summary) summaries.push(summary);
+      await deps.saveChunkNote(meetingId, citeable[0].start, citeable[citeable.length - 1].end, summary);
+    } catch (err) {
+      if (!isInvalidLlm(err)) throw err;
+      console.warn(`[pós ${tag}] trecho ${i + 1} descartado: ${(err as Error).message}`);
+    }
+  }
+  report("analisando", 1);
+
+  report("ata");
+  const narrative = await deps.generate({
+    system: SYSTEM_NARRATIVA,
+    user: narrativeUser({
+      title: ctx.title,
+      project: ctx.project,
+      participants: ctx.participants,
+      chunkSummaries: summaries,
+      items: [],
+    }),
+    schema: Narrativa,
+    numCtx: POST_NUM_CTX,
+    label: `narrativa ${tag}`,
+    meetingId,
+  });
+  // As observações do arquiteto vêm da análise de itens; sem ela, ficam de fora.
+  await deps.saveAnalysis(meetingId, { ...narrative, observacoes_arquiteto: [] });
 }
 
 /**

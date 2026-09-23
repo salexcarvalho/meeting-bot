@@ -143,6 +143,19 @@ const statements = [
      reviewed_at TIMESTAMPTZ
    )`,
   `CREATE INDEX IF NOT EXISTS idx_items_meeting ON meeting_items (meeting_id, type)`,
+  // Itens (decisões, pendências, riscos…) só saem em reunião com a chave ligada; o padrão é desligado.
+  // Reuniões que já tinham itens ou análise ficam ligadas, só na criação da coluna.
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'meetings' AND column_name = 'extract_items'
+     ) THEN
+       ALTER TABLE meetings ADD COLUMN extract_items BOOLEAN NOT NULL DEFAULT false;
+       UPDATE meetings SET extract_items = true
+        WHERE analyzed_at IS NOT NULL OR EXISTS (SELECT 1 FROM meeting_items i WHERE i.meeting_id = meetings.id);
+     END IF;
+   END $$`,
 
   `CREATE TABLE IF NOT EXISTS item_evidence (
      id BIGSERIAL PRIMARY KEY,
@@ -200,6 +213,7 @@ const statements = [
   `ALTER TABLE users
      ADD COLUMN IF NOT EXISTS real_name TEXT,
      ADD COLUMN IF NOT EXISTS display_name TEXT,
+     ADD COLUMN IF NOT EXISTS email TEXT,
      ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'pt-BR',
      ADD COLUMN IF NOT EXISTS timezone TEXT,
      ADD COLUMN IF NOT EXISTS avatar_file TEXT,
@@ -210,6 +224,14 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS user_settings (
      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
      data JSONB NOT NULL DEFAULT '{}',
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE TABLE IF NOT EXISTS teams_accounts (
+     user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     account_name TEXT NOT NULL,
+     session_enc BYTEA NOT NULL,
+     expired_at TIMESTAMPTZ,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   `CREATE TABLE IF NOT EXISTS agents (
@@ -277,6 +299,16 @@ const statements = [
   `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS analysis_provider TEXT`,
   `ALTER TABLE meeting_items ADD COLUMN IF NOT EXISTS generated_by TEXT`,
   `ALTER TABLE adrs ADD COLUMN IF NOT EXISTS generated_by TEXT`,
+
+  // Recorrência de cadastro manual: cada ocorrência já nasce como linha própria em
+  // `meetings` (mesmo padrão do import .ics), ligadas pelo series_id.
+  `ALTER TABLE meetings
+     ADD COLUMN IF NOT EXISTS series_id UUID,
+     ADD COLUMN IF NOT EXISTS recurrence_rule JSONB`,
+  `CREATE INDEX IF NOT EXISTS idx_meetings_series ON meetings (series_id)`,
+  // Evita duplicar ocorrência se o job de extensão da série rodar duas vezes.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_series_start
+     ON meetings (series_id, scheduled_start) WHERE series_id IS NOT NULL`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {

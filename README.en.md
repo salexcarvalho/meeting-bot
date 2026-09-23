@@ -8,8 +8,8 @@
 - alerts on the desktop 15, 5, and 1 minute before each meeting;
 - at the scheduled time, sends the **assistant** into the call (Teams/Meet), which records even if you don't join;
 - transcribes live and, at the end, produces a better final transcription, with speaker diarization;
-- extracts decisions, pending items, risks, and requirements during the meeting, always with the source excerpt;
-- generates the meeting minutes (19-section template) and ADR suggestions;
+- extracts decisions, pending items, risks, and requirements, always with the source excerpt, in the meetings where you turn on the **Itens** ("Items") switch (off by default);
+- generates the meeting minutes (19-section template; just the summary when items are off) and ADR suggestions;
 - leaves everything as **proposed** until you review it.
 
 Everything runs on the machine: Whisper (faster-whisper) and LLM (Ollama, `qwen3.5:4b`) on the local GPU. The
@@ -118,8 +118,9 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
 ### During the Meeting
 
 - At the scheduled time, the **assistant** joins every meeting with a Teams/Meet link that isn't marked
-  "Não gravar" ("Don't record"), with the configured name and the suffix "assistente gravando" ("assistant recording"). Admit it from the waiting room.
+  "Não gravar" ("Don't record"), with the configured name, which already says it is the minutes (e.g., "Ata do Sérgio"). Admit it from the waiting room.
   - It joins muted and without a camera; the meeting shows the initials of the name (guests have no photo).
+  - If the network drops while opening the link, it retries (3 attempts). A meeting that failed only because of the network is resent automatically, within the scheduled time, up to 3 times with 1 min between them.
   - The transcription appears live on the meeting page, along with the architect agent and the running summary.
   - It waits to be admitted until the scheduled end time and doesn't leave for being alone before then.
   - It leaves when the call ends, when it's alone on the call for 5 min (counting the people in the
@@ -131,13 +132,13 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
 - Recording via the computer stops when the scheduled time has passed and there have been 3 min without speech, on
   clicking **Parar**, or upon reaching 4 h.
 - The **Ao vivo** ("Live") tab shows the transcription (a few seconds of delay), the channel status, the GPU,
-  the running summary, and the item panels.
+  the running summary, and the item panels. With **Itens** off, live extraction does not run.
 - Clicking a timestamp or an item's evidence jumps to the excerpt and plays the audio.
 
 ### After the Meeting
 
 - The final transcription replaces the live one. Item evidence is remapped.
-- The agent re-analyzes the meeting, consolidates the items, and generates the meeting minutes and suggested ADRs.
+- The agent re-analyzes the meeting, consolidates the items, and generates the meeting minutes and suggested ADRs. With **Itens** off, it produces only the summary (no items or ADRs).
 - **Itens** ("Items"): approve, reject, reopen, edit, and view the history. Manually created items are already
   born approved. The history is a timeline: who did what and when, with the previous text
   struck through on edits.
@@ -154,6 +155,14 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   - The link to the source decision opens the Itens ("Items") tab already on its card.
 - **Falantes** ("Speakers"): rename "Speaker 1", etc., on the Transcrição ("Transcript") tab.
 - **Reprocessar** ("Reprocess"): redoes the final transcription and the analysis.
+- **Items on/off** (switch below the live panel, owner only): decisions, action items, risks,
+  requirements and ADRs are only generated in meetings where you turn the switch on. It starts **off**;
+  a test-assist or delivery meeting ends up with just the transcript and minutes with the summary.
+  - Off: live extraction does not run, and the post-meeting analysis produces only the summary (no items, no ADR).
+  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (local, OpenRouter or subscription), like Gerar ata.
+    Turned on mid-meeting, live extraction starts from that point.
+  - **Desligar itens** ("Turn items off") deletes nothing: what exists stays, and creating items by hand still works.
+  - Meetings that predate this switch and already had items or an analysis are marked as on.
 - **Gerar ata** ("Generate meeting minutes") (Ata tab): redoes only the analysis on the final transcription, without transcribing again.
   - Generating again starts from scratch: it deletes the AI-proposed items that no one touched (and the ADRs
     suggested from them). The approved, rejected, edited, and manually created ones remain.
@@ -187,14 +196,21 @@ entered as "Ata de <nome>" ("<name>'s minutes"). An anonymous guest has no photo
 show up. With `BOT_CAMERA=true`, the assistant turns on a virtual camera with the agent's avatar (a still image),
 but on the call this becomes a video frame.
 
+**Agent account on Teams** (Configurações > Meu agente, "Settings > My agent"): without it, the assistant joins Teams as a guest with no account, and Teams flags that. With a Microsoft account **dedicated to the agent** (never your own), it joins signed in and shows up under the account's name, which must also say it's the minutes (e.g., "Ata do Sérgio"; the system reads the account's real name from the session and rejects one that doesn't say so, including a person's own account).
+1. On the project machine: `npm run teams:login`. In the browser that opens, sign in with the agent's account and choose "Stay signed in"; go back to the terminal and press Enter. This produces the `teams-session.json` file.
+2. In My agent, enter the account name and upload the file. Then delete the file: it is as sensitive as a password.
+3. The password never goes through the system. Only the session is kept, encrypted (AES-256-GCM, key derived from `AGENT_TOKEN`) and per user; changing `AGENT_TOKEN` means connecting again. On every meeting Teams renews the session and the system stores the new one.
+4. A session from a person's account (name without "ata") is rejected; if it was already saved, the screen shows "Não usada" ("Not used") and the assistant joins as a guest.
+5. If the session expires, the assistant falls back to guest, the screen shows "Sessão vencida" ("Session expired"), and you repeat step 1. The account only applies to Teams; on Meet the assistant remains a guest.
+
 When the assistant doesn't join, check the screenshot under **Áudio e debug** ("Audio and debug").
 
 ### Settings
 
 Each user has their own settings:
 
-- **Perfil** ("Profile"): real name, display name, language, timezone, and photo.
-- **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, and spoken name recording.
+- **Perfil** ("Profile"): real name, display name, email, language, timezone, and photo. The email (the same one on your Outlook/Teams invites) recognizes you among the `.ics` participants: your invite is not listed twice next to your microphone channel in the minutes.
+- **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, spoken name recording, and the agent's Teams account.
 - **Reuniões:** identity in the room.
 - **Documentação** ("Documentation"): level of detail and formats.
 - **Consumo de IA** ("AI usage"): tokens and cost for the month per provider, model, and meeting, plus the latest calls.
@@ -217,7 +233,7 @@ Each user has their own settings:
 | `SILENCE_STOP_SECONDS` / `MAX_RECORDING_MINUTES` | 180 / 240 | Stop rules |
 | `AGENT_OWNER` | empty | User whose meetings this machine's host-agent records (empty = first registered user, if still an active SUPER_ADMIN; always set it when there's more than one user) |
 | `DEFAULT_AGENT_NAME` | `Assistente` | Initial agent name for each user |
-| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Time limit for the assistant to reach the room or the waiting area |
+| `BOT_JOIN_TIMEOUT_SECONDS` | 45 | Time limit for the assistant to reach the room or the waiting area (at least 120 s with the agent's Teams account) |
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silence that ends a meeting with no scheduled time |
 | `BOT_CAMERA` | `false` | Virtual camera with the agent's avatar (still image; becomes a video frame on the call) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Live transcription of the audio recorded by the assistant |
@@ -377,8 +393,9 @@ scripts/fixture-ics.sh 20      # test invite starting in 20 min
 - **One host-agent per machine**, tied to a single user (`AGENT_OWNER`). Other users use the
   upload or the guest assistant.
 - **Sharing a meeting** doesn't have a screen yet (the `meeting_shares` structure already exists in the backend).
-- **The assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
-  or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame.
+- **The guest assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
+  or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame. On Teams, the
+  agent account replaces the guest with the account's name.
 - **A single-occurrence `.ics` invite** doesn't bring the series' recurrence. The import warns about it;
   export the entire series from Outlook.
 - **Docker Desktop on Linux** doesn't work: its VM can't see the GPU or show the native

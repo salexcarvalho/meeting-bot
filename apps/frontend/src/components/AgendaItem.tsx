@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { MeetingSummary } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
-import { formatTime } from "../format";
+import { formatTime, recurrenceLabel } from "../format";
 import { StatusBadge } from "./StatusBadge";
 import { useToast } from "./Toast";
 import { useCan, useSession } from "../session";
@@ -37,6 +37,7 @@ export function AgendaItem({
   const canStop = manage && (meeting.status === "recording" || (meeting.botActive && meeting.status !== "stopping"));
   const canJoin = Boolean(meeting.url) && ["scheduled", "skipped", "recording", "missed"].includes(meeting.status);
   const canEdit = local && ["scheduled", "skipped", "missed", "cancelled"].includes(meeting.status);
+  const canCancel = local && ["scheduled", "skipped", "missed"].includes(meeting.status);
 
   async function act(path: string, json?: unknown, message?: string) {
     setBusy(true);
@@ -44,6 +45,20 @@ export function AgendaItem({
       const result = await api<MeetingSummary | { status: string }>(path, { method: "POST", json });
       if ("id" in result) onChange(result);
       if (message) toast(message);
+    } catch (err) {
+      toast(errorMessage(err), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancel(scope: "one" | "series") {
+    if (scope === "series" && !window.confirm("Cancela esta e todas as próximas ocorrências desta série?")) return;
+    setBusy(true);
+    try {
+      const result = await api<MeetingSummary[]>(`/meetings/${meeting.id}/cancel`, { method: "POST", json: { scope } });
+      result.forEach(onChange);
+      toast(scope === "series" ? `${result.length} reuniões canceladas.` : "Reunião cancelada.");
     } catch (err) {
       toast(errorMessage(err), "error");
     } finally {
@@ -67,6 +82,11 @@ export function AgendaItem({
             <span className="badge" title={meeting.project.suggested ? "Sugerido pelo título" : undefined}>
               {meeting.project.name}
               {meeting.project.suggested ? " ?" : ""}
+            </span>
+          )}
+          {meeting.recurrence && (
+            <span className="badge" title="Reunião recorrente">
+              {recurrenceLabel(meeting.recurrence)}
             </span>
           )}
           {PLATFORM[meeting.platform] && <span className="muted">{PLATFORM[meeting.platform]}</span>}
@@ -124,6 +144,16 @@ export function AgendaItem({
         {canEdit && (
           <button type="button" className="small" onClick={() => onEdit(meeting)}>
             Editar
+          </button>
+        )}
+        {canCancel && (
+          <button type="button" className="small danger" disabled={busy} onClick={() => cancel("one")}>
+            Cancelar
+          </button>
+        )}
+        {canCancel && meeting.seriesId && (
+          <button type="button" className="small danger" disabled={busy} onClick={() => cancel("series")}>
+            Cancelar série
           </button>
         )}
       </div>
