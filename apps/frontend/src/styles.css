@@ -502,7 +502,7 @@ button.block { width: 100%; }
 .agenda { list-style: none; margin: 0; padding: 0; }
 .agenda-item {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
+  grid-template-columns: 84px minmax(0, 1fr) minmax(0, 360px);
   gap: 16px;
   align-items: center;
   padding: 14px 0;
