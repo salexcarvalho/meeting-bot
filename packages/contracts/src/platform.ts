@@ -45,6 +45,8 @@ export interface UserProfile {
   username: string;
   realName: string | null;
   displayName: string | null;
+  /** e-mail do convite (Outlook/Teams), para reconhecer o dono entre os participantes */
+  email: string | null;
   /** nome efetivo: exibição > real > usuário */
   name: string;
   language: Language;
@@ -64,10 +66,19 @@ const optionalText = (max: number) =>
     .transform((v) => (v === "" ? null : v))
     .nullable();
 
+const optionalEmail = z
+  .string()
+  .trim()
+  .max(254)
+  .refine((v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "e-mail inválido")
+  .transform((v) => (v === "" ? null : v.toLowerCase()))
+  .nullable();
+
 export const ProfilePatch = z
   .object({
     realName: optionalText(120),
     displayName: optionalText(60),
+    email: optionalEmail,
     language: z.enum(LANGUAGES),
     timezone: z
       .string()
@@ -87,6 +98,18 @@ export const ProfilePatch = z
 export type ProfilePatch = z.infer<typeof ProfilePatch>;
 
 // ---------- agente ----------
+
+/** Conta Microsoft do agente no Teams (a sessão em si nunca sai do backend). */
+export interface TeamsAccountStatus {
+  connected: boolean;
+  /** nome da conta como aparece no Teams */
+  accountName: string | null;
+  updatedAt: string | null;
+  /** a última entrada precisou cair para convidado: a sessão venceu */
+  expired: boolean;
+  /** por que o assistente não usa a sessão salva (ex.: a conta é de uma pessoa); null quando está tudo certo */
+  problem: string | null;
+}
 
 export const DETAIL_LEVELS = ["resumido", "normal", "detalhado"] as const;
 export type DetailLevel = (typeof DETAIL_LEVELS)[number];
@@ -195,6 +218,7 @@ export interface MeResponse {
   profile: UserProfile;
   settings: UserSettings;
   agent: AgentProfile;
+  teamsAccount: TeamsAccountStatus;
   permissions: Permission[];
   /** como o bot aparecerá na reunião com a configuração atual */
   botDisplayName: string;

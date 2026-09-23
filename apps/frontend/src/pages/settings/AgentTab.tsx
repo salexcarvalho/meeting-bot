@@ -13,6 +13,7 @@ import {
 import { CardHead } from "../../components/ui";
 import { useCan } from "../../session";
 import { fileForm, ImageField, SaveBar, useMeMutation, type SetMe } from "./shared";
+import { TeamsAccountCard } from "./TeamsAccountCard";
 import { VoiceRecorder } from "./VoiceRecorder";
 
 export const DETAIL_LABELS = { resumido: "Resumido", normal: "Normal", detalhado: "Detalhado" } as const;
@@ -184,6 +185,7 @@ export function AgentTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
             hint="Usado dentro deste sistema. Convidado anônimo não exibe foto no Meet e no Teams."
           />
         </section>
+        <TeamsAccountCard me={me} setMe={setMe} readOnly={readOnly} />
         <section className="card">
           <CardHead title="Voz / nome falado" icon={AudioLines} />
           <p className="card-desc">

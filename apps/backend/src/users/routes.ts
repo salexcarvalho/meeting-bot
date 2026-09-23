@@ -35,6 +35,16 @@ import {
 } from "./files";
 import { botDisplayNameFor } from "./identity";
 import {
+  accountNameFor,
+  getTeamsAccountStatus,
+  MAX_SESSION_BYTES,
+  parseSession,
+  removeTeamsAccount,
+  saveTeamsAccount,
+  TeamsAccountError,
+  validateAccountName,
+} from "./teamsAccount";
+import {
   countActiveWithRole,
   getAgent,
   getAgentFile,
@@ -56,11 +66,17 @@ import {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function meResponse(user: User): Promise<MeResponse> {
-  const [profile, settings, agent] = await Promise.all([getProfile(user.id), getSettings(user.id), getAgent(user.id)]);
+  const [profile, settings, agent, teamsAccount] = await Promise.all([
+    getProfile(user.id),
+    getSettings(user.id),
+    getAgent(user.id),
+    getTeamsAccountStatus(user.id),
+  ]);
   return {
     profile: profile!,
     settings,
     agent,
+    teamsAccount,
     permissions: user.permissions,
     botDisplayName: botDisplayNameFor(profile!, agent, settings),
   };
@@ -69,6 +85,10 @@ async function meResponse(user: User): Promise<MeResponse> {
 const imageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: config.maxAvatarBytes, files: 1 },
+});
+const sessionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_SESSION_BYTES, files: 1 },
 });
 const voiceUpload = multer({
   storage: multer.memoryStorage(),
@@ -192,6 +212,37 @@ function registerMe(router: Router): void {
       const previous = await getAvatarFile(req.user!.id);
       await setAvatarFile(req.user!.id, null);
       await removeProfileFile(req.user!.id, previous);
+      res.json(await meResponse(req.user!));
+    }),
+  );
+
+  // ---------- conta do agente no Teams ----------
+
+  router.put(
+    "/me/agent/teams-account",
+    requirePermission("agents.manage"),
+    sessionUpload.single("file"),
+    wrap(async (req, res) => {
+      if (!req.file) return badRequest(res, "Envie o arquivo da sessão no campo 'file'.");
+      try {
+        const typed = validateAccountName(String(req.body?.accountName ?? ""));
+        const session = parseSession(req.file.buffer);
+        await saveTeamsAccount(req.user!.id, accountNameFor(typed, session), session);
+      } catch (err) {
+        if (err instanceof TeamsAccountError) return badRequest(res, err.message);
+        throw err;
+      }
+      audit("teams_account_connected", {}, req.user!.id);
+      res.json(await meResponse(req.user!));
+    }),
+  );
+
+  router.delete(
+    "/me/agent/teams-account",
+    requirePermission("agents.manage"),
+    wrap(async (req, res) => {
+      await removeTeamsAccount(req.user!.id);
+      audit("teams_account_removed", {}, req.user!.id);
       res.json(await meResponse(req.user!));
     }),
   );

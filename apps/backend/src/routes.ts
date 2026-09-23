@@ -7,6 +7,7 @@ import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
   CHANNELS,
+  ExtractItemsRequest,
   GenerateAdrsRequest,
   IDLE_STATUSES,
   MEETING_STATUSES,
@@ -31,6 +32,7 @@ import {
   createMeeting,
   deleteMeeting,
   deleteUserSessions,
+  emitMeetingChanged,
   findUserAuthz,
   findUserByUsername,
   getMeeting,
@@ -163,6 +165,8 @@ const OWNER_ONLY_ROUTES = new Set([
   "/meetings/:id/assistant",
   "/meetings/:id/reprocess",
   "/meetings/:id/skip",
+  "/meetings/:id/cancel",
+  "/meetings/:id/extract-items",
   "/meetings/:id/adrs/generate",
 ]);
 
@@ -320,7 +324,7 @@ export function buildRouter(): Router {
             error: `Já existem ${activeBotCount() - 1} bots em reunião (limite ${config.maxConcurrentBots}). Encerre um antes.`,
           });
         }
-        const botIdentity = await resolveBotIdentity(req.user!.id, identity);
+        const botIdentity = await resolveBotIdentity(req.user!.id, identity, target.platform);
         const id = await createMeeting({
           title: cleanTitle(req.body?.title, "Reunião sem título"),
           platform: target.platform,
@@ -447,6 +451,25 @@ export function buildRouter(): Router {
       }
       audit("generation_requested", { meetingId: meeting.id, step, provider: generationLabel(llm.value) }, req.user!.id);
       res.status(202).json({ status: "queued", provider: generationLabel(llm.value) });
+    }),
+  );
+
+  // Liga ou desliga os itens (decisões, pendências, riscos…) desta reunião. Vale para a extração ao
+  // vivo e para a análise final; o que já foi gerado não é apagado. Só o dono decide.
+  router.put(
+    "/meetings/:id/extract-items",
+    requirePermission("meetings.manage"),
+    wrap(async (req, res) => {
+      const body = parseBody(ExtractItemsRequest, req, res);
+      if (!body) return;
+      const meeting = await getMeeting(String(req.params.id));
+      if (!meeting) return res.status(404).json({ error: "Reunião não encontrada." });
+      if (isProcessing(meeting.id) || ["queued", "transcribing", "generating_ata"].includes(meeting.status)) {
+        return res.status(409).json({ error: "A reunião está em processamento; tente de novo quando terminar." });
+      }
+      await pool.query(`UPDATE meetings SET extract_items = $2 WHERE id = $1`, [meeting.id, body.enabled]);
+      emitMeetingChanged(meeting.id);
+      res.json(toMeetingSummary((await getMeeting(meeting.id))!));
     }),
   );
 

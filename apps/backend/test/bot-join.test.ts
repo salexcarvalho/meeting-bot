@@ -107,7 +107,7 @@ describe("driveJoin", () => {
       "microfone@2000",
       `join:${NAME}@2250`,
     ]);
-    expect(result).toEqual({ camera: false });
+    expect(result).toEqual({ camera: false, guestForm: true });
     expect(joiningAt).toBe(1500);
     // antes: 15 s (continuar no navegador) + 3 s + 3 s + 3 s de esperas fixas
     expect(h.time()).toBeLessThan(3000);
@@ -117,7 +117,7 @@ describe("driveJoin", () => {
     const h = harness({ nameAt: 500, micAt: 500, cameraAt: 500, joinAt: 500, joinNeedsName: true });
     const result = await driveJoin(h.screen, withCamera, h.opts);
     expect(h.events).toEqual([`fill:${NAME}@500`, "microfone@500", `join:${NAME}@500`]);
-    expect(result).toEqual({ camera: true });
+    expect(result).toEqual({ camera: true, guestForm: true });
   });
 
   it("liga a câmera que abriu desligada antes de entrar", async () => {
@@ -132,7 +132,7 @@ describe("driveJoin", () => {
     const result = await driveJoin(h.screen, withCamera, h.opts);
     expect(h.events.filter((e) => e.startsWith("câmera"))).toEqual(["câmera:ligar@0", "câmera:ligar@2000", "câmera:ligar@4000"]);
     expect(h.events.at(-1)).toBe(`join:${NAME}@5000`);
-    expect(result).toEqual({ camera: false });
+    expect(result).toEqual({ camera: false, guestForm: true });
   });
 
   it("câmera que cai antes do clique é reportada como desligada", async () => {
@@ -160,6 +160,13 @@ describe("driveJoin", () => {
     const h = harness({ nameAt: null, micAt: null, cameraAt: null, joinAt: 1000 });
     await driveJoin(h.screen, noCamera, h.opts);
     expect(h.events).toEqual(["join:@2500"]);
+  });
+
+  it("logado (sem campo de nome) não é convidado; com o campo, é", async () => {
+    const logged = harness({ nameAt: null, micAt: null, cameraAt: null, joinAt: 0 });
+    expect((await driveJoin(logged.screen, noCamera, logged.opts)).guestForm).toBe(false);
+    const guest = harness({ nameAt: 0, micAt: null, cameraAt: null, joinAt: 0, joinNeedsName: true });
+    expect((await driveJoin(guest.screen, noCamera, guest.opts)).guestForm).toBe(true);
   });
 
   it("falha definitiva interrompe na hora", async () => {

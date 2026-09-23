@@ -7,11 +7,13 @@ import { config } from "../config";
 import { markEnded, markStarted, setAudioPath, setMeetingStatus } from "../db";
 import { enqueueProcessing } from "../pipeline";
 import { closeLiveSessions, liveSession } from "../recording/liveSession";
+import { audit } from "../security/audit";
 import { dropRuntime } from "../recording/runtime";
+import { markTeamsSessionExpired, MAX_SESSION_BYTES, parseSession, refreshTeamsSession } from "../users/teamsAccount";
 import { createSink, removeSink, startRecording, stopRecording } from "./audio";
 import { launchBrowser } from "./browser";
 import { createCameraCard, type CameraCard } from "./card";
-import type { BotIdentity } from "./identity";
+import type { BotAccount, BotIdentity } from "./identity";
 import { LeaveDecider } from "./leave";
 import { drivers } from "./platforms";
 import { JoinError, type JoinResult } from "./join";
@@ -25,6 +27,9 @@ export const debugDir = path.join(config.dataDir, "debug");
 export function screenshotPath(meetingId: string): string {
   return path.join(debugDir, `${meetingId}.png`);
 }
+
+// Logado, o Teams carrega o app inteiro (36 s medidos; como convidado, ~6 s): 45 s não bastam.
+const ACCOUNT_JOIN_TIMEOUT_MS = 120_000;
 
 /** Tentativas de religar a câmera (o ícone) na chamada; depois disso segue sem ela. */
 const CAMERA_RETRIES = 3;
@@ -129,6 +134,7 @@ async function runBot(
   let card: CameraCard | null = null;
   let recorder: ChildProcessWithoutNullStreams | null = null;
   let failure: string | null = null;
+  let signedIn = false;
 
   try {
     // Sem ícone cadastrado, a câmera fica desligada (a reunião mostra as iniciais).
@@ -140,10 +146,10 @@ async function runBot(
     }
     sinkModule = await createSink(sinkName);
     setBotStage(meetingId, "launching");
-    ({ browser, page } = await launchBrowser(sinkName, card?.file));
+    ({ browser, page } = await launchBrowser(sinkName, card?.file, identity.account?.state));
     if (signal.aborted) throw new BotError("Cancelado antes de entrar na reunião.");
 
-    log(`entrando (${platform}) como "${identity.name}"${card ? " com o ícone na câmera" : ""}`);
+    log(`entrando (${platform}) como "${identity.name}"${identity.account ? " (conta conectada)" : ""}${card ? " com o ícone na câmera" : ""}`);
     setBotStage(meetingId, "opening");
     let joined: JoinResult;
     try {
@@ -152,7 +158,7 @@ async function runBot(
         url,
         { name: identity.name, camera: card !== null },
         {
-          timeoutMs: config.botJoinTimeoutMs,
+          timeoutMs: identity.account ? Math.max(config.botJoinTimeoutMs, ACCOUNT_JOIN_TIMEOUT_MS) : config.botJoinTimeoutMs,
           signal,
           onJoining: () => setBotStage(meetingId, "joining"),
         },
@@ -170,6 +176,17 @@ async function runBot(
       );
     } finally {
       await screenshot(page, meetingId);
+    }
+
+    if (identity.account) {
+      if (joined.guestForm) {
+        log("a sessão da conta do Teams venceu; entrou como convidado. Conecte a conta de novo em Configurações → Meu agente");
+        audit("teams_account_expired", {}, identity.account.userId);
+        await markTeamsSessionExpired(identity.account.userId).catch(() => {});
+      } else {
+        signedIn = true;
+        log("entrou com a conta do Teams");
+      }
     }
 
     setBotStage(meetingId, "waiting_admission");
@@ -267,6 +284,7 @@ async function runBot(
     if (recorder) await stopRecording(recorder);
     closeLiveSessions(meetingId);
     dropRuntime(meetingId);
+    if (signedIn && identity.account && page && !page.isClosed()) await keepSessionFresh(page, identity.account, log);
     if (page && !page.isClosed()) {
       await leaveCall(page);
     }
@@ -282,6 +300,17 @@ async function runBot(
     enqueueProcessing(meetingId);
   } else {
     await setMeetingStatus(meetingId, "error", failure ?? "Nenhum áudio foi gravado.");
+  }
+}
+
+// O Teams renova os tokens durante a chamada; guardar a sessão nova evita que ela vença sozinha.
+async function keepSessionFresh(page: Page, account: BotAccount, log: (msg: string) => void): Promise<void> {
+  try {
+    const raw = Buffer.from(JSON.stringify(await page.context().storageState()), "utf8");
+    if (raw.length > MAX_SESSION_BYTES) return log("sessão da conta ficou grande demais para renovar; mantida a anterior");
+    await refreshTeamsSession(account.userId, parseSession(raw));
+  } catch (err) {
+    log(`não consegui renovar a sessão da conta: ${(err as Error).message}`);
   }
 }
 

@@ -10,5 +10,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 *.log
+# sessão da conta do agente no Teams (vale como senha)
+teams-session*.json
 test-results/
 playwright-report/

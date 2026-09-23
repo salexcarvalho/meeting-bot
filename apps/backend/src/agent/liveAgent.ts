@@ -278,9 +278,10 @@ async function agentFor(meetingId: string): Promise<LiveAgent> {
 async function tickAll(): Promise<void> {
   try {
     const { rows } = await pool.query(
-      // gravação local (recording/stopping) ou assistente dentro da chamada (in_call)
+      // gravação local (recording/stopping) ou assistente dentro da chamada (in_call); só com os itens ligados
       `SELECT id FROM meetings
-       WHERE (source IN ('ics', 'manual') AND status IN ('recording', 'stopping')) OR status = 'in_call'`,
+       WHERE extract_items
+         AND ((source IN ('ics', 'manual') AND status IN ('recording', 'stopping')) OR status = 'in_call')`,
     );
     for (const { id } of rows) void (await agentFor(id)).tick();
   } catch (err) {
@@ -291,10 +292,14 @@ async function tickAll(): Promise<void> {
 // Chamado pelo pipeline antes do passe final: a análise ao vivo termina sobre os segmentos `live`.
 export async function flushLiveAgent(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `SELECT 1 FROM transcript_segments WHERE meeting_id = $1 AND pass = 'live' LIMIT 1`,
+    `SELECT 1 FROM transcript_segments s JOIN meetings m ON m.id = s.meeting_id
+      WHERE s.meeting_id = $1 AND s.pass = 'live' AND m.extract_items LIMIT 1`,
     [meetingId],
   );
-  if (!rows.length) return;
+  if (!rows.length) {
+    agents.delete(meetingId);
+    return;
+  }
   const agent = await agentFor(meetingId);
   await agent.flush();
   agents.delete(meetingId);

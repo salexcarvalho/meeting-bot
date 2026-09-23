@@ -163,6 +163,8 @@ export interface MeetingSummary {
   endedAt: string | null;
   project: ProjectRef | null;
   skipRecording: boolean;
+  /** gera decisões, pendências, riscos etc. nesta reunião (padrão: desligado) */
+  itemsEnabled: boolean;
   organizer: string | null;
   attendees: Attendee[];
   errorMessage: string | null;
@@ -173,6 +175,9 @@ export interface MeetingSummary {
   botDisplayName: string | null;
   createdBy: string | null;
   createdAt: string;
+  /** liga as ocorrências de uma mesma recorrência cadastrada manualmente */
+  seriesId: string | null;
+  recurrence: RecurrenceRule | null;
 }
 
 export interface Segment {
@@ -349,6 +354,9 @@ export interface LlmOptions {
   subscriptions: SubscriptionLlmOption[];
 }
 
+export const ExtractItemsRequest = z.object({ enabled: z.boolean() });
+export type ExtractItemsRequest = z.infer<typeof ExtractItemsRequest>;
+
 export const GenerateAdrsRequest = z.object({
   llm: z.enum(LLM_CHOICES).optional(),
   /** só a decisão arquitetural indicada; sem ele, todas as pendentes */
@@ -425,12 +433,21 @@ export interface LlmUsageReport {
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "data inválida");
 
+export const RecurrenceRule = z.object({
+  freq: z.enum(["daily", "weekly", "monthly"]),
+  interval: z.number().int().min(1).max(30).default(1),
+  /** null/ausente = sem fim definido; a série é estendida automaticamente enquanto ativa */
+  until: isoDate.nullish(),
+});
+export type RecurrenceRule = z.infer<typeof RecurrenceRule>;
+
 export const ScheduledMeetingInput = z.object({
   title: z.string().trim().min(1, "Informe o título.").max(300),
   start: isoDate,
   durationMinutes: z.number().int().min(5, "Duração mínima de 5 min.").max(720, "Duração máxima de 12 h."),
   url: z.string().trim().max(2000).nullish(),
   projectId: z.uuid().nullish(),
+  recurrence: RecurrenceRule.nullish(),
 });
 export type ScheduledMeetingInput = z.infer<typeof ScheduledMeetingInput>;
 

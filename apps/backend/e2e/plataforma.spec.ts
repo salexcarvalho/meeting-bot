@@ -143,8 +143,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, ANA);
     await page.getByRole("link", { name: "Configurações" }).click();
     await page.getByLabel("Nome de exibição").fill("Ana");
+    await page.getByLabel("E-mail").fill("Ana.Souza@Empresa.com");
     await page.getByRole("button", { name: "Salvar" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Perfil salvo." })).toBeVisible();
+    await expect(page.getByLabel("E-mail")).toHaveValue("ana.souza@empresa.com");
     await expect(page.locator("aside.sidebar .user-box-name")).toHaveText("Ana");
 
     await page.getByLabel("Sua foto").setInputFiles({ name: "ana.png", mimeType: "image/png", buffer: PNG_1PX });
@@ -228,6 +230,43 @@ test.describe.serial("plataforma multiusuário", () => {
     await shot(page, "reuniao-bot-erro");
   });
 
+  test("conta do agente no Teams: recusa nome sem ata, conecta, avisa sessão vencida e remove", async ({ page }) => {
+    await login(page, ANA);
+    await page.goto("/configuracoes?aba=agente");
+    const card = page.locator("form.card", { hasText: "Conta do agente no Teams" });
+    await expect(card).toContainText("Nenhuma conta conectada");
+
+    const session = {
+      cookies: [{ name: "ESTSAUTHPERSISTENT", value: "x", domain: ".login.microsoftonline.com", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "None" }],
+      origins: [],
+    };
+    const file = { name: "teams-session.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(session)) };
+
+    await card.getByLabel("Nome da conta no Teams").fill("Ana Souza");
+    await card.getByLabel("Arquivo da sessão").setInputFiles(file);
+    await card.getByRole("button", { name: "Conectar conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "dizer que é a ata" })).toBeVisible();
+    await expect(card).toContainText("Nenhuma conta conectada");
+
+    await card.getByLabel("Nome da conta no Teams").fill("Ata da Ana");
+    await card.getByRole("button", { name: "Conectar conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Conta do agente conectada." })).toBeVisible();
+    await expect(card.getByText("Conectada", { exact: true })).toBeVisible();
+    await expect(card).toContainText("Ata da Ana");
+    await expect(card.getByRole("button", { name: "Trocar sessão" })).toBeDisabled();
+    await shot(page, "config-conta-teams");
+
+    // o nome que o bot usa no Teams passa a ser o da conta
+    const me = await page.evaluate(async () => (await (await fetch("/api/me")).json()) as { teamsAccount: { accountName: string } });
+    expect(me.teamsAccount.accountName).toBe("Ata da Ana");
+
+    await page.reload();
+    await expect(card.getByText("Conectada", { exact: true })).toBeVisible();
+    await card.getByRole("button", { name: "Remover conta" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Conta do agente removida." })).toBeVisible();
+    await expect(card).toContainText("Nenhuma conta conectada");
+  });
+
   test("gerar ata e ADR pergunta onde gerar e só envia depois de confirmar", async ({ page }) => {
     await login(page, ANA);
     const id = await doneMeeting(page, "Revisão de arquitetura E2E");
@@ -274,6 +313,52 @@ test.describe.serial("plataforma multiusuário", () => {
     await expect(page.getByRole("status")).toContainText("Falha no processamento");
     expect(generations).toEqual([{ llm: "local", itemId: item.json.id }]);
     await shot(page, "gerar-adr-falha");
+  });
+
+  test("itens da reunião: desligados por padrão; gerar itens pergunta onde gerar, liga e envia; desligar não apaga", async ({ page }) => {
+    await login(page, ANA);
+    const id = await doneMeeting(page, "Teste assistido E2E");
+    const manual = await postJson(page, `/api/meetings/${id}/items`, { type: "pendencia", description: "Anotada à mão" });
+    expect(manual.status).toBe(201);
+
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    page.on("request", (req) => {
+      const path = new URL(req.url()).pathname;
+      if (["PUT", "POST"].includes(req.method()) && (path.endsWith("/extract-items") || path.endsWith("/reprocess"))) {
+        calls.push({ method: req.method(), path: path.split("/").pop()!, body: req.postDataJSON() });
+      }
+    });
+    await page.goto(`/reunioes/${id}`);
+    const chave = page.getByRole("group", { name: "Itens da reunião" });
+    await expect(chave).toContainText("Itens desligados");
+    await expect(chave).toContainText("o que já existe continua");
+    await shot(page, "itens-desligados");
+
+    // cancelar não envia nada
+    await chave.getByRole("button", { name: "Gerar itens" }).click();
+    const dialog = page.getByRole("dialog", { name: "Gerar itens" });
+    await expect(dialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
+    await expect(dialog).toBeHidden();
+    expect(calls).toEqual([]);
+    await expect(chave).toContainText("Itens desligados");
+
+    // confirmar liga a chave e pede a análise; sem Ollama no E2E ela falha, mas a chave fica ligada
+    await chave.getByRole("button", { name: "Gerar itens" }).click();
+    await dialog.getByRole("button", { name: "Gerar itens" }).click();
+    await expect(chave).toContainText("Itens ligados", { timeout: 30_000 });
+    expect(calls).toEqual([
+      { method: "PUT", path: "extract-items", body: { enabled: true } },
+      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "local" } },
+    ]);
+
+    // desligar (quando o processamento acaba) não apaga o que existe
+    const desligar = chave.getByRole("button", { name: "Desligar itens" });
+    await expect(desligar).toBeEnabled({ timeout: 30_000 });
+    await desligar.click();
+    await expect(chave).toContainText("Itens desligados");
+    const lista = await page.evaluate(async (mid) => (await (await fetch(`/api/meetings/${mid}/items`)).json()) as { items: unknown[] }, id);
+    expect(lista.items.length).toBeGreaterThanOrEqual(1);
   });
 
   test("resumo para enviar mostra só o aprovado e copia", async ({ page, context }) => {

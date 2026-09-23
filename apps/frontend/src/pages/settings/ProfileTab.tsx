@@ -18,6 +18,7 @@ export function ProfileTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
   const [form, setForm] = useState({
     realName: profile.realName ?? "",
     displayName: profile.displayName ?? "",
+    email: profile.email ?? "",
     language: profile.language,
     timezone: profile.timezone,
   });
@@ -25,12 +26,14 @@ export function ProfileTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
   const dirty =
     form.realName !== (profile.realName ?? "") ||
     form.displayName !== (profile.displayName ?? "") ||
+    form.email !== (profile.email ?? "") ||
     form.language !== profile.language ||
     form.timezone !== profile.timezone;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    await run("/me/profile", { method: "PATCH", json: form }, "Perfil salvo.");
+    const email = form.email.trim().toLowerCase();
+    if (await run("/me/profile", { method: "PATCH", json: { ...form, email } }, "Perfil salvo.")) setForm((f) => ({ ...f, email }));
   }
 
   return (
@@ -62,6 +65,18 @@ export function ProfileTab({ me, setMe }: { me: MeResponse; setMe: SetMe }) {
             placeholder="Ex.: Sérgio"
           />
           <span className="field-hint">Vazio usa o nome real (ou o usuário).</span>
+        </label>
+        <label>
+          E-mail
+          <input
+            type="email"
+            value={form.email}
+            maxLength={254}
+            autoComplete="email"
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="Ex.: sergio@empresa.com"
+          />
+          <span className="field-hint">O mesmo dos convites (Outlook/Teams): reconhece você entre os participantes e não repete seu nome na ata.</span>
         </label>
         <div className="grid-2 tight">
           <label>

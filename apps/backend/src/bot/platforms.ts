@@ -1,4 +1,5 @@
 import { Locator, Page } from "playwright";
+import { gotoWithRetry } from "./navigate";
 import { CameraState, driveJoin, JoinControl, JoinIdentity, JoinOptions, JoinResult, JoinScreen } from "./join";
 
 /**
@@ -114,7 +115,7 @@ const MEET_CAMERA_ON = /^turn on camera|^ativar câmera/i;
 
 const meet: PlatformDriver = {
   async join(page, url, identity, opts, log) {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await gotoWithRetry(page, url, { signal: opts.signal, log });
     const screen = screenFor(page, {
       dismiss: [
         control("entendi", page.getByRole("button", { name: /^(got it|entendi)$/i })),
@@ -189,7 +190,7 @@ const TEAMS_CAMERA_ON = /^turn (camera on|on camera)|^ligar (a )?câmera/i;
 
 const teams: PlatformDriver = {
   async join(page, url, identity, opts, log) {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await gotoWithRetry(page, url, { signal: opts.signal, log });
     const continueInBrowser = /continue on this browser|use the web app instead|join on the web|continuar neste navegador/i;
     const screen = screenFor(page, {
       dismiss: [

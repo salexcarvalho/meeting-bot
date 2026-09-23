@@ -66,7 +66,7 @@ describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)"
   }
 
   const row = async (id: string) =>
-    (await pool.query(`SELECT status, error_message, bot_display_name, scheduled_end, skip_recording FROM meetings WHERE id = $1`, [id]))
+    (await pool.query(`SELECT status, error_message, bot_display_name, scheduled_end, skip_recording, extract_items FROM meetings WHERE id = $1`, [id]))
       .rows[0];
 
   beforeAll(async () => {
@@ -209,6 +209,103 @@ describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)"
       [later],
     );
     expect((await call("aa-dono", "POST", `/meetings/${later}/assistant`)).status).toBe(409);
+  });
+
+  it("itens da reunião: desligados por padrão, só o dono liga e desliga, e não muda durante o processamento", async () => {
+    const id = await scheduled("Teste assistido da sprint", 30, teams("f1"));
+    expect((await row(id)).extract_items).toBe(false);
+    const detail = await call("aa-dono", "GET", `/meetings/${id}`);
+    expect(detail.json.meeting.itemsEnabled).toBe(false);
+
+    // quem não é dono (e nem enxerga a reunião) não mexe
+    expect((await call("aa-outra", "PUT", `/meetings/${id}/extract-items`, { enabled: true })).status).toBe(404);
+    expect((await call("aa-dono", "PUT", `/meetings/${id}/extract-items`, { enabled: "sim" })).status).toBe(400);
+    expect((await row(id)).extract_items).toBe(false);
+
+    const on = await call("aa-dono", "PUT", `/meetings/${id}/extract-items`, { enabled: true });
+    expect(on.status).toBe(200);
+    expect(on.json.itemsEnabled).toBe(true);
+    expect((await row(id)).extract_items).toBe(true);
+
+    await pool.query(`UPDATE meetings SET status = 'generating_ata' WHERE id = $1`, [id]);
+    const busy = await call("aa-dono", "PUT", `/meetings/${id}/extract-items`, { enabled: false });
+    expect(busy.status).toBe(409);
+    expect((await row(id)).extract_items).toBe(true);
+
+    await pool.query(`UPDATE meetings SET status = 'scheduled' WHERE id = $1`, [id]);
+    const off = await call("aa-dono", "PUT", `/meetings/${id}/extract-items`, { enabled: false });
+    expect(off.json.itemsEnabled).toBe(false);
+  });
+
+  it("migração da chave de itens: reunião que já tinha análise ou itens fica ligada, as demais não; repetir não muda nada", async () => {
+    const comAnalise = await scheduled("Antiga com análise", -60, null);
+    const comItens = await scheduled("Antiga com itens", -60, null);
+    const semNada = await scheduled("Antiga sem nada", -60, null);
+    await pool.query(`UPDATE meetings SET analyzed_at = now() WHERE id = $1`, [comAnalise]);
+    await pool.query(`INSERT INTO meeting_items (meeting_id, type, description, origin) VALUES ($1, 'decisao', 'x', 'final')`, [
+      comItens,
+    ]);
+
+    // estado de antes da mudança: sem a coluna
+    await pool.query(`ALTER TABLE meetings DROP COLUMN extract_items`);
+    await migrate(pool);
+    const flags = async () =>
+      Object.fromEntries(
+        (await pool.query(`SELECT id, extract_items FROM meetings WHERE id = ANY($1)`, [[comAnalise, comItens, semNada]])).rows.map(
+          (r) => [r.id, r.extract_items],
+        ),
+      );
+    expect(await flags()).toEqual({ [comAnalise]: true, [comItens]: true, [semNada]: false });
+
+    // o usuário desliga; uma nova subida (migrate de novo) não religa
+    await pool.query(`UPDATE meetings SET extract_items = false WHERE id = $1`, [comAnalise]);
+    await migrate(pool);
+    expect((await flags())[comAnalise]).toBe(false);
+  });
+
+  it("queda de rede ao abrir o link: tenta de novo enquanto a reunião dura, até 3 vezes", async () => {
+    const rede = await scheduled("Reunião com rede caída", -5, teams("e1"));
+    const cert = await scheduled("Reunião com erro de página", -5, teams("e2"));
+    const fail = (id: string, message: string, endedAgoSeconds: number) =>
+      pool.query(
+        `UPDATE meetings SET status = 'error', error_message = $2, started_at = NULL,
+           ended_at = now() - make_interval(secs => $3) WHERE id = $1`,
+        [id, message, endedAgoSeconds],
+      );
+    const netError = "page.goto: net::ERR_TIMED_OUT at https://teams.microsoft.com/l/meetup-join/x";
+
+    // acabou de falhar: espera 1 min antes de tentar de novo
+    await fail(rede, netError, 10);
+    await fail(cert, "page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://x", 300);
+    launches.length = 0;
+    await tick();
+    expect(launches).toHaveLength(0);
+
+    // passou o minuto: a de rede volta, a de página (certificado) não
+    await fail(rede, netError, 120);
+    await tick();
+    expect(launches.map((l) => l.id)).toEqual([rede]);
+    expect(await row(rede)).toMatchObject({ status: "joining", error_message: null });
+    expect((await row(cert)).status).toBe("error");
+
+    // cai de novo mais duas vezes e para na terceira tentativa
+    for (let i = 0; i < 2; i++) {
+      await fail(rede, netError, 120);
+      await tick();
+    }
+    expect(launches.filter((l) => l.id === rede)).toHaveLength(3);
+    await fail(rede, netError, 120);
+    await tick();
+    expect(launches.filter((l) => l.id === rede)).toHaveLength(3);
+    expect((await row(rede)).status).toBe("error");
+
+    // depois do fim previsto não tenta mais, mesmo sem ter esgotado
+    const fim = await scheduled("Reunião que acabou", -5, teams("e3"));
+    await fail(fim, netError, 300);
+    await pool.query(`UPDATE meetings SET scheduled_end = now() - interval '1 minute' WHERE id = $1`, [fim]);
+    launches.length = 0;
+    await tick();
+    expect(launches).toHaveLength(0);
   });
 
   it("reinício: assistente da agenda sem áudio volta a entrar enquanto ainda é horário", async () => {

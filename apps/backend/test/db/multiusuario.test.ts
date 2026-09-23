@@ -419,6 +419,12 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       expect(profile.json.profile).toMatchObject({ realName: "Ana Souza", displayName: "Ana", name: "Ana" });
       expect((await call("mu-ana", "PATCH", "/me/profile", { timezone: "Marte/Olympus" })).status).toBe(400);
 
+      const email = await call("mu-ana", "PATCH", "/me/profile", { email: "  Ana.Souza@Empresa.com " });
+      expect(email.status).toBe(200);
+      expect(email.json.profile.email).toBe("ana.souza@empresa.com");
+      expect((await call("mu-ana", "PATCH", "/me/profile", { email: "isso-nao-e-email" })).status).toBe(400);
+      expect((await call("mu-ana", "PATCH", "/me/profile", { email: "" })).json.profile.email).toBeNull();
+
       const agent = await call("mu-ana", "PATCH", "/me/agent", {
         name: "Orion",
         description: "Arquiteto de software",
@@ -442,6 +448,80 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       expect(me.json).toMatchObject({ displayName: "Ana", agentName: "Orion" });
       // o de outro usuário não muda
       expect((await call("mu-bia", "GET", "/me")).json.agent.name).toBe("Assistente");
+    });
+
+    it("conta do agente no Teams: só cifrada, por usuário, com nome de ata, e o bot entra com ela", async () => {
+      const { resolveBotIdentity } = await import("../../src/users/identity");
+      const state = {
+        cookies: [{ name: "ESTSAUTHPERSISTENT", value: "valor-secreto-123", domain: ".login.microsoftonline.com", path: "/" }],
+        origins: [],
+      };
+      const send = (fields: Record<string, string>, content: string = JSON.stringify(state)) => {
+        const form = new FormData();
+        for (const [k, v] of Object.entries(fields)) form.append(k, v);
+        form.append("file", new Blob([content], { type: "application/json" }), "teams-session.json");
+        return call("mu-ana", "PUT", "/me/agent/teams-account", form);
+      };
+
+      expect((await call("mu-ana", "GET", "/me")).json.teamsAccount).toMatchObject({ connected: false });
+      expect((await send({ accountName: "Sérgio Carvalho" })).status).toBe(400);
+      expect((await send({ accountName: "Ata do Sérgio" }, "não é json")).status).toBe(400);
+      expect((await send({ accountName: "Ata do Sérgio" }, JSON.stringify({ cookies: [] }))).status).toBe(400);
+      expect((await call("mu-ana", "PUT", "/me/agent/teams-account", new FormData())).status).toBe(400);
+
+      const ok = await send({ accountName: "Ata do Sérgio" });
+      expect(ok.status).toBe(200);
+      expect(ok.json.teamsAccount).toMatchObject({ connected: true, accountName: "Ata do Sérgio", expired: false });
+      expect(JSON.stringify(ok.json)).not.toContain("valor-secreto-123");
+
+      const stored = (await pool.query(`SELECT session_enc FROM teams_accounts WHERE user_id = $1`, [ids["mu-ana"]])).rows[0];
+      expect((stored.session_enc as Buffer).includes(Buffer.from("valor-secreto-123"))).toBe(false);
+
+      // conta de uma pessoa (o nome real da sessão não diz que é a ata): recusada, mesmo com nome digitado certo
+      const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const tokenState = (name: string) => ({
+        ...state,
+        origins: [{ origin: "https://teams.microsoft.com", localStorage: [{ name: "t", value: `eyJhbGciOiJub25lIn0.${b64({ name, preferred_username: "x@empresa.com" })}.assinatura` }] }],
+      });
+      const person = await send({ accountName: "Ata do Sérgio" }, JSON.stringify(tokenState("Sergio Alexandre De Carvalho")));
+      expect(person.status).toBe(400);
+      expect(person.json.error).toMatch(/Sergio Alexandre De Carvalho/);
+
+      // outro usuário não vê a conta
+      expect((await call("mu-bia", "GET", "/me")).json.teamsAccount.connected).toBe(false);
+
+      // Teams: entra com a conta; Meet: continua convidado com o nome da configuração
+      const teams = await resolveBotIdentity(ids["mu-ana"], undefined, "teams");
+      expect(teams.name).toBe("Ata do Sérgio");
+      expect(teams.account?.state).toEqual(state);
+      const meet = await resolveBotIdentity(ids["mu-ana"], undefined, "meet");
+      expect(meet.account).toBeUndefined();
+      expect(meet.name).toMatch(/^Ata de /);
+
+      // sessão antiga de uma conta de pessoa: a tela avisa e o bot não a usa
+      const { seal } = await import("../../src/users/teamsAccount");
+      await pool.query(`UPDATE teams_accounts SET session_enc = $2 WHERE user_id = $1`, [
+        ids["mu-ana"],
+        seal(Buffer.from(JSON.stringify(tokenState("Ana Souza")))),
+      ]);
+      const flagged = (await call("mu-ana", "GET", "/me")).json.teamsAccount;
+      expect(flagged.problem).toMatch(/Ana Souza/);
+      expect((await resolveBotIdentity(ids["mu-ana"], undefined, "teams")).account).toBeUndefined();
+      expect((await send({ accountName: "Ata do Sérgio" })).json.teamsAccount.problem).toBeNull();
+
+      // sessão vencida aparece na tela e some ao reconectar
+      const { markTeamsSessionExpired } = await import("../../src/users/teamsAccount");
+      await markTeamsSessionExpired(ids["mu-ana"]);
+      expect((await call("mu-ana", "GET", "/me")).json.teamsAccount.expired).toBe(true);
+      expect((await send({ accountName: "Ata do Sérgio" })).json.teamsAccount.expired).toBe(false);
+
+      // chave trocada: o bot volta a entrar como convidado em vez de quebrar
+      await pool.query(`UPDATE teams_accounts SET session_enc = '\\x00' WHERE user_id = $1`, [ids["mu-ana"]]);
+      expect((await resolveBotIdentity(ids["mu-ana"], undefined, "teams")).account).toBeUndefined();
+
+      const del = await call("mu-ana", "DELETE", "/me/agent/teams-account");
+      expect(del.json.teamsAccount.connected).toBe(false);
+      expect((await resolveBotIdentity(ids["mu-ana"], undefined, "teams")).account).toBeUndefined();
     });
 
     it("foto: aceita PNG real, recusa outro conteúdo e remove", async () => {

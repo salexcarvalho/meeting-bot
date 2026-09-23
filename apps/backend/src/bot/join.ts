@@ -43,6 +43,8 @@ export interface JoinIdentity {
 export interface JoinResult {
   /** a câmera (com o ícone) ficou ligada */
   camera: boolean;
+  /** a tela pediu um nome: entrou como convidado (com conta conectada, a sessão venceu) */
+  guestForm: boolean;
 }
 
 export interface JoinOptions {
@@ -103,6 +105,7 @@ export async function driveJoin(screen: JoinScreen, identity: JoinIdentity, opts
   let cameraTries = 0;
   let cameraSetAt = -Infinity;
   let nameFilled = false;
+  let guestForm = false;
 
   const markJoining = () => {
     if (joining) return;
@@ -150,6 +153,7 @@ export async function driveJoin(screen: JoinScreen, identity: JoinIdentity, opts
     }
 
     if (await safe(screen.nameInput.visible)) {
+      guestForm = true;
       markJoining();
       if ((await screen.nameInput.value().catch(() => "")) !== identity.name) {
         await screen.nameInput.fill(identity.name).catch(() => {});
@@ -187,7 +191,7 @@ export async function driveJoin(screen: JoinScreen, identity: JoinIdentity, opts
       if (ready && (await screen.join.click().then(() => true, () => false))) {
         const cameraOn = identity.camera && camera === "on";
         log(`pedido de entrada enviado, câmera ${cameraOn ? "com o ícone" : "desligada"} (${now() - start} ms)`);
-        return { camera: cameraOn };
+        return { camera: cameraOn, guestForm };
       }
     }
 

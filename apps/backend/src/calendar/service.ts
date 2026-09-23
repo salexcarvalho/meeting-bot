@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type {
   AgendaResponse,
   ImportResult,
   Platform,
+  RecurrenceRule,
   ScheduledMeetingInput,
   ScheduledMeetingPatch,
 } from "@meeting-bot/contracts";
@@ -198,11 +200,40 @@ async function assertProject(projectId: string | null | undefined): Promise<void
   if (!rowCount) throw new CalendarError("Projeto não encontrado.");
 }
 
+// Janela rolante materializada de cada vez: cadastro cria a 1ª leva, e o job de
+// extensão (seriesExtend.ts) completa o resto conforme o horizonte avança.
+export const RECURRENCE_MAX_DAYS = 180;
+export const RECURRENCE_MAX_OCCURRENCES = 200;
+
+export function addInterval(d: Date, freq: RecurrenceRule["freq"], interval: number): Date {
+  const next = new Date(d);
+  if (freq === "daily") next.setDate(next.getDate() + interval);
+  else if (freq === "weekly") next.setDate(next.getDate() + interval * 7);
+  else next.setMonth(next.getMonth() + interval);
+  return next;
+}
+
+// Recorrência já nasce materializada em uma linha por ocorrência (mesmo padrão do import .ics),
+// então lembrete e entrada automática do bot funcionam de graça em cada uma.
+export function generateOccurrenceStarts(start: Date, rule: RecurrenceRule, horizonEnd: Date): Date[] {
+  const until = rule.until ? new Date(rule.until) : null;
+  if (until && (Number.isNaN(until.getTime()) || until.getTime() <= start.getTime())) {
+    throw new CalendarError("Data final da recorrência precisa ser depois do início.");
+  }
+  const cap = until && until.getTime() < horizonEnd.getTime() ? until.getTime() : horizonEnd.getTime();
+  const starts: Date[] = [];
+  let cursor = start;
+  while (cursor.getTime() <= cap && starts.length < RECURRENCE_MAX_OCCURRENCES) {
+    starts.push(cursor);
+    cursor = addInterval(cursor, rule.freq, rule.interval);
+  }
+  return starts;
+}
+
 export async function createScheduled(input: ScheduledMeetingInput, userId: string): Promise<MeetingRow> {
   const { url, platform } = normalizeUrl(input.url);
   await assertProject(input.projectId);
   const start = new Date(input.start);
-  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
   let projectId = input.projectId ?? null;
   let suggested = false;
   if (!projectId) {
@@ -210,14 +241,55 @@ export async function createScheduled(input: ScheduledMeetingInput, userId: stri
     projectId = match?.id ?? null;
     suggested = Boolean(match);
   }
-  const { rows } = await pool.query(
-    `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
-       project_id, project_suggested)
-     VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9) RETURNING id`,
-    [input.title, platform, url, end.getTime() <= Date.now() ? "missed" : "scheduled", userId, start, end, projectId, suggested],
-  );
-  emitMeetingChanged(rows[0].id);
-  return (await getMeeting(rows[0].id))!;
+
+  const horizon = new Date(start.getTime() + RECURRENCE_MAX_DAYS * 86_400_000);
+  const starts = input.recurrence ? generateOccurrenceStarts(start, input.recurrence, horizon) : [start];
+  const seriesId = input.recurrence ? randomUUID() : null;
+  const recurrenceRule = seriesId ? JSON.stringify(input.recurrence) : null;
+
+  const createdIds: string[] = [];
+  await withTransaction(async (client) => {
+    for (const s of starts) {
+      const end = new Date(s.getTime() + input.durationMinutes * 60_000);
+      const { rows } = await client.query(
+        `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
+           project_id, project_suggested, series_id, recurrence_rule)
+         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11) RETURNING id`,
+        [
+          input.title, platform, url, end.getTime() <= Date.now() ? "missed" : "scheduled", userId, s, end,
+          projectId, suggested, seriesId, recurrenceRule,
+        ],
+      );
+      createdIds.push(rows[0].id);
+    }
+  });
+  createdIds.forEach(emitMeetingChanged);
+  return (await getMeeting(createdIds[0]))!;
+}
+
+export async function cancelScheduled(id: string, scope: "one" | "series" = "one"): Promise<MeetingRow[]> {
+  const meeting = await getMeeting(id);
+  if (!meeting) throw new CalendarError("Reunião não encontrada.", 404);
+  if (!["ics", "manual"].includes(meeting.source) || !EDITABLE_STATUSES.includes(meeting.status)) {
+    throw new CalendarError("Essa reunião não pode ser cancelada agora.", 409);
+  }
+
+  let ids: string[];
+  if (scope === "series" && meeting.series_id) {
+    const { rows } = await pool.query(
+      `UPDATE meetings SET status = 'cancelled'
+       WHERE series_id = $1 AND scheduled_start >= $2 AND status <> 'cancelled'
+       RETURNING id`,
+      [meeting.series_id, meeting.scheduled_start],
+    );
+    ids = rows.map((r) => r.id);
+  } else {
+    await pool.query(`UPDATE meetings SET status = 'cancelled' WHERE id = $1`, [id]);
+    ids = [id];
+  }
+  ids.forEach(emitMeetingChanged);
+  const rows = await Promise.all(ids.map((i) => getMeeting(i)));
+  return rows.filter((r): r is MeetingRow => Boolean(r));
 }
 
 export async function updateScheduled(id: string, patch: ScheduledMeetingPatch): Promise<MeetingRow> {

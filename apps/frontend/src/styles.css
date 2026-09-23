@@ -1128,3 +1128,22 @@ table.simple td .badge + .badge { margin-left: 4px; }
 .usage-table tr:last-child td { border-bottom: 0; }
 .inline-field { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-weight: 400; }
 .inline-field select { min-height: 32px; padding: 4px 28px 4px 8px; }
+
+/* Chave de itens da reunião (Reunião) */
+.items-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.items-switch > svg { flex: none; color: var(--muted); }
+.items-switch.on > svg { color: var(--ok); }
+.items-switch > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+@media (max-width: 640px) {
+  .items-switch { flex-wrap: wrap; }
+  .items-switch button { width: 100%; }
+}

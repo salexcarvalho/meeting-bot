@@ -11,6 +11,7 @@ const SECTIONS = [
 
 const meeting: MeetingSummary = {
   id: "m1",
+  itemsEnabled: true,
   title: "Portal SES - Arquitetura",
   platform: "teams",
   url: null,
@@ -31,6 +32,8 @@ const meeting: MeetingSummary = {
   botDisplayName: null,
   createdBy: null,
   createdAt: "2026-09-15T10:00:00Z",
+  seriesId: null,
+  recurrence: null,
 };
 
 let seq = 0;
@@ -132,6 +135,23 @@ describe("renderAta", () => {
     expect(body).toContain("- Ana Souza");
   });
 
+  it("o convite do dono não repete o nome dele nos participantes", () => {
+    const withSelf = renderAta({
+      meeting: { ...meeting, attendees: [{ name: "Sérgio Alex Carvalho", email: "sergio@example.com" }, ...meeting.attendees] },
+      timezone: "America/Sao_Paulo",
+      items,
+      adrs,
+      speakers: ["Sérgio", "Carlos"],
+      self: { name: "Sérgio", email: "Sergio@Example.com" },
+      analysis,
+      legacyAta: null,
+    });
+    const body = withSelf.slice(withSelf.indexOf("## Participantes"), withSelf.indexOf("## Objetivo"));
+    expect(body.match(/Sérgio/g)).toHaveLength(1);
+    expect(body).not.toContain("Sérgio Alex Carvalho");
+    expect(body).toContain("- Ana Souza");
+  });
+
   it("mostra código de ADR só quando aprovado", () => {
     const body = sectionBody("Possíveis ADRs");
     expect(body).toContain("**Filas na integração** — ADR-007 (aprovado); REST síncrono");
@@ -149,6 +169,23 @@ describe("renderAta", () => {
     expect(sectionBody("Riscos")).toContain("(Integração)");
     expect(sectionBody("Requisitos identificados")).toContain("Responder em até 2 s (Requisito não funcional)");
     expect(sectionBody("Observações do Arquiteto")).toContain("Planejar a migração");
+  });
+
+  it("itens desligados e nenhum item: ata só com resumo, sem seções vazias de decisões e riscos", () => {
+    const off = { ...meeting, itemsEnabled: false };
+    const text = renderAta({ meeting: off, timezone: "America/Sao_Paulo", items: [], adrs: [], speakers: [], analysis, legacyAta: null });
+    expect(text).toContain("não gera itens");
+    for (const kept of ["Data", "Resumo executivo", "Assuntos discutidos"]) expect(text).toContain(`## ${kept}`);
+    for (const dropped of ["Decisões", "Riscos", "Pendências", "Próximas ações", "Possíveis ADRs", "Observações do Arquiteto"]) {
+      expect(text).not.toContain(`## ${dropped}`);
+    }
+  });
+
+  it("itens desligados depois de já existirem: a ata continua mostrando o que foi gerado", () => {
+    const off = { ...meeting, itemsEnabled: false };
+    const text = renderAta({ meeting: off, timezone: "America/Sao_Paulo", items, adrs, speakers: [], analysis, legacyAta: null });
+    expect(text).not.toContain("não gera itens");
+    expect(text).toContain("## Riscos");
   });
 
   it("ata antiga aparece como anexo quando não há análise nova", () => {
