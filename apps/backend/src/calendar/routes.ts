@@ -18,7 +18,17 @@ import { toMeetingSummary } from "../meetings/summary";
 import { recordHeartbeat } from "../recording/hostAgentState";
 import { hostAgentOwner } from "../recording/owner";
 import { parseBody, wrap } from "../routes";
-import { CalendarError, createScheduled, getAgenda, importIcs, setSkip, todayIn, updateScheduled } from "./service";
+import { startSeriesExtender, stopSeriesExtender } from "./seriesExtend";
+import {
+  CalendarError,
+  cancelScheduled,
+  createScheduled,
+  getAgenda,
+  importIcs,
+  setSkip,
+  todayIn,
+  updateScheduled,
+} from "./service";
 
 function handleError(res: Response, err: unknown): void {
   if (err instanceof CalendarError) {
@@ -107,7 +117,24 @@ features.authedRouters.push((router) => {
       }
     }),
   );
+
+  router.post(
+    "/meetings/:id/cancel",
+    wrap(async (req, res) => {
+      const body = parseBody(z.object({ scope: z.enum(["one", "series"]).default("one") }), req, res);
+      if (!body) return;
+      try {
+        const updated = await cancelScheduled(String(req.params.id), body.scope);
+        res.json(updated.map(toMeetingSummary));
+      } catch (err) {
+        handleError(res, err);
+      }
+    }),
+  );
 });
+
+features.starters.push(async () => startSeriesExtender());
+features.stoppers.push(async () => stopSeriesExtender());
 
 // ---------- host-agent ----------
 

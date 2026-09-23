@@ -1,6 +1,15 @@
 import { EventEmitter } from "events";
 import { Pool, PoolClient } from "pg";
-import type { Attendee, Channel, ItemType, MeetingSource, MeetingStatus, Platform, RoleKey } from "@meeting-bot/contracts";
+import type {
+  Attendee,
+  Channel,
+  ItemType,
+  MeetingSource,
+  MeetingStatus,
+  Platform,
+  RecurrenceRule,
+  RoleKey,
+} from "@meeting-bot/contracts";
 import { config } from "./config";
 import { User } from "./types";
 
@@ -196,6 +205,8 @@ export interface MeetingRow {
   analysis: MeetingAnalysis | null;
   analyzed_at: Date | null;
   analysis_provider: string | null;
+  series_id: string | null;
+  recurrence_rule: RecurrenceRule | null;
 }
 
 export interface MeetingAnalysis {

@@ -8,7 +8,7 @@ import { BotIdentityField } from "../components/BotIdentityField";
 import { useToast } from "../components/Toast";
 import { StatusBadge } from "../components/StatusBadge";
 import { CardHead, EmptyState, PageHeader, SkeletonLines } from "../components/ui";
-import { formatDateTime } from "../format";
+import { formatDateTime, recurrenceLabel } from "../format";
 import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
 import { EXTERNAL_ASR_WARNING, useCan, useSession } from "../session";
@@ -149,6 +149,11 @@ export function Reunioes() {
                     <td className="tabular" style={{ whiteSpace: "nowrap" }}>{formatDateTime(when(m))}</td>
                     <td>
                       <Link className="cell-title" to={`/reunioes/${m.id}`}>{m.title}</Link>
+                      {m.recurrence && (
+                        <span className="badge small" title="Reunião recorrente" style={{ marginLeft: 6 }}>
+                          {recurrenceLabel(m.recurrence)}
+                        </span>
+                      )}
                     </td>
                     <td className="hide-sm">{m.project?.name ?? <span className="muted">—</span>}</td>
                     <td className="hide-sm muted">{SOURCE_LABEL[m.source] ?? m.source}</td>

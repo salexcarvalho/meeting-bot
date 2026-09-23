@@ -32,6 +32,8 @@ const meeting: MeetingSummary = {
   botDisplayName: null,
   createdBy: null,
   createdAt: "2026-09-15T10:00:00Z",
+  seriesId: null,
+  recurrence: null,
 };
 
 let seq = 0;

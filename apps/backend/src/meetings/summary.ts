@@ -28,5 +28,7 @@ export function toMeetingSummary(m: MeetingRow): MeetingSummary {
     botDisplayName: m.bot_display_name,
     createdBy: m.created_by_username,
     createdAt: m.created_at.toISOString(),
+    seriesId: m.series_id,
+    recurrence: m.recurrence_rule,
   };
 }

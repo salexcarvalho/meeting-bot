@@ -165,6 +165,7 @@ const OWNER_ONLY_ROUTES = new Set([
   "/meetings/:id/assistant",
   "/meetings/:id/reprocess",
   "/meetings/:id/skip",
+  "/meetings/:id/cancel",
   "/meetings/:id/extract-items",
   "/meetings/:id/adrs/generate",
 ]);

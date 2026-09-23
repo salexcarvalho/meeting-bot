@@ -299,6 +299,16 @@ const statements = [
   `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS analysis_provider TEXT`,
   `ALTER TABLE meeting_items ADD COLUMN IF NOT EXISTS generated_by TEXT`,
   `ALTER TABLE adrs ADD COLUMN IF NOT EXISTS generated_by TEXT`,
+
+  // Recorrência de cadastro manual: cada ocorrência já nasce como linha própria em
+  // `meetings` (mesmo padrão do import .ics), ligadas pelo series_id.
+  `ALTER TABLE meetings
+     ADD COLUMN IF NOT EXISTS series_id UUID,
+     ADD COLUMN IF NOT EXISTS recurrence_rule JSONB`,
+  `CREATE INDEX IF NOT EXISTS idx_meetings_series ON meetings (series_id)`,
+  // Evita duplicar ocorrência se o job de extensão da série rodar duas vezes.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_series_start
+     ON meetings (series_id, scheduled_start) WHERE series_id IS NOT NULL`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {
