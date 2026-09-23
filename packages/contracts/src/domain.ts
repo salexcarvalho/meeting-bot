@@ -448,6 +448,8 @@ export const ScheduledMeetingInput = z.object({
   url: z.string().trim().max(2000).nullish(),
   projectId: z.uuid().nullish(),
   recurrence: RecurrenceRule.nullish(),
+  /** true = só lembrete, o assistente não entra sozinho (dono entra pelo link) */
+  skipRecording: z.boolean().default(false),
 });
 export type ScheduledMeetingInput = z.infer<typeof ScheduledMeetingInput>;
 

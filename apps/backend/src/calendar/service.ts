@@ -251,13 +251,14 @@ export async function createScheduled(input: ScheduledMeetingInput, userId: stri
   await withTransaction(async (client) => {
     for (const s of starts) {
       const end = new Date(s.getTime() + input.durationMinutes * 60_000);
+      const status = input.skipRecording ? "skipped" : end.getTime() <= Date.now() ? "missed" : "scheduled";
       const { rows } = await client.query(
         `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
-           project_id, project_suggested, series_id, recurrence_rule)
-         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11) RETURNING id`,
+           project_id, project_suggested, series_id, recurrence_rule, skip_recording)
+         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [
-          input.title, platform, url, end.getTime() <= Date.now() ? "missed" : "scheduled", userId, s, end,
-          projectId, suggested, seriesId, recurrenceRule,
+          input.title, platform, url, status, userId, s, end,
+          projectId, suggested, seriesId, recurrenceRule, input.skipRecording,
         ],
       );
       createdIds.push(rows[0].id);

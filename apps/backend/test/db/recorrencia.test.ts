@@ -23,6 +23,7 @@ describe.skipIf(!enabled)("recorrência manual (Postgres)", async () => {
         title: "Daily do time",
         start: start.toISOString(),
         durationMinutes: 30,
+        skipRecording: false,
         recurrence: { freq: "daily", interval: 1, until: null },
       },
       user.id,
@@ -64,6 +65,7 @@ describe.skipIf(!enabled)("recorrência manual (Postgres)", async () => {
         title: "Revisão semanal",
         start: start.toISOString(),
         durationMinutes: 60,
+        skipRecording: false,
         recurrence: { freq: "weekly", interval: 1, until: new Date(start.getTime() + 30 * 86_400_000).toISOString() },
       },
       user.id,
@@ -83,5 +85,23 @@ describe.skipIf(!enabled)("recorrência manual (Postgres)", async () => {
       [first.series_id, first.id],
     );
     expect(remaining.rows.every((r) => r.status !== "cancelled")).toBe(true);
+  });
+
+  it("skipRecording marca a reunião (e a série inteira) como 'skipped'", async () => {
+    const start = new Date(Date.now() + 72 * 3_600_000);
+    const first = await createScheduled(
+      {
+        title: "Só lembrete",
+        start: start.toISOString(),
+        durationMinutes: 30,
+        skipRecording: true,
+        recurrence: { freq: "daily", interval: 1, until: new Date(start.getTime() + 3 * 86_400_000).toISOString() },
+      },
+      user.id,
+    );
+    expect(first.status).toBe("skipped");
+    const { rows } = await pool.query(`SELECT status, skip_recording FROM meetings WHERE series_id = $1`, [first.series_id]);
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.every((r) => r.status === "skipped" && r.skip_recording)).toBe(true);
   });
 });

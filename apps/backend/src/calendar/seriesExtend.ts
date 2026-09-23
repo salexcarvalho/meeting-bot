@@ -18,6 +18,7 @@ interface SeriesTemplate {
   last_start: Date;
   last_end: Date;
   status: string;
+  skip_recording: boolean;
 }
 
 async function extendOne(series: SeriesTemplate, horizon: Date): Promise<void> {
@@ -39,18 +40,20 @@ async function extendOne(series: SeriesTemplate, horizon: Date): Promise<void> {
   }
   if (!starts.length) return;
 
+  const status = series.skip_recording ? "skipped" : "scheduled";
   await withTransaction(async (client) => {
     for (const s of starts) {
       const end = new Date(s.getTime() + durationMs);
       const { rows } = await client.query(
         `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
-           project_id, project_suggested, series_id, recurrence_rule)
-         VALUES ($1, $2, $3, 'scheduled', $4, 'manual', $5, $6, $7, $8, $9, $10)
+           project_id, project_suggested, series_id, recurrence_rule, skip_recording)
+         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (series_id, scheduled_start) WHERE series_id IS NOT NULL DO NOTHING
          RETURNING id`,
         [
-          series.title, series.platform, series.url, series.created_by, s, end,
+          series.title, series.platform, series.url, status, series.created_by, s, end,
           series.project_id, series.project_suggested, series.series_id, JSON.stringify(series.recurrence_rule),
+          series.skip_recording,
         ],
       );
       if (rows[0]) emitMeetingChanged(rows[0].id);
@@ -64,7 +67,7 @@ export async function extendActiveSeries(now = new Date()): Promise<void> {
   const horizon = new Date(now.getTime() + RECURRENCE_MAX_DAYS * 86_400_000);
   const { rows } = await pool.query(
     `SELECT DISTINCT ON (series_id) series_id, created_by, title, platform, url, project_id, project_suggested,
-       recurrence_rule, scheduled_start AS last_start, scheduled_end AS last_end, status
+       recurrence_rule, scheduled_start AS last_start, scheduled_end AS last_end, status, skip_recording
      FROM meetings
      WHERE series_id IS NOT NULL
      ORDER BY series_id, scheduled_start DESC`,
