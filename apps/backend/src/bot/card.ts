@@ -65,16 +65,52 @@ export interface CameraCard {
   dispose(): Promise<void>;
 }
 
-/** Gera o cartão num diretório temporário (apagado por `dispose`). */
-export async function createCameraCard(iconPath: string, timeoutMs = 15_000): Promise<CameraCard> {
+/** Quadro preto (sem ícone): rede de segurança para a câmera falsa nunca mostrar o padrão verde do Chromium. */
+export const BLANK_WIDTH = 640;
+export const BLANK_HEIGHT = 360;
+
+export function blankArgs(out: string): string[] {
+  return [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    `color=c=black:s=${BLANK_WIDTH}x${BLANK_HEIGHT}:r=15:d=1`,
+    "-pix_fmt",
+    "yuv420p",
+    "-frames:v",
+    "1",
+    "-r",
+    "15",
+    "-f",
+    "yuv4mpegpipe",
+    out,
+  ];
+}
+
+/** Gera o arquivo num diretório temporário (apagado por `dispose`). */
+async function render(args: (out: string) => string[], timeoutMs: number): Promise<CameraCard> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "mb-card-"));
   const dispose = () => rm(dir, { recursive: true, force: true });
   const file = path.join(dir, "camera.y4m");
   try {
-    await run(cardArgs(iconPath, file), timeoutMs);
+    await run(args(file), timeoutMs);
     return { file, dispose };
   } catch (err) {
     await dispose();
     throw err;
   }
+}
+
+/** Gera o cartão com o ícone do agente. */
+export function createCameraCard(iconPath: string, timeoutMs = 15_000): Promise<CameraCard> {
+  return render((out) => cardArgs(iconPath, out), timeoutMs);
+}
+
+/** Gera o quadro preto para a câmera desligada por política (BOT_CAMERA=false). */
+export function createBlankCard(timeoutMs = 15_000): Promise<CameraCard> {
+  return render(blankArgs, timeoutMs);
 }

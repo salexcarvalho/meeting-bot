@@ -184,6 +184,25 @@ const meet: PlatformDriver = {
 };
 
 const TEAMS_CAMERA_SWITCH = /camera|câmera|video|vídeo/i;
+// Teams atual: o botão se chama só "Camera" e o estado vai em aria-pressed/aria-checked.
+const TEAMS_CAMERA_NAME = /^(camera|câmera|video|vídeo)$/i;
+const teamsCameraToggle = (page: Page): Locator =>
+  page
+    .getByRole("button", { name: TEAMS_CAMERA_NAME })
+    .or(page.getByRole("switch", { name: TEAMS_CAMERA_NAME }))
+    .or(page.getByRole("checkbox", { name: TEAMS_CAMERA_NAME }));
+
+/** Estado lido de aria-pressed/aria-checked (true = ligada); null se o controle não está na tela ou não diz. */
+async function toggleState(locator: Locator): Promise<CameraState | null> {
+  const el = locator.first();
+  if (!(await visible(el))) return null;
+  for (const attr of ["aria-pressed", "aria-checked"]) {
+    const value = await el.getAttribute(attr, { timeout: 1000 }).catch(() => null);
+    if (value === "true") return "on";
+    if (value === "false") return "off";
+  }
+  return null;
+}
 // Na chamada o botão diz o que o clique faz: "Turn camera off" com a câmera ligada.
 const TEAMS_CAMERA_OFF = /^turn (camera off|off camera)|^desligar (a )?câmera/i;
 const TEAMS_CAMERA_ON = /^turn (camera on|on camera)|^ligar (a )?câmera/i;
@@ -206,13 +225,18 @@ const teams: PlatformDriver = {
       nameInput: page.getByPlaceholder(/type your name|enter your name|digite seu nome/i),
       mute: [control("microfone", page.getByRole("switch", { name: /\bmic(rophone)?\b|microfone/i, checked: true }))],
       camera: {
-        state: () =>
-          stateOf(
+        state: async () =>
+          (await stateOf(
             page.getByRole("switch", { name: TEAMS_CAMERA_SWITCH, checked: true }),
             page.getByRole("switch", { name: TEAMS_CAMERA_SWITCH, checked: false }),
-          ),
-        set: (on) =>
-          page.getByRole("switch", { name: TEAMS_CAMERA_SWITCH, checked: !on }).first().click({ timeout: 2000 }),
+          )) ?? (await toggleState(teamsCameraToggle(page))),
+        set: async (on) => {
+          const legacy = page.getByRole("switch", { name: TEAMS_CAMERA_SWITCH, checked: !on }).first();
+          if (await visible(legacy)) return legacy.click({ timeout: 2000 });
+          const toggle = teamsCameraToggle(page);
+          if ((await toggleState(toggle)) === (on ? "off" : "on")) return toggle.first().click({ timeout: 2000 });
+          throw new Error("controle de câmera não encontrado");
+        },
       },
       join: page.getByRole("button", { name: /join now|entrar agora|ingressar agora/i }),
       driver: teams,
@@ -245,12 +269,19 @@ const teams: PlatformDriver = {
     await clickIfShown(page.getByRole("button", { name: /^mute\b|^desativar (o )?(som|mic)/i }));
   },
 
-  cameraState(page) {
-    return stateOf(page.getByRole("button", { name: TEAMS_CAMERA_OFF }), page.getByRole("button", { name: TEAMS_CAMERA_ON }));
+  async cameraState(page) {
+    return (
+      (await stateOf(page.getByRole("button", { name: TEAMS_CAMERA_OFF }), page.getByRole("button", { name: TEAMS_CAMERA_ON }))) ??
+      (await toggleState(teamsCameraToggle(page)))
+    );
   },
 
   async setCamera(page, on) {
-    await clickIfShown(page.getByRole("button", { name: on ? TEAMS_CAMERA_ON : TEAMS_CAMERA_OFF }));
+    const byAction = page.getByRole("button", { name: on ? TEAMS_CAMERA_ON : TEAMS_CAMERA_OFF });
+    if (await visible(byAction)) return clickIfShown(byAction);
+    // Botão só "Camera": clica se o estado lido é o oposto do pedido.
+    const toggle = teamsCameraToggle(page);
+    if ((await toggleState(toggle)) === (on ? "off" : "on")) await toggle.first().click({ timeout: 2000 }).catch(() => {});
   },
 
   isAlone(page) {
