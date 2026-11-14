@@ -31,15 +31,27 @@ describe("AgentCalendarImportInput", () => {
   });
 
   it("limita o tamanho do .ics", () => {
-    expect(AgentCalendarImportInput.safeParse({ ...base, ics: "x".repeat(200_001) }).success).toBe(false);
+    expect(AgentCalendarImportInput.safeParse({ ...base, ics: "x".repeat(150_000) }).success).toBe(true);
+    expect(AgentCalendarImportInput.safeParse({ ...base, ics: "x".repeat(150_001) }).success).toBe(false);
+  });
+
+  it("confirmEmpty é opcional e booleano", () => {
+    expect(AgentCalendarImportInput.safeParse({ ...base, events: [] }).success).toBe(true);
+    expect(AgentCalendarImportInput.safeParse({ ...base, events: [], confirmEmpty: true }).success).toBe(true);
+    expect(AgentCalendarImportInput.safeParse({ ...base, events: [], confirmEmpty: "sim" }).success).toBe(false);
   });
 });
 
 describe("eventToOccurrence", () => {
-  it("usa uid + início como identidade e reconhece o link do Teams", () => {
+  it("evento único usa chave vazia (igual ao .ics); ocorrência de série usa o início", () => {
+    expect(eventToOccurrence(event("a")).recurrenceKey).toBe("");
+    expect(eventToOccurrence({ ...event("a"), recurring: false }).recurrenceKey).toBe("");
+    expect(eventToOccurrence({ ...event("a"), recurring: true }).recurrenceKey).toBe("2026-11-14T12:00:00.000Z");
+  });
+
+  it("reconhece o link do Teams e normaliza o organizador", () => {
     const link = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0";
     const o = eventToOccurrence({ ...event("abc"), teams: link, organizer: " Ana " });
-    expect(o.recurrenceKey).toBe("2026-11-14T12:00:00.000Z");
     expect(o).toMatchObject({ uid: "abc", platform: "teams", url: link, organizer: "Ana", cancelled: false, sequence: 0 });
   });
 

@@ -39,7 +39,7 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
       method: "POST",
       headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
-    }).then(async (res) => ({ status: res.status, json: await res.json() }));
+    }).then(async (res) => ({ status: res.status, json: (await res.json()) as Record<string, unknown> }));
 
   const hour = (day: string, h: number) => `${day}T${String(h).padStart(2, "0")}:00:00-03:00`;
   const ev = (uid: string, h: number, extra: Record<string, unknown> = {}) => ({
@@ -90,7 +90,7 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
     expect(await countAll()).toBe(total);
   });
 
-  it("rejeita corpo inválido: mais de 100 eventos, origem desconhecida, data impossível, evento fora do dia", async () => {
+  it("rejeita corpo inválido: mais de 100 eventos, origem desconhecida, data impossível, sem lista", async () => {
     const base = await serve();
     const total = await countAll();
     const many = Array.from({ length: 101 }, (_, i) => ev(`m${i}`, 9));
@@ -101,10 +101,7 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
     expect((await send(base, { ...payload([]), source: "outra" })).status).toBe(400);
     expect((await send(base, payload([], "2031-02-31"))).status).toBe(400);
     expect((await send(base, { source: SOURCE, date: DAY })).status).toBe(400);
-
-    // 02:30Z do dia 10 ainda é dia 9 em São Paulo
-    const fora = await send(base, payload([ev("ok", 9), ev("fora", 9, { start: "2031-03-10T02:30:00Z", end: "2031-03-10T03:30:00Z" })]));
-    expect(fora.status).toBe(400);
+    expect((await send(base, { ...payload([]), confirmEmpty: "sim" })).status).toBe(400);
     expect(await countAll()).toBe(total);
   });
 
@@ -122,7 +119,7 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
     expect(rows).toHaveLength(3);
     expect(rows.every((r) => r.created_by === owner && r.source === "ics" && r.status === "scheduled")).toBe(true);
     expect(byUid(rows, "a")).toMatchObject({ platform: "teams", url: teamsLink("a1"), skip_recording: false, extract_items: false });
-    expect(byUid(rows, "a").recurrence_key).toBe(new Date(hour(DAY, 9)).toISOString());
+    expect(byUid(rows, "a").recurrence_key).toBe(""); // evento único: mesma chave do .ics
 
     const total = await countAll();
     const second = await send(base, body);
@@ -176,8 +173,8 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
     expect(byUid(await auroraRows(OTHER_DAY), "outro-dia").status).toBe("scheduled");
     expect((await pool.query(`SELECT status FROM meetings WHERE id = $1`, [manual.id])).rows[0].status).toBe("scheduled");
 
-    // lista vazia no dia seguinte cancela só o que é da origem naquele dia
-    const empty = await send(base, payload([], OTHER_DAY));
+    // lista vazia confirmada no dia seguinte cancela só o que é da origem naquele dia
+    const empty = await send(base, { ...payload([], OTHER_DAY), confirmEmpty: true });
     expect(empty.json).toMatchObject({ removed: 1 });
     expect((await pool.query(`SELECT status FROM meetings WHERE id = $1`, [manual.id])).rows[0].status).toBe("scheduled");
     expect(byUid(await auroraRows(DAY), "a").status).toBe("skipped");
@@ -227,13 +224,189 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
 
     const novo = await send(base, { source: SOURCE, date: ICS_DAY, ics: ics("ics-2@teste", "Outro .ics", "20310312T180000Z", "20310312T190000Z") });
     expect(novo.json).toMatchObject({ created: 1 });
-    expect((await send(base, { source: SOURCE, date: ICS_DAY, ics: "isso não é calendário" })).status).toBe(400);
 
     // a reunião vinda da tela não é da origem Aurora: o envio não a cancela
     const manual = await pool.query(`SELECT status, import_source FROM meetings WHERE ical_uid = 'ics-1@teste' AND created_by = $1`, [owner]);
     expect(manual.rows[0]).toMatchObject({ status: "scheduled", import_source: null });
-    await send(base, payload([], ICS_DAY));
+    await send(base, { ...payload([], ICS_DAY), confirmEmpty: true });
     expect((await pool.query(`SELECT status FROM meetings WHERE ical_uid = 'ics-1@teste' AND created_by = $1`, [owner])).rows[0].status).toBe("scheduled");
+  });
+
+  const icsOf = (uid: string, summary: string, start: string, end: string, extra: string[] = []) =>
+    ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//teste//PT", "BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20310301T120000Z",
+      `DTSTART:${start}`, `DTEND:${end}`, `SUMMARY:${summary}`, ...extra, "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+  const rowOf = async (uid: string) =>
+    (await pool.query(`SELECT id, status, title, ical_sequence, recurrence_key FROM meetings WHERE ical_uid = $1 AND created_by = $2`, [uid, owner])).rows;
+  const lastFailure = async () =>
+    (await pool.query(`SELECT detail, user_id FROM audit_log WHERE kind = 'agent_calendar_import_failed' ORDER BY id DESC LIMIT 1`)).rows[0];
+
+  it("convite de .ics com sequência > 0 é atualizado e cancelado pela Aurora sem rebaixar a sequência", async () => {
+    const base = await serve();
+    const day = "2031-03-13"; // 09:00-03:00 = 12:00Z
+    await importIcs([{ name: "seq.ics", text: icsOf("seq@teste", "Convite", "20310313T120000Z", "20310313T130000Z", ["SEQUENCE:3"]) }], owner);
+    expect((await rowOf("seq@teste"))[0]).toMatchObject({ ical_sequence: 3, status: "scheduled" });
+
+    const renamed = await send(base, payload([{ uid: "seq@teste", title: "Convite renomeado", start: hour(day, 9), end: hour(day, 10) }], day));
+    expect(renamed.json).toMatchObject({ updated: 1, unchanged: 0, created: 0 });
+    expect((await rowOf("seq@teste"))[0]).toMatchObject({ title: "Convite renomeado", ical_sequence: 3, status: "scheduled" });
+
+    const cancel = await send(base, payload([{ uid: "seq@teste", title: "Convite renomeado", start: hour(day, 9), end: hour(day, 10), status: "cancelled" }], day));
+    expect(cancel.json).toMatchObject({ cancelled: 1 });
+    expect((await rowOf("seq@teste"))[0]).toMatchObject({ status: "cancelled", ical_sequence: 3 });
+  });
+
+  it("evento da Aurora importado depois como .ics não duplica (e a série marcada usa o início como chave)", async () => {
+    const base = await serve();
+    const day = "2031-03-14";
+    expect((await send(base, payload([{ uid: "au-ics@teste", title: "Pela Aurora", start: hour(day, 9), end: hour(day, 10) }], day))).json).toMatchObject({ created: 1 });
+    const before = await countAll();
+
+    const imp = await importIcs([{ name: "depois.ics", text: icsOf("au-ics@teste", "Pela Aurora", "20310314T120000Z", "20310314T130000Z") }], owner);
+    expect(imp.created).toBe(0);
+    expect(await countAll()).toBe(before);
+    expect(await rowOf("au-ics@teste")).toHaveLength(1);
+
+    // ocorrência de série: chave = início em ISO, idempotente
+    const serie = { uid: "serie@teste", title: "Série", start: hour(day, 15), end: hour(day, 16), recurring: true };
+    expect((await send(base, payload([serie], day))).json).toMatchObject({ created: 1 });
+    expect((await send(base, payload([serie], day))).json).toMatchObject({ created: 0, unchanged: 1 });
+    expect((await rowOf("serie@teste"))[0].recurrence_key).toBe(new Date(hour(day, 15)).toISOString());
+  });
+
+  it("evento único sem a marca de série não puxa a reunião de outro dia com o mesmo uid", async () => {
+    const base = await serve();
+    const d1 = "2031-03-17";
+    const d2 = "2031-03-18";
+    const e = (day: string) => ({ uid: "repete@teste", title: "Repete", start: hour(day, 9), end: hour(day, 10) });
+    await send(base, payload([e(d1)], d1));
+    expect((await send(base, payload([e(d2)], d2))).json).toMatchObject({ created: 1, updated: 0 });
+    expect(await rowOf("repete@teste")).toHaveLength(2);
+  });
+
+  it("não cancela por sumiço reunião passada, perdida, em andamento ou já gravada", async () => {
+    const base = await serve();
+    const day = "2031-03-19";
+    const uids = ["fut-sched", "fut-missed", "fut-recording", "fut-done", "fut-transcribing", "fut-queued"];
+    await send(base, payload([...uids, "keep"].map((u, i) => ({ uid: u, title: u, start: hour(day, 8 + i), end: hour(day, 9 + i) })), day));
+    for (const [u, st] of [["fut-missed", "missed"], ["fut-recording", "recording"], ["fut-done", "done"], ["fut-transcribing", "transcribing"], ["fut-queued", "queued"]]) {
+      await pool.query(`UPDATE meetings SET status = $1 WHERE ical_uid = $2 AND created_by = $3`, [st, u, owner]);
+    }
+    const res = await send(base, { source: SOURCE, date: day, events: [{ uid: "keep", title: "keep", start: hour(day, 14), end: hour(day, 15) }] });
+    expect(res.json).toMatchObject({ removed: 1 }); // só a "fut-sched" (agendada, futura)
+    const status = async (u: string) => (await rowOf(u))[0].status;
+    const seen: Record<string, string> = {};
+    for (const u of uids) seen[u] = await status(u);
+    // o banco é compartilhado com outros arquivos de teste: não deixa reunião "em andamento" para trás
+    await pool.query(`UPDATE meetings SET status = 'done' WHERE ical_uid = ANY($1) AND status IN ('recording', 'transcribing', 'queued')`, [uids]);
+    expect(seen["fut-sched"]).toBe("cancelled");
+    expect(seen["fut-missed"]).toBe("missed");
+    expect(seen["fut-recording"]).toBe("recording");
+    expect(seen["fut-done"]).toBe("done");
+    expect(seen["fut-transcribing"]).toBe("transcribing");
+    expect(seen["fut-queued"]).toBe("queued");
+  });
+
+  it("dia passado: reuniões sumidas da lista ficam como estão", async () => {
+    const base = await serve();
+    const past = "2020-05-04";
+    const e = (uid: string, h: number) => ({ uid, title: uid, start: hour(past, h), end: hour(past, h + 1) });
+    await send(base, payload([e("p1", 9), e("p2", 11)], past));
+    // mesmo marcada como agendada, o início já passou: não é cancelada
+    await pool.query(`UPDATE meetings SET status = 'scheduled' WHERE ical_uid = 'p2' AND created_by = $1`, [owner]);
+    const res = await send(base, payload([e("p1", 9)], past));
+    expect(res.json).toMatchObject({ removed: 0 });
+    expect((await rowOf("p1"))[0].status).toBe("missed");
+    expect((await rowOf("p2"))[0].status).toBe("scheduled");
+  });
+
+  it("lista vazia só cancela o dia com confirmEmpty; sem ele devolve 200 com aviso e não remove nada", async () => {
+    const base = await serve();
+    const day = "2031-03-20";
+    await send(base, payload([{ uid: "vz1", title: "Vazio 1", start: hour(day, 9), end: hour(day, 10) }], day));
+
+    const semConfirmar = await send(base, payload([], day));
+    expect(semConfirmar.status).toBe(200);
+    expect(semConfirmar.json).toMatchObject({ removed: 0, created: 0, updated: 0, cancelled: 0, removalSkipped: "empty_without_confirm" });
+    expect((await rowOf("vz1"))[0].status).toBe("scheduled");
+
+    const falso = await send(base, { ...payload([], day), confirmEmpty: false });
+    expect(falso.json).toMatchObject({ removed: 0, removalSkipped: "empty_without_confirm" });
+
+    // .ics sem eventos também conta como lista vazia
+    const icsVazio = await send(base, { source: SOURCE, date: day, ics: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//PT\r\nEND:VCALENDAR\r\n" });
+    expect(icsVazio.json).toMatchObject({ removed: 0, removalSkipped: "empty_without_confirm" });
+    expect((await rowOf("vz1"))[0].status).toBe("scheduled");
+
+    const confirmada = await send(base, { ...payload([], day), confirmEmpty: true });
+    expect(confirmada.json).toMatchObject({ removed: 1 });
+    expect(confirmada.json.removalSkipped).toBeUndefined();
+    expect((await rowOf("vz1"))[0].status).toBe("cancelled");
+  });
+
+  it("evento fora do dia é ignorado sem derrubar os outros, e seu uid protege a linha existente", async () => {
+    const base = await serve();
+    const day = "2031-03-21";
+    const other = "2031-03-22";
+    const e = (uid: string, d: string, h: number) => ({ uid, title: `Evento ${uid}`, start: hour(d, h), end: hour(d, h + 1) });
+    await send(base, payload([e("fz-a", day, 9), e("fz-b", day, 11)], day));
+
+    // fz-b veio com o dia trocado (fuso errado): ignorado, e a linha existente de fz-b não é cancelada
+    const res = await send(base, payload([e("fz-a", day, 9), e("fz-b", other, 11), e("fz-c", day, 15)], day));
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ created: 1, unchanged: 1, ignored: 1, removed: 0, ignoredEvents: [{ uid: "fz-b", reason: "outside_date" }] });
+    expect((await rowOf("fz-b"))[0].status).toBe("scheduled");
+    expect(await rowOf("fz-c")).toHaveLength(1);
+
+    // todos com o dia trocado: não conta como lista vazia e não remove nenhuma linha desses uids
+    const todos = await send(base, payload([e("fz-a", other, 9), e("fz-b", other, 11), e("fz-c", other, 15)], day));
+    expect(todos.json).toMatchObject({ created: 0, ignored: 3, removed: 0 });
+    expect(todos.json.removalSkipped).toBeUndefined();
+    expect((await rowOf("fz-a"))[0].status).toBe("scheduled");
+  });
+
+  it("falhas do envio vão para o audit_log só com motivo e contagens, e o erro de .ics tem mensagem fixa", async () => {
+    const base = await serve();
+    const segredo = "Título Confidencial XPTO";
+
+    const invalid = await send(base, { source: SOURCE, date: DAY, events: [{ uid: "z", title: segredo, start: "sem-data", end: "x" }] });
+    expect(invalid.status).toBe(400);
+    await vi.waitFor(async () => expect((await lastFailure()).detail).toMatchObject({ reason: "invalid_body" }));
+    const f1 = await lastFailure();
+    expect(f1.detail).toMatchObject({ reason: "invalid_body", mode: "events", events: 1, field: "events.0.start" });
+    expect(JSON.stringify(f1.detail)).not.toContain("Confidencial");
+
+    const badIcs = await send(base, { source: SOURCE, date: DAY, ics: `${segredo} não é calendário` });
+    expect(badIcs.status).toBe(400);
+    expect(badIcs.json).toEqual({ error: "Arquivo .ics inválido." });
+    await vi.waitFor(async () => expect((await lastFailure()).detail).toMatchObject({ reason: "rejected" }));
+    const f2 = await lastFailure();
+    expect(f2).toMatchObject({ user_id: owner, detail: { reason: "rejected", mode: "ics", status: 400 } });
+    expect(JSON.stringify(f2.detail)).not.toContain("Confidencial");
+  });
+
+  it("sem dono do agente: 503 e falha auditada", async () => {
+    const base = await serve();
+    await pool.query(`UPDATE users SET active = false WHERE id = $1`, [owner]);
+    invalidateHostOwner();
+    try {
+      const total = await countAll();
+      const res = await send(base, payload([{ uid: "sd", title: "Sem dono", start: hour(DAY, 9), end: hour(DAY, 10) }]));
+      expect(res.status).toBe(503);
+      expect(res.json.error).toMatch(/AGENT_OWNER/);
+      expect(await countAll()).toBe(total);
+      await vi.waitFor(async () => expect((await lastFailure()).detail).toMatchObject({ reason: "no_owner", events: 1 }));
+      expect(JSON.stringify((await lastFailure()).detail)).not.toContain("Sem dono");
+    } finally {
+      await pool.query(`UPDATE users SET active = true WHERE id = $1`, [owner]);
+      invalidateHostOwner();
+    }
+  });
+
+  it("corpo acima do limite do servidor responde 413 com mensagem clara", async () => {
+    const base = await serve();
+    const res = await send(base, { source: SOURCE, date: DAY, ics: "x".repeat(300_000) });
+    expect(res.status).toBe(413);
+    expect(res.json).toEqual({ error: "Corpo da requisição excede o limite." });
   });
 
   it("nunca grava para outro usuário além do dono do agente", async () => {
