@@ -196,6 +196,10 @@ export interface MeetingRow {
   project_name: string | null;
   project_suggested: boolean;
   skip_recording: boolean;
+  /** origem da importação automática da agenda (ex.: aurora-outlook); null = cadastro manual ou .ics */
+  import_source: string | null;
+  /** quando a reunião sumiu da lista da origem e foi cancelada por isso (null = não foi) */
+  import_removed_at: Date | null;
   /** gera itens (decisões, pendências, riscos…) ao vivo e na análise final */
   extract_items: boolean;
   stop_requested: boolean;

@@ -4,6 +4,7 @@ export type AuditKind =
   | "egress_blocked"
   | "llm_provider_blocked"
   | "agent_auth_failed"
+  | "agent_calendar_import"
   | "external_asr"
   | "external_llm"
   | "generation_requested"

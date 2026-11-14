@@ -309,6 +309,15 @@ const statements = [
   // Evita duplicar ocorrência se o job de extensão da série rodar duas vezes.
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_series_start
      ON meetings (series_id, scheduled_start) WHERE series_id IS NOT NULL`,
+
+  // Agenda enviada por assistente externo (POST /api/agent/calendar/import): import_source marca de onde
+  // a reunião veio (só essas podem ser canceladas quando somem da lista do dia); import_removed_at
+  // distingue "sumiu da lista" de um cancelamento feito pelo usuário (só o primeiro volta se reaparecer).
+  `ALTER TABLE meetings
+     ADD COLUMN IF NOT EXISTS import_source TEXT,
+     ADD COLUMN IF NOT EXISTS import_removed_at TIMESTAMPTZ`,
+  `CREATE INDEX IF NOT EXISTS idx_meetings_import
+     ON meetings (created_by, import_source, scheduled_start) WHERE import_source IS NOT NULL`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {

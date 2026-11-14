@@ -3,6 +3,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
+  AgentCalendarImportInput,
   HeartbeatInput,
   ScheduledMeetingInput,
   ScheduledMeetingPatch,
@@ -18,6 +19,8 @@ import { toMeetingSummary } from "../meetings/summary";
 import { recordHeartbeat } from "../recording/hostAgentState";
 import { hostAgentOwner } from "../recording/owner";
 import { parseBody, wrap } from "../routes";
+import { audit } from "../security/audit";
+import { importAgentCalendar } from "./agentImport";
 import { startSeriesExtender, stopSeriesExtender } from "./seriesExtend";
 import {
   CalendarError,
@@ -207,6 +210,40 @@ features.agentRouters.push((app) => {
       try {
         await setSkip(String(req.params.id), true);
         res.json({ ok: true });
+      } catch (err) {
+        handleError(res, err);
+      }
+    }),
+  );
+
+  // Agenda do dia enviada pela Aurora (assistente externo); grava no nome do dono do agente.
+  router.post(
+    "/calendar/import",
+    rateLimit({
+      windowMs: 60_000,
+      limit: 10,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: { error: "Muitos envios de agenda. Tente novamente em instantes." },
+    }),
+    wrap(async (req: Request, res: Response) => {
+      const input = parseBody(AgentCalendarImportInput, req, res);
+      if (!input) return;
+      const owner = await hostAgentOwner();
+      if (!owner) return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      try {
+        const result = await importAgentCalendar(input, owner.id);
+        // Só metadados: nunca títulos nem participantes.
+        audit(
+          "agent_calendar_import",
+          {
+            source: result.source, date: result.date, mode: input.events ? "events" : "ics",
+            created: result.created, updated: result.updated, cancelled: result.cancelled,
+            removed: result.removed, unchanged: result.unchanged, ignored: result.ignored,
+          },
+          owner.id,
+        );
+        res.json(result);
       } catch (err) {
         handleError(res, err);
       }
