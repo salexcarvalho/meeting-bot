@@ -109,6 +109,12 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
 
 - **Importar convites** ("Importar invitaciones"): en Outlook, guarda la invitación como `.ics` y arrástrala a la pantalla
   **Hoje** ("Hoy"). Reimportar actualiza la reunión sin duplicarla; una cancelación la marca como cancelada.
+- **Agenda desde Aurora (Outlook)**: el asistente externo envía la agenda del día a
+  `POST /api/agent/calendar/import` (`AGENT_TOKEN`, a nombre de `AGENT_OWNER`). Mismo `uid` + inicio
+  actualiza en vez de duplicar; una reunión del mismo día que desaparece de la lista se cancela (vuelve si
+  reaparece). Otros días, reuniones manuales/`.ics` y las elecciones del usuario (no grabar, generar ítems)
+  no cambian, y el envío no activa grabación extra: valen las reglas de siempre. Detalles en
+  [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md) (en portugués).
 - **Nova reunião** ("Nueva reunión"): registro manual con título, inicio, duración, enlace y proyecto.
 - El proyecto se **sugiere** según las palabras clave del título. Confírmalo en **Editar**.
 - **Não gravar** ("No grabar"): disponible en la pantalla o en la alerta de escritorio; el asistente no entra.

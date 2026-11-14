@@ -109,6 +109,12 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 
 - **Importar convites**: no Outlook, salve o convite como `.ics` e arraste-o para a tela
   **Hoje**. Reimportar atualiza a reunião sem duplicar; um cancelamento a marca como cancelada.
+- **Agenda pela Aurora (Outlook)**: o assistente externo envia a agenda do dia para
+  `POST /api/agent/calendar/import` (token `AGENT_TOKEN`, no nome do `AGENT_OWNER`). Mesmo `uid` + início
+  atualiza em vez de duplicar; reunião do mesmo dia que sumiu da lista é cancelada (volta se reaparecer).
+  Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
+  envio não liga gravação extra: valem as regras de sempre. Detalhes em
+  [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md).
 - **Nova reunião**: cadastro manual com título, início, duração, link e projeto.
 - O projeto é **sugerido** pelas palavras-chave do título. Confirme-o em **Editar**.
 - **Não gravar**: disponível na tela ou no alerta do desktop; o assistente não entra.
