@@ -41,6 +41,27 @@ function handleError(res: Response, err: unknown): void {
   throw err;
 }
 
+// Falha do envio da agenda: só motivo e tamanhos, sem conteúdo (títulos, participantes, texto do .ics).
+function auditImportFailure(
+  reason: "invalid_body" | "no_owner" | "rejected",
+  body: unknown,
+  userId: string | null,
+  extra: Record<string, unknown> = {},
+): void {
+  const b = (body && typeof body === "object" ? body : {}) as { events?: unknown; ics?: unknown; date?: unknown };
+  audit(
+    "agent_calendar_import_failed",
+    {
+      reason,
+      mode: Array.isArray(b.events) ? "events" : typeof b.ics === "string" ? "ics" : "unknown",
+      events: Array.isArray(b.events) ? b.events.length : 0,
+      icsChars: typeof b.ics === "string" ? b.ics.length : 0,
+      ...extra,
+    },
+    userId,
+  );
+}
+
 const icsUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024, files: 10 },
@@ -227,10 +248,19 @@ features.agentRouters.push((app) => {
       message: { error: "Muitos envios de agenda. Tente novamente em instantes." },
     }),
     wrap(async (req: Request, res: Response) => {
-      const input = parseBody(AgentCalendarImportInput, req, res);
-      if (!input) return;
+      const parsed = AgentCalendarImportInput.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        // Só o caminho do campo e contagens: nunca o conteúdo enviado.
+        auditImportFailure("invalid_body", req.body, null, { field: first?.path.join(".") || "corpo" });
+        return res.status(400).json({ error: first ? `${first.path.join(".") || "corpo"}: ${first.message}` : "Corpo inválido." });
+      }
+      const input = parsed.data;
       const owner = await hostAgentOwner();
-      if (!owner) return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      if (!owner) {
+        auditImportFailure("no_owner", input, null);
+        return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      }
       try {
         const result = await importAgentCalendar(input, owner.id);
         // Só metadados: nunca títulos nem participantes.
@@ -240,11 +270,13 @@ features.agentRouters.push((app) => {
             source: result.source, date: result.date, mode: input.events ? "events" : "ics",
             created: result.created, updated: result.updated, cancelled: result.cancelled,
             removed: result.removed, unchanged: result.unchanged, ignored: result.ignored,
+            ...(result.removalSkipped ? { removalSkipped: result.removalSkipped } : {}),
           },
           owner.id,
         );
         res.json(result);
       } catch (err) {
+        if (err instanceof CalendarError) auditImportFailure("rejected", input, owner.id, { status: err.status });
         handleError(res, err);
       }
     }),
