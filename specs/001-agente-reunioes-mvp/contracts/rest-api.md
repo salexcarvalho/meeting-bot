@@ -116,7 +116,7 @@ Toda alteração publica o evento `items` ou `adrs` no WebSocket da reunião.
 |---|---|---|---|
 | POST | `/agent/heartbeat` | `{version, capture: null \| {meetingId, channels: {mic\|remote: {state: "recording"\|"restarting"\|"unavailable", device, bytes}}}}` | `{now, userDisplayName, timezone, alerts: {minutesBefore: [15,5,1]}, meetings: AgentMeeting[], recording: {meetingId, title} \| null}` |
 | POST | `/agent/meetings/:id/skip` | — | `{ok: true}`; `409` se já estiver gravando |
-| POST | `/agent/calendar/import` | `AgentCalendarImportInput` (abaixo) | `AgentCalendarImportResult`; `400` corpo inválido; `503` sem `AGENT_OWNER` |
+| POST | `/agent/calendar/import` | `AgentCalendarImportInput` (abaixo) | `AgentCalendarImportResult`; `400` corpo ou `.ics` inválido; `413` corpo acima de 256 kB; `503` sem `AGENT_OWNER` |
 | WS | `/agent/audio` | ver [ws-audio.md](ws-audio.md) | — |
 
 ```ts
@@ -136,7 +136,10 @@ Token inválido → `401` + `audit_log` (`agent_auth_failed`), com limite de tax
 A Aurora (assistente externo, sem sessão de usuário) envia toda manhã a agenda do dia do Outlook. As reuniões
 são gravadas em nome do `AGENT_OWNER` (como as de um `.ics`: `source = 'ics'`), com limite de 10 envios por
 minuto além do limite geral do agente. Sucesso grava `audit_log` `agent_calendar_import` (só contagens, nunca
-títulos ou participantes).
+títulos ou participantes); falha de validação (`400`), `.ics` inválido ou falta de dono (`503`) grava
+`agent_calendar_import_failed` com `reason` (`invalid_body`, `rejected`, `no_owner`), o modo e contagens, sem
+conteúdo do envio. Corpo acima de 256 kB (limite do servidor) responde `413` com "Corpo da requisição excede o
+limite." (essa falha não é auditada pela rota).
 
 ```ts
 AgentCalendarImportInput = {
@@ -149,11 +152,16 @@ AgentCalendarImportInput = {
     organizer?: string, location?: string,
     teams?: string,                   // link https da reunião
     status?: string,                  // "cancelled"/"canceled" cancela; outro valor é informativo
-    recurring?: boolean               // informativo
+    recurring?: boolean               // true em ocorrência de série: muda a chave (ver "Identidade")
   }[],
-  ics?: string,                       // alternativa: texto de um .ics (até 200 000 caracteres)
+  ics?: string,                       // alternativa: texto de um .ics (até 150 000 caracteres)
+  confirmEmpty?: boolean,             // padrão false; ver "Lista vazia"
 }
-AgentCalendarImportResult = { source, date, created, updated, cancelled, removed, unchanged, ignored, partialSeries, errors }
+AgentCalendarImportResult = {
+  source, date, created, updated, cancelled, removed, unchanged, ignored, partialSeries, errors,
+  ignoredEvents: { uid, reason: "outside_date" }[],        // até 20
+  removalSkipped?: "empty_without_confirm",                 // só quando a remoção foi pulada
+}
 ```
 
 ```bash
@@ -165,16 +173,29 @@ curl -sS -X POST "$MEETBOT_URL/api/agent/calendar/import" \
 ```
 
 Regras:
-- **Identidade e idempotência:** `uid` + início (`recurrence_key` = ISO do início). Reenviar o mesmo envio não
-  duplica; mudou título/horário/link, atualiza a mesma reunião. Um evento único já importado de um `.ics`
-  (mesmo `uid`, mesmo início, chave vazia) é reconhecido, não duplicado. Reunião cujo `.ics` tem `SEQUENCE`
-  maior que o do envio (a Aurora envia 0) não é alterada.
-- **O dia:** só valem eventos cujo início cai em `date` no fuso `APP_TIMEZONE`; evento fora do dia rejeita o
-  envio inteiro (`400`) sem gravar nada. Nada de outro dia é tocado.
-- **Sumiu da lista:** reunião do mesmo `import_source`, do mesmo dia e ainda `scheduled`/`skipped`/`missed` que não
-  veio no envio vira `cancelled` (com `import_removed_at`). Se voltar à lista, é reativada. Reunião manual, de
-  `.ics`, em andamento, gravada ou cancelada pelo usuário nunca é removida nem reativada pelo envio. Lista
-  vazia limpa o dia da origem: a Aurora só deve enviar `events: []` quando o dia realmente está vazio.
+- **Identidade e idempotência:** `uid` + início. Evento único (sem `recurring`) usa `recurrence_key` vazia, a
+  mesma do `.ics`: um evento enviado pela Aurora e depois importado de um `.ics` (ou o contrário) é a mesma
+  reunião, sem duplicar. Ocorrência de série deve vir com `recurring: true` (cada ocorrência é um evento próprio
+  com o mesmo `uid`) e usa o ISO do início como chave. Se um evento sem a marca chegar com um `uid` que já tem
+  reunião em outro dia, o envio o trata como ocorrência de série (chave = início) em vez de falhar, mas a
+  marca evita duplicar contra um `.ics` que traga a série. Reenviar o mesmo envio não duplica; mudou
+  título/horário/link, atualiza a mesma reunião.
+- **Sequência do convite:** a Aurora não envia `SEQUENCE`. Numa reunião vinda de `.ics` com sequência maior que 0,
+  o envio atualiza ou cancela normalmente, e nunca rebaixa a sequência gravada. A importação manual de `.ics`
+  segue com as regras de sempre.
+- **O dia:** só valem eventos cujo início cai em `date` no fuso `APP_TIMEZONE`. Evento fora do dia (fuso ou dia
+  trocado) não derruba o envio: é contado em `ignored`, listado em `ignoredEvents` (`outside_date`) e os demais
+  seguem. O `uid` ignorado conta como presente: nunca causa a remoção de reunião existente com o mesmo `uid`.
+  Nada de outro dia é tocado.
+- **Sumiu da lista:** reunião do mesmo `import_source`, do mesmo dia, ainda `scheduled`/`skipped` e com início
+  no futuro que não veio no envio vira `cancelled` (com `import_removed_at`). Se voltar à lista, é reativada.
+  Reunião manual, de `.ics`, passada, `missed`, em andamento, gravada, em processamento ou cancelada pelo usuário
+  nunca é removida nem reativada pelo envio.
+- **Lista vazia:** `events: []` (ou `.ics` sem eventos) não remove nada por padrão: responde `200` com contagens
+  zero e `removalSkipped: "empty_without_confirm"`. Só com `confirmEmpty: true` o dia da origem é limpo; a
+  Aurora deve confirmar apenas quando o dia realmente está vazio. Se todos os eventos enviados foram ignorados
+  (fora do dia), também não é lista vazia, e nada é removido.
+- **Erros:** `.ics` ilegível responde `400` com mensagem fixa ("Arquivo .ics inválido."), sem repassar o texto do parser.
 - **Escolhas do usuário:** reenviar nunca muda "Não gravar" (`skip_recording`), "Gerar itens" (`extract_items`),
   projeto, nem apaga descrição, participantes, organizador, local ou link que o envio não informou. O envio não
   altera as regras de gravação: o assistente entra nas reuniões com link no horário, exceto "Não gravar".
