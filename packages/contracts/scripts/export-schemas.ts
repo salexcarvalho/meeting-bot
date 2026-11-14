@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { AdrPatch, HeartbeatInput, ItemPatch, LLM_SCHEMAS, NewItemInput, ProjectInput, ScheduledMeetingInput } from "../src";
+import { AdrPatch, AgentCalendarImportInput, HeartbeatInput, ItemPatch, LLM_SCHEMAS, NewItemInput, ProjectInput, ScheduledMeetingInput } from "../src";
 
 const outDir = path.join(__dirname, "..", "schemas");
 mkdirSync(outDir, { recursive: true });
@@ -16,6 +16,7 @@ const all: Record<string, z.ZodType> = {
   AdrPatch,
   ProjectInput,
   HeartbeatInput,
+  AgentCalendarImportInput,
 };
 
 for (const [name, schema] of Object.entries(all)) {
