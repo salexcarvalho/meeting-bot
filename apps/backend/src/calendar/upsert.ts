@@ -21,6 +21,8 @@ export interface ApplyContext {
    * cancelada por sumir da lista volta se reaparecer.
    */
   importSource?: string;
+  /** dia do envio: evento único (chave de recorrência vazia) só casa com reunião desse dia */
+  window?: { start: Date; end: Date };
   /** ids de todas as reuniões presentes no envio (existentes ou criadas), para detectar as que sumiram */
   seen?: Set<string>;
 }
@@ -102,19 +104,28 @@ async function cancelMeeting(client: PoolClient, existing: MeetingRow, o: Occurr
 }
 
 async function findExisting(client: PoolClient, o: Occurrence, ctx: ApplyContext): Promise<MeetingRow | null> {
-  // Importação automática também reconhece o evento único vindo de um .ics (chave de recorrência vazia).
-  const { rows } = ctx.importSource
-    ? await client.query(
-        `${meetingSelect}
-         WHERE m.ical_uid = $1 AND m.created_by = $3
-           AND (m.recurrence_key = $2 OR (m.recurrence_key = '' AND m.scheduled_start = $4))
-         ORDER BY (m.recurrence_key = $2) DESC LIMIT 1 FOR UPDATE OF m`,
-        [o.uid, o.recurrenceKey, ctx.userId, o.start],
-      )
-    : await client.query(
-        `${meetingSelect} WHERE m.ical_uid = $1 AND m.recurrence_key = $2 AND m.created_by = $3 FOR UPDATE OF m`,
-        [o.uid, o.recurrenceKey, ctx.userId],
-      );
+  if (!ctx.importSource) {
+    const { rows } = await client.query(
+      `${meetingSelect} WHERE m.ical_uid = $1 AND m.recurrence_key = $2 AND m.created_by = $3 FOR UPDATE OF m`,
+      [o.uid, o.recurrenceKey, ctx.userId],
+    );
+    return (rows[0] as MeetingRow | undefined) ?? null;
+  }
+  // Importação automática reconhece o mesmo evento nos dois formatos de chave: vazia (evento único, como no .ics)
+  // ou o início em ISO (ocorrência de série). Chave vazia só vale dentro do dia do envio, para uma ocorrência
+  // sem a marca de série não puxar a reunião de outro dia com o mesmo uid.
+  const day = ctx.window ?? { start: o.start, end: new Date(o.start.getTime() + 1) };
+  const { rows } = await client.query(
+    `${meetingSelect}
+     WHERE m.ical_uid = $1 AND m.created_by = $3
+       AND (
+         (m.recurrence_key = $2 AND (m.recurrence_key <> '' OR (m.scheduled_start >= $5 AND m.scheduled_start < $6)))
+         OR m.recurrence_key = $7
+         OR (m.recurrence_key = '' AND m.scheduled_start = $4)
+       )
+     ORDER BY (m.recurrence_key = $2) DESC LIMIT 1 FOR UPDATE OF m`,
+    [o.uid, o.recurrenceKey, ctx.userId, o.start, day.start, day.end, o.start.toISOString()],
+  );
   return (rows[0] as MeetingRow | undefined) ?? null;
 }
 
@@ -123,6 +134,8 @@ async function findExisting(client: PoolClient, o: Occurrence, ctx: ApplyContext
 function keepUnsentDetails(o: Occurrence, existing: MeetingRow): Occurrence {
   return {
     ...o,
+    // O envio não traz a sequência do convite: nunca deixa a de um .ics bloquear a atualização nem a rebaixa.
+    sequence: Math.max(o.sequence, existing.ical_sequence),
     description: existing.description,
     attendees: existing.attendees ?? [],
     organizer: o.organizer ?? existing.organizer,
@@ -164,11 +177,23 @@ async function execute(
   }
 }
 
+// Evento único (chave vazia) cujo uid já existe em outro dia é, na verdade, ocorrência de uma série que o envio
+// não marcou como recorrente: usa o início como chave, como no .ics, em vez de colidir com a linha do outro dia.
+async function withSeriesKey(client: PoolClient, o: Occurrence, ctx: ApplyContext): Promise<Occurrence> {
+  if (o.recurrenceKey !== "") return o;
+  const { rowCount } = await client.query(
+    `SELECT 1 FROM meetings WHERE ical_uid = $1 AND created_by = $2 AND recurrence_key = '' LIMIT 1`,
+    [o.uid, ctx.userId],
+  );
+  return rowCount ? { ...o, recurrenceKey: o.start.toISOString() } : o;
+}
+
 export async function applyOccurrence(client: PoolClient, incoming: Occurrence, ctx: ApplyContext): Promise<void> {
   if (incoming.cancelsSeries) return cancelSeries(client, incoming, ctx);
 
   const existing = await findExisting(client, incoming, ctx);
-  const o = ctx.importSource && existing ? keepUnsentDetails(incoming, existing) : incoming;
+  const keyed = ctx.importSource && !existing ? await withSeriesKey(client, incoming, ctx) : incoming;
+  const o = ctx.importSource && existing ? keepUnsentDetails(incoming, existing) : keyed;
   if (existing) ctx.seen?.add(existing.id);
   await execute(client, decide(existing, o, ctx), existing, o, ctx);
 }

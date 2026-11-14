@@ -96,7 +96,10 @@
     "ics": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200000
+      "maxLength": 150000
+    },
+    "confirmEmpty": {
+      "type": "boolean"
     }
   },
   "required": [

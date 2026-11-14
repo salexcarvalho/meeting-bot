@@ -392,7 +392,7 @@ export interface ImportResult {
 
 export const AGENT_CALENDAR_SOURCE = "aurora-outlook";
 export const AGENT_CALENDAR_MAX_EVENTS = 100;
-export const AGENT_CALENDAR_MAX_ICS_CHARS = 200_000;
+export const AGENT_CALENDAR_MAX_ICS_CHARS = 150_000;
 
 const INVALID_DATE = "data inválida";
 
@@ -414,7 +414,7 @@ export const AgentCalendarEvent = z.object({
   teams: z.string().trim().max(2000).nullish(),
   /** "cancelled"/"canceled" cancela o evento; qualquer outro valor é só informativo */
   status: z.string().trim().max(40).nullish(),
-  /** informativo: cada ocorrência vem como um evento próprio, com o mesmo uid */
+  /** ocorrência de série: cada uma vem como evento próprio, com o mesmo uid; a identidade passa a ser uid + início */
   recurring: z.boolean().nullish(),
 });
 export type AgentCalendarEvent = z.infer<typeof AgentCalendarEvent>;
@@ -432,6 +432,8 @@ export const AgentCalendarImportInput = z
       }, INVALID_DATE),
     events: z.array(AgentCalendarEvent).max(AGENT_CALENDAR_MAX_EVENTS, `Máximo de ${AGENT_CALENDAR_MAX_EVENTS} eventos por envio.`).optional(),
     ics: z.string().min(1).max(AGENT_CALENDAR_MAX_ICS_CHARS, "Arquivo .ics grande demais.").optional(),
+    /** lista vazia só cancela as reuniões do dia com esta confirmação explícita (padrão false: evita apagar a agenda por engano) */
+    confirmEmpty: z.boolean().optional(),
   })
   .refine((v) => (v.events === undefined) !== (v.ics === undefined), "envie 'events' ou 'ics' (um dos dois)");
 export type AgentCalendarImportInput = z.infer<typeof AgentCalendarImportInput>;
@@ -441,6 +443,10 @@ export interface AgentCalendarImportResult extends ImportResult {
   date: string;
   /** reuniões da mesma origem e do mesmo dia que sumiram da lista e foram canceladas */
   removed: number;
+  /** presente quando a remoção por sumiço foi pulada (lista vazia sem confirmEmpty) */
+  removalSkipped?: "empty_without_confirm";
+  /** eventos enviados que não foram aplicados (até 20); seus uids nunca causam remoção */
+  ignoredEvents: { uid: string; reason: "outside_date" }[];
 }
 
 // ---------- consumo de LLM (só leitura, vem do audit_log) ----------
