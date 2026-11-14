@@ -388,6 +388,61 @@ export interface ImportResult {
   errors: { file: string; message: string }[];
 }
 
+// ---------- importação da agenda por assistente externo (Aurora) ----------
+
+export const AGENT_CALENDAR_SOURCE = "aurora-outlook";
+export const AGENT_CALENDAR_MAX_EVENTS = 100;
+export const AGENT_CALENDAR_MAX_ICS_CHARS = 200_000;
+
+const INVALID_DATE = "data inválida";
+
+// Instante com fuso explícito (Z ou ±hh:mm): sem ele o horário seria ambíguo.
+const isoWithOffset = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/, "use ISO 8601 com fuso (ex.: 2026-11-14T09:00:00-03:00)")
+  .refine((v) => !Number.isNaN(Date.parse(v)), INVALID_DATE);
+
+export const AgentCalendarEvent = z.object({
+  uid: z.string().trim().min(1, "Informe o uid.").max(500),
+  title: z.string().trim().max(300),
+  start: isoWithOffset,
+  end: isoWithOffset,
+  organizer: z.string().trim().max(200).nullish(),
+  location: z.string().trim().max(500).nullish(),
+  /** link da reunião no Teams (https) */
+  teams: z.string().trim().max(2000).nullish(),
+  /** "cancelled"/"canceled" cancela o evento; qualquer outro valor é só informativo */
+  status: z.string().trim().max(40).nullish(),
+  /** informativo: cada ocorrência vem como um evento próprio, com o mesmo uid */
+  recurring: z.boolean().nullish(),
+});
+export type AgentCalendarEvent = z.infer<typeof AgentCalendarEvent>;
+
+export const AgentCalendarImportInput = z
+  .object({
+    source: z.literal(AGENT_CALENDAR_SOURCE),
+    /** dia da agenda (AAAA-MM-DD) no fuso da aplicação; só reuniões desse dia são tocadas */
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "use AAAA-MM-DD")
+      .refine((v) => {
+        const day = new Date(`${v}T00:00:00Z`);
+        return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v);
+      }, INVALID_DATE),
+    events: z.array(AgentCalendarEvent).max(AGENT_CALENDAR_MAX_EVENTS, `Máximo de ${AGENT_CALENDAR_MAX_EVENTS} eventos por envio.`).optional(),
+    ics: z.string().min(1).max(AGENT_CALENDAR_MAX_ICS_CHARS, "Arquivo .ics grande demais.").optional(),
+  })
+  .refine((v) => (v.events === undefined) !== (v.ics === undefined), "envie 'events' ou 'ics' (um dos dois)");
+export type AgentCalendarImportInput = z.infer<typeof AgentCalendarImportInput>;
+
+export interface AgentCalendarImportResult extends ImportResult {
+  source: string;
+  date: string;
+  /** reuniões da mesma origem e do mesmo dia que sumiram da lista e foram canceladas */
+  removed: number;
+}
+
 // ---------- consumo de LLM (só leitura, vem do audit_log) ----------
 
 export interface LlmUsageGroup {
