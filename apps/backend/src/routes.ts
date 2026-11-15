@@ -3,7 +3,6 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
-import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
   CHANNELS,
@@ -48,6 +47,7 @@ import { enqueueProcessing, isProcessing } from "./pipeline";
 import { adrLockReason, getItem, listItems } from "./items/service";
 import { generationLabel, isSubscription, llmOptions, parseLlmChoice, subscriptionUnavailable } from "./llm";
 import { audit } from "./security/audit";
+import { createLoginLimiter } from "./security/loginLimiter";
 import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBot } from "./bot/runner";
 import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
 import { detectPlatform } from "./bot/link";
@@ -177,19 +177,12 @@ export function buildRouter(): Router {
 
   // ---------- auth ----------
 
-  const loginLimiter = rateLimit({
-    windowMs: 15 * 60_000,
-    limit: 10,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    skipSuccessfulRequests: true,
-    // Bloqueio por limite de taxa também é tentativa de entrada recusada (a conta alvo vê na auditoria).
-    handler: wrap(async (req, res) => {
-      const username = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
-      const known = username ? await findUserByUsername(username) : null;
-      auditLoginFailed(req.ip, known?.id ?? null, { rateLimited: true });
-      res.status(429).json({ error: "Muitas tentativas de login. Tente de novo em alguns minutos." });
-    }),
+  // Bloqueio por limite de taxa também é tentativa de entrada recusada (a conta alvo vê na auditoria),
+  // mas só a primeira requisição bloqueada da janela é auditada.
+  const loginLimiter = createLoginLimiter(async (req) => {
+    const username = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
+    const known = username ? await findUserByUsername(username) : null;
+    auditLoginFailed(req.ip, known?.id ?? null, { rateLimited: true });
   });
 
   router.post(
