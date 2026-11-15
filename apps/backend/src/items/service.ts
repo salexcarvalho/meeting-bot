@@ -128,7 +128,7 @@ async function insertEvidence(db: Db, itemId: string, evidence: EvidenceInput[])
 
 function publishItems(meetingId: string, items: Item[]): void {
   if (items.length) hub.publishToMeeting(meetingId, { type: "items", meetingId, items });
-  // todo item criado, editado, revisado ou mesclado reindexa a reunião para a busca (specs/003)
+  // cada item criado, editado, revisado ou mesclado reindexa a reunião para a busca (specs/003)
   markDirtyLater(meetingId);
 }
 
