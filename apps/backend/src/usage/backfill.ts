@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { pool } from "../db";
 
 // Incorpora uma única vez o histórico de envios externos do audit_log (formato antigo, sem `purpose`)
@@ -18,7 +19,7 @@ const LLM_PURPOSE = `CASE
 
 const BASE_JOIN = `FROM audit_log a
   LEFT JOIN meetings m ON m.id = ${MEETING_UUID}
-  WHERE NOT (a.detail ? 'purpose')`;
+  WHERE NOT (a.detail ? 'purpose') AND ($1::timestamptz IS NULL OR a.at >= $1::timestamptz)`;
 
 const INSERT_COLUMNS = `(at, user_id, meeting_id, category, purpose, provider, model, channel, input_tokens, output_tokens,
    audio_seconds, cost_usd, duration_ms, attempts, success, label, source, audit_log_id)`;
@@ -44,9 +45,14 @@ const ASR_BACKFILL = `
   ${BASE_JOIN} AND a.kind = 'external_asr'
   ${ON_CONFLICT}`;
 
-/** Devolve quantas linhas novas entraram (0 na segunda execução). */
-export async function backfillUsageFromAudit(): Promise<number> {
-  const llm = await pool.query(LLM_BACKFILL);
-  const asr = await pool.query(ASR_BACKFILL);
+/**
+ * Devolve quantas linhas novas entraram (0 na segunda execução). Linhas mais antigas que o prazo de
+ * retenção do uso não entram: a poda as apagaria e a próxima partida as traria de volta.
+ */
+export async function backfillUsageFromAudit(now = Date.now()): Promise<number> {
+  const days = config.usageRetentionDays;
+  const cutoff = days > 0 ? new Date(now - days * 86_400_000) : null;
+  const llm = await pool.query(LLM_BACKFILL, [cutoff]);
+  const asr = await pool.query(ASR_BACKFILL, [cutoff]);
   return (llm.rowCount ?? 0) + (asr.rowCount ?? 0);
 }

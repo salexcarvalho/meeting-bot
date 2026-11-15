@@ -77,4 +77,13 @@ describe.skipIf(!enabled)("incorporação do histórico de envios externos (Post
     expect(res.json.totals.calls).toBe(owned);
     expect(res.json.asr.external.audioSeconds).toBe(630);
   });
+
+  it("não traz de volta o que a poda por prazo apagaria (linha mais antiga que o prazo de uso)", async () => {
+    const { rows } = await h.pool.query(
+      `INSERT INTO audit_log (at, kind, detail) VALUES ('2020-01-01T00:00:00Z', 'external_llm', '{"label":"narrativa velha","provider":"claude"}') RETURNING id`,
+    );
+    await backfillUsageFromAudit();
+    const found = await h.pool.query(`SELECT 1 FROM ai_usage_logs WHERE audit_log_id = $1`, [rows[0].id]);
+    expect(found.rowCount).toBe(0);
+  });
 });
