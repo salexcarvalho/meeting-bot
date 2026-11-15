@@ -80,7 +80,7 @@ describe("buildTaskQuery", () => {
 describe("TaskQuery (query string)", () => {
   it("coage limit e offset e recusa valores fora da faixa", () => {
     expect(TaskQuery.parse({ limit: "50", offset: "10" })).toMatchObject({ limit: 50, offset: 10 });
-    for (const bad of [{ limit: "0" }, { limit: "201" }, { offset: "-1" }, { status: "xyz" }, { due: "ontem" }, { sort: "x" }, { extra: "1" }]) {
+    for (const bad of [{ limit: "0" }, { limit: "201" }, { offset: "-1" }, { offset: "99999999999999999999" }, { status: "xyz" }, { due: "ontem" }, { sort: "x" }, { extra: "1" }]) {
       expect(TaskQuery.safeParse(bad).success).toBe(false);
     }
   });
