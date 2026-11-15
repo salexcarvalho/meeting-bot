@@ -17,11 +17,20 @@ function firstSentence(line: string): string {
   return line;
 }
 
+const TRAILING_PUNCTUATION = new Set([",", ";", ":", "-"]);
+
+/** Tira vírgula, ponto e vírgula, dois-pontos, hífen e espaços do fim (laço, sem regex com retrocesso). */
+function stripTrailingPunctuation(text: string): string {
+  let end = text.length;
+  while (end > 0 && (TRAILING_PUNCTUATION.has(text[end - 1]) || text[end - 1].trim() === "")) end--;
+  return text.slice(0, end);
+}
+
 function cutAtWord(text: string): string {
   const head = text.slice(0, TITLE_MAX);
   const space = head.lastIndexOf(" ");
   const cut = text[TITLE_MAX] === " " || space <= 0 ? head : head.slice(0, space);
-  return `${cut.trimEnd().replace(/[,;:\s-]+$/u, "")}${ELLIPSIS}`;
+  return `${stripTrailingPunctuation(cut)}${ELLIPSIS}`;
 }
 
 /** Título da tarefa: primeira frase do item, até 120 caracteres, cortada em palavra inteira (com `…`). */

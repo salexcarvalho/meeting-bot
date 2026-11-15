@@ -44,6 +44,9 @@ class Params {
   }
 }
 
+/** Valor de LIKE "contém": sem acento, sem maiúsculas e com os curingas do usuário escapados. */
+const likeContains = (text: string): string => `%${escapeLike(foldText(text))}%`;
+
 function statusClause(status: TaskQuery["status"], params: Params): string | null {
   if (status === "all") return null;
   if (status === "open") return OPEN_SQL;
@@ -78,8 +81,9 @@ function assigneeClause(query: TaskQuery, params: Params): string | null {
   if (!query.assignee) return null;
   if (query.assignee === "me") return "t.assignee_kind = 'self'";
   if (query.assignee === "none") return "t.assignee_kind = 'none'";
-  const name = query.assigneeName ? ` AND lower(translate(t.assignee_name, '${ACCENTS_FROM}', '${ACCENTS_TO}')) LIKE ${params.add(`%${escapeLike(foldText(query.assigneeName))}%`)} ESCAPE '\\'` : "";
-  return `(t.assignee_kind = 'other'${name})`;
+  if (!query.assigneeName) return "t.assignee_kind = 'other'";
+  const pattern = params.add(likeContains(query.assigneeName));
+  return `(t.assignee_kind = 'other' AND lower(translate(t.assignee_name, '${ACCENTS_FROM}', '${ACCENTS_TO}')) LIKE ${pattern} ESCAPE '\\')`;
 }
 
 /** Condições de filtro (sem o dono, que cada consulta escreve às claras) e valores, sem ordenação nem paginação. */
@@ -96,7 +100,7 @@ export function buildTaskFilter(query: TaskQuery, ownerId: string, timezone: str
   add(assigneeClause(query, params));
   if (query.priority?.length) add(`t.priority = ANY(${params.add(query.priority)}::text[])`);
   if (query.meetingId) add(`t.meeting_id = ${params.add(query.meetingId)}`);
-  if (query.q) add(`${SEARCH_TEXT_SQL} LIKE ${params.add(`%${escapeLike(foldText(query.q))}%`)} ESCAPE '\\'`);
+  if (query.q) add(`${SEARCH_TEXT_SQL} LIKE ${params.add(likeContains(query.q))} ESCAPE '\\'`);
   return { where: clauses.join(" AND "), values: params.values };
 }
 

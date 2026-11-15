@@ -127,7 +127,8 @@ export const TaskQuery = z
     q: z.string().trim().min(1).max(100).optional(),
     sort: z.enum(TASK_SORTS).default("due"),
     limit: z.coerce.number().int().min(1).max(200).default(100),
-    offset: z.coerce.number().int().min(0).default(0),
+    // teto: acima do bigint do Postgres a consulta falharia com 500 em vez de 400
+    offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
   })
   .refine((v) => v.due !== "range" || (v.dueFrom !== undefined && v.dueTo !== undefined), {
     message: "informe dueFrom e dueTo",

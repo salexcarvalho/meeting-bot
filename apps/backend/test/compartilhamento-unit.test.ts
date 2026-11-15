@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { visibleMeetingsSql } from "../src/authz";
 import { OWNER_ONLY_ANY_METHOD, OWNER_ONLY_ROUTES, extraPermissionsFor, isOwnerOnlyRoute } from "../src/authz/ownerOnly";
 import { escapeLike, foldText, LOOKUP_MAX_CHARS, lookupPattern } from "../src/users/lookupPattern";
 import { hasSeries } from "../src/shares/service";
@@ -153,5 +154,19 @@ describe("consumo de IA é do dono (FR-015)", () => {
 
   it("quem lê todas segue vendo o consumo da instância", () => {
     expect(visibilitySql(user(["meetings.read_all"]))).toContain("m.id IS NULL");
+  });
+});
+
+describe("visibleMeetingsSql", () => {
+  const user = (permissions: string[]) => ({ id: "u", username: "u", roles: [], permissions }) as unknown as User;
+
+  it("sem read_all filtra por dono ou compartilhamento no parâmetro indicado", () => {
+    const sql = visibleMeetingsSql(user(["meetings.read"]), "m", 4);
+    expect(sql).toContain("m.created_by = $4");
+    expect(sql).toContain("ms.user_id = $4");
+  });
+
+  it("com read_all não filtra, mas mantém o parâmetro no texto (o Postgres rejeita parâmetro sem uso)", () => {
+    expect(visibleMeetingsSql(user(["meetings.read_all"]), "m", 2)).toBe("($2::uuid IS NOT NULL OR TRUE)");
   });
 });
