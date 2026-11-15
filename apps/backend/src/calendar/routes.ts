@@ -21,6 +21,7 @@ import { hostAgentOwner } from "../recording/owner";
 import { parseBody, wrap } from "../routes";
 import { audit } from "../security/audit";
 import { importAgentCalendar } from "./agentImport";
+import { autoSuppressed } from "./offDay";
 import { startSeriesExtender, stopSeriesExtender } from "./seriesExtend";
 import {
   CalendarError,
@@ -28,6 +29,7 @@ import {
   createScheduled,
   getAgenda,
   importIcs,
+  setAutoOnOffDay,
   setSkip,
   todayIn,
   updateScheduled,
@@ -143,6 +145,19 @@ features.authedRouters.push((router) => {
   );
 
   router.post(
+    "/meetings/:id/auto-off-day",
+    wrap(async (req, res) => {
+      const body = parseBody(z.object({ enabled: z.boolean() }), req, res);
+      if (!body) return;
+      try {
+        res.json(toMeetingSummary(await setAutoOnOffDay(String(req.params.id), body.enabled)));
+      } catch (err) {
+        handleError(res, err);
+      }
+    }),
+  );
+
+  router.post(
     "/meetings/:id/cancel",
     wrap(async (req, res) => {
       const body = parseBody(z.object({ scope: z.enum(["one", "series"]).default("one") }), req, res);
@@ -164,7 +179,7 @@ features.stoppers.push(async () => stopSeriesExtender());
 
 async function agentMeetings(ownerId: string): Promise<AgentMeeting[]> {
   const { rows } = await pool.query(
-    `SELECT id, title, scheduled_start, scheduled_end, url, platform, skip_recording, status
+    `SELECT id, title, scheduled_start, scheduled_end, url, platform, skip_recording, auto_on_off_day, status
      FROM meetings
      WHERE source IN ('ics', 'manual') AND created_by = $1
        AND status IN ('scheduled', 'skipped', 'recording')
@@ -180,6 +195,7 @@ async function agentMeetings(ownerId: string): Promise<AgentMeeting[]> {
     url: r.url,
     platform: r.platform,
     skipRecording: r.skip_recording,
+    noAlerts: autoSuppressed(r.scheduled_start, r.auto_on_off_day),
     status: r.status,
   }));
 }

@@ -1,5 +1,6 @@
 import { STATUS_LABELS, type MeetingSummary } from "@meeting-bot/contracts";
 import { botProgress, isBotActive } from "../bot/state";
+import { isAgendaWorkingDay } from "../calendar/offDay";
 import type { MeetingRow } from "../db";
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
@@ -19,6 +20,8 @@ export function toMeetingSummary(m: MeetingRow): MeetingSummary {
     endedAt: iso(m.ended_at),
     project: m.project_id ? { id: m.project_id, name: m.project_name ?? "", suggested: m.project_suggested } : null,
     skipRecording: m.skip_recording,
+    offDay: m.scheduled_start ? !isAgendaWorkingDay(m.scheduled_start) : false,
+    autoOnOffDay: m.auto_on_off_day,
     itemsEnabled: m.extract_items,
     organizer: m.organizer,
     attendees: Array.isArray(m.attendees) ? m.attendees : [],

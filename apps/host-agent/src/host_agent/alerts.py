@@ -24,6 +24,8 @@ class Meeting:
     url: str | None
     skip_recording: bool
     status: str
+    # Dia sem agenda (WORKING_DAYS no backend) e sem pedido do usuário: nenhum lembrete.
+    no_alerts: bool = False
 
     @classmethod
     def from_api(cls, data: dict) -> "Meeting":
@@ -35,6 +37,7 @@ class Meeting:
             url=data.get("url"),
             skip_recording=bool(data.get("skipRecording")),
             status=data.get("status", "scheduled"),
+            no_alerts=bool(data.get("noAlerts")),
         )
 
 
@@ -82,7 +85,7 @@ class AlertScheduler:
         alerts: list[Alert] = []
         smallest = min(self.minutes_before) if self.minutes_before else 0
         for m in meetings:
-            if m.status not in ("scheduled", "skipped"):
+            if m.status not in ("scheduled", "skipped") or m.no_alerts:
                 continue
             # Só o alerta mais recente cujo horário já chegou; os anteriores ficam para trás.
             for minutes in sorted(self.minutes_before):

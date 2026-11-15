@@ -288,4 +288,16 @@ export async function setSkip(id: string, skip: boolean): Promise<MeetingRow> {
   return (await getMeeting(id))!;
 }
 
+// Reunião em dia não útil não tem lembrete nem entrada automática; aqui o usuário pede que tenha.
+export async function setAutoOnOffDay(id: string, enabled: boolean): Promise<MeetingRow> {
+  const meeting = await getMeeting(id);
+  if (!meeting) throw new CalendarError("Reunião não encontrada.", 404);
+  if (!["scheduled", "skipped"].includes(meeting.status)) {
+    throw new CalendarError("Não é possível mudar o lembrete desta reunião agora.", 409);
+  }
+  await pool.query(`UPDATE meetings SET auto_on_off_day = $2 WHERE id = $1`, [id, enabled]);
+  emitMeetingChanged(id);
+  return (await getMeeting(id))!;
+}
+
 export { todayIn };

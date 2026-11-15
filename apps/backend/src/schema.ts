@@ -318,6 +318,10 @@ const statements = [
      ADD COLUMN IF NOT EXISTS import_removed_at TIMESTAMPTZ`,
   `CREATE INDEX IF NOT EXISTS idx_meetings_import
      ON meetings (created_by, import_source, scheduled_start) WHERE import_source IS NOT NULL`,
+
+  // Dia não útil (WORKING_DAYS): a reunião não tem lembrete nem entrada automática, a menos que o
+  // usuário peça. true = o usuário pediu para tratá-la como a de um dia útil.
+  `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS auto_on_off_day BOOLEAN NOT NULL DEFAULT false`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {
