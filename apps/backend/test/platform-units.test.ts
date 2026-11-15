@@ -44,6 +44,13 @@ describe("matriz de papéis", () => {
     expect(viewer.has("tasks.manage")).toBe(false);
   });
 
+  it("uso de IA da instância (ai_usage.read): só administradores; usuário e leitor não", () => {
+    expect(permissionsFor(["ADMIN"]).has("ai_usage.read")).toBe(true);
+    expect(permissionsFor(["SUPER_ADMIN"]).has("ai_usage.read")).toBe(true);
+    expect(permissionsFor(["USER"]).has("ai_usage.read")).toBe(false);
+    expect(permissionsFor(["VIEWER"]).has("ai_usage.read")).toBe(false);
+  });
+
   it("seed idempotente cobre todas as permissões e escapa aspas", () => {
     const sql = rbacSeedStatements().join("\n");
     for (const p of PERMISSION_KEYS) expect(sql).toContain(`'${p}'`);

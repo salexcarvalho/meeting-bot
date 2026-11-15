@@ -243,9 +243,21 @@ Cada usuário tem as próprias configurações:
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar, gravação do nome falado e conta do agente no Teams.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
-- **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.
-  Vem do `audit_log`, é só leitura e não bloqueia geração. A assinatura não cobra por chamada: só
-  tokens. Cada um vê só o consumo das reuniões que criou: o custo é do dono, e reunião compartilhada não entra.
+- **Consumo de IA:** cada chamada de LLM (modelo local, OpenRouter, assinatura) e cada transcrição (Whisper local ou
+  Deepgram externo) fica registrada com finalidade, provedor, modelo, tokens, minutos de áudio, tempo e resultado
+  (inclusive falhas, só com um código curto). O painel mostra o mês ou um intervalo (até 24 meses): totais, por
+  finalidade, provedor, modelo e dia, minutos de ASR local × externo, as reuniões que mais consumiram e as últimas
+  chamadas, com filtro de falhas. O custo é o que o provedor informou (nunca estimado): assinatura e modelo local
+  mostram "sem custo por chamada". É só leitura e não bloqueia geração. Cada um vê só o consumo das reuniões que
+  criou: o custo é do dono, e reunião compartilhada não entra.
+- **Segurança:** os eventos que dizem respeito a você (entradas e tentativas recusadas, com IP só nas recusas, troca de
+  senha, conta Teams, ações de administrador na sua conta e envios para fora da máquina feitos em seu nome), sem
+  conteúdo de reunião.
+- **Administração > Uso de IA** (permissão `ai_usage.read`) mostra o consumo agregado por usuário, provedor, modelo,
+  finalidade e dia, sem título nem id de reunião; **Administração > Auditoria** (`audit.read`) mostra os eventos do
+  sistema, sempre por uma lista permitida de campos.
+- **Retenção:** o uso de IA é guardado por 24 meses (`USAGE_RETENTION_DAYS=730`) e a auditoria por 12 meses
+  (`AUDIT_RETENTION_DAYS=365`), podados todo dia; `0` guarda para sempre. O áudio segue indefinido.
 
 ## Configuração principal (`.env`)
 

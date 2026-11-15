@@ -126,10 +126,10 @@ Invariantes (testados):
 
 ## Compatibilidade
 
-- `GET /api/llm/usage` (existente, lê `audit_log`) fica **obsoleto**: durante a transição responde
-  com o formato novo de `/usage/me` convertido para `LlmUsageReport`; é removido junto com
-  `llm/usage.ts` e `ConsumoTab` antiga na tarefa de limpeza (T058). Os tipos `LlmUsage*` em
-  `contracts/domain.ts` saem na mesma tarefa.
+- `GET /api/llm/usage` (existente, lê `audit_log`) foi **removido** nesta entrega (T058), junto com
+  `llm/usage.ts` e a `ConsumoTab` antiga; os tipos `LlmUsage*` saíram de `contracts/domain.ts`. Decisão da
+  revisão: sem alias, porque o frontend e o backend saem juntos no mesmo compose e nenhum outro consumidor
+  (host-agent, agent-cli, VPS, testes) chama a rota; quem chamar recebe 404.
 
 ## Códigos de resposta
 

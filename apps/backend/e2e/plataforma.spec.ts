@@ -127,14 +127,14 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, BIA);
     await page.goto("/configuracoes?aba=consumo");
     await expect(page.getByRole("heading", { name: "Consumo de IA" })).toBeVisible();
-    await expect(page.getByText("Nada gerado neste mês")).toBeVisible();
+    await expect(page.getByText("Nenhum consumo neste período")).toBeVisible();
     const usage = await page.evaluate(async () => {
-      const res = await fetch("/api/llm/usage");
+      const res = await fetch("/api/usage/me");
       return { status: res.status, body: (await res.json()) as { totals: { calls: number } } };
     });
     expect(usage.status).toBe(200);
     expect(usage.body.totals.calls).toBe(0);
-    const invalido = await page.evaluate(async () => (await fetch("/api/llm/usage?month=2026-13")).status);
+    const invalido = await page.evaluate(async () => (await fetch("/api/usage/me?month=2026-13")).status);
     expect(invalido).toBe(400);
     await shot(page, "config-consumo");
   });

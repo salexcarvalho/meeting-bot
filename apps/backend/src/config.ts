@@ -200,6 +200,10 @@ export const config = {
   subscriptionWaitMs: int("SUBSCRIPTION_WAIT_MINUTES", 30) * 60_000,
   externalLlm: llmExternal,
   subscriptionLlm: llmSubscriptions,
+  // Retenção dos registros (constituição 2.3.0): dias; 0 = guardar sempre
+  usageRetentionDays: int("USAGE_RETENTION_DAYS", 730),
+  auditRetentionDays: int("AUDIT_RETENTION_DAYS", 365),
+  usageAsrFlushMinutes: int("USAGE_ASR_FLUSH_MINUTES", 10),
   liveExtractMinSpeechSeconds: int("LIVE_EXTRACT_MIN_SPEECH_SECONDS", 90),
   liveExtractMaxIntervalSeconds: int("LIVE_EXTRACT_MAX_INTERVAL_SECONDS", 180),
   liveConsolidateIntervalSeconds: int("LIVE_CONSOLIDATE_INTERVAL_SECONDS", 900),

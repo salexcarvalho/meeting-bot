@@ -21,7 +21,7 @@ const USER_ADMIN: Permission[] = ["users.read", "users.create", "users.update", 
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
   SUPER_ADMIN: PERMISSION_KEYS.filter((p) => p !== "meetings.read_all"),
-  ADMIN: [...OWN_CONTENT, ...USER_ADMIN, "projects.manage", "audit.read"],
+  ADMIN: [...OWN_CONTENT, ...USER_ADMIN, "projects.manage", "audit.read", "ai_usage.read"],
   USER: OWN_CONTENT,
   VIEWER: ["meetings.read", "transcripts.read", "documents.read", "agents.read", "settings.manage"],
 };

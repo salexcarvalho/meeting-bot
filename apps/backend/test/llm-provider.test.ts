@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Extracao } from "@meeting-bot/contracts";
-import { createProvider, LlmQueue, ProviderBlockedError } from "../src/llm/provider";
+import { createProvider, LlmQueue, ProviderBlockedError, UsageCarryingError } from "../src/llm/provider";
 import { OllamaProvider, toOllamaSchema } from "../src/llm/ollama";
 
 const ollamaCfg = { url: "http://ollama:11434", model: "qwen3.5:4b", keepAlive: "30m" };
@@ -49,8 +49,8 @@ describe("OllamaProvider", () => {
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => reply('{"ok":true}'));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const provider = new OllamaProvider(ollamaCfg);
-    const out = await provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t" });
-    expect(out).toEqual({ ok: true });
+    const out = await provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t", purpose: "ata" });
+    expect(out.data).toEqual({ ok: true });
     const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
     expect(fetchMock.mock.calls[0][0]).toBe("http://ollama:11434/api/chat");
     expect(body).toMatchObject({
@@ -64,6 +64,66 @@ describe("OllamaProvider", () => {
     expect(body.messages[0]).toEqual({ role: "system", content: "s" });
   });
 
+  it("devolve o uso medido pelo Ollama somando as tentativas (tokens e tempo de inferência)", async () => {
+    const body = (content: string) =>
+      new Response(
+        JSON.stringify({
+          message: { content },
+          prompt_eval_count: 100,
+          eval_count: 20,
+          prompt_eval_duration: 2e9,
+          eval_duration: 3e9,
+        }),
+        { status: 200 },
+      );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(body("não é json"))
+      .mockResolvedValueOnce(body('{"ok":true}')) as unknown as typeof fetch;
+    const out = await new OllamaProvider(ollamaCfg).generate({
+      system: "s",
+      user: "u",
+      schema: Schema,
+      numCtx: 4096,
+      label: "t",
+      purpose: "ata",
+    });
+    expect(out.usage).toEqual({
+      inputTokens: 200,
+      outputTokens: 40,
+      costUsd: null,
+      computeMs: 10_000,
+      attempts: 2,
+      model: "qwen3.5:4b",
+    });
+  });
+
+  it("sem contagens na resposta o uso fica nulo (nada inventado)", async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ message: { content: '{"ok":true}' } }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const out = await new OllamaProvider(ollamaCfg).generate({
+      system: "s",
+      user: "u",
+      schema: Schema,
+      numCtx: 4096,
+      label: "t",
+      purpose: "ata",
+    });
+    expect(out.usage).toMatchObject({ inputTokens: null, outputTokens: null, computeMs: null, costUsd: null });
+  });
+
+  it("falha carrega o uso parcial já gasto", async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ message: { content: "x" }, prompt_eval_count: 5, eval_count: 1 }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const err = await new OllamaProvider(ollamaCfg)
+      .generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t", purpose: "ata" })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(UsageCarryingError);
+    expect(err.usage).toMatchObject({ inputTokens: 10, outputTokens: 2, attempts: 2 });
+  });
+
   it("tenta de novo uma vez quando a saída não valida", async () => {
     const fetchMock = vi
       .fn()
@@ -71,8 +131,8 @@ describe("OllamaProvider", () => {
       .mockResolvedValueOnce(reply('{"ok":false}'));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const provider = new OllamaProvider(ollamaCfg);
-    const out = await provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t" });
-    expect(out).toEqual({ ok: false });
+    const out = await provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t", purpose: "ata" });
+    expect(out.data).toEqual({ ok: false });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -80,7 +140,7 @@ describe("OllamaProvider", () => {
     globalThis.fetch = vi.fn(async () => reply("não é json")) as unknown as typeof fetch;
     const provider = new OllamaProvider(ollamaCfg);
     await expect(
-      provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t" }),
+      provider.generate({ system: "s", user: "u", schema: Schema, numCtx: 4096, label: "t", purpose: "ata" }),
     ).rejects.toThrow(/inválida/);
   });
 });

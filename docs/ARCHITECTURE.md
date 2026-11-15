@@ -119,8 +119,19 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - ficam em `DATA_DIR/profiles/<userId>/`;
   - o tipo é conferido pelos bytes iniciais (sem SVG);
   - nomes seguem um padrão fixo (sem path traversal) e a gravação usa modo 0600.
-- **Consumo de LLM:** `GET /llm/usage?month=AAAA-MM` agrega o próprio `audit_log` (`llm/usage.ts`),
-  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração. O custo é do dono: só entram reuniões criadas pelo próprio usuário, nunca as compartilhadas com ele.
+- **Uso e custo de IA (F6):** o funil `llm/index.ts#generate` e os três pontos de ASR (Whisper final no
+  `pipeline.ts`, ao vivo agregado em `usage/liveAsr.ts`, Deepgram em `asr/openrouter.ts`) gravam uma linha por
+  chamada em `ai_usage_logs` (só metadados e números, append-only; falha de gravação nunca derruba a geração).
+  O custo é o informado pelo provedor, nunca calculado. `GET /usage/me` e `/usage/me/calls` leem só `user_id = eu`
+  (reunião compartilhada não entra); `GET /admin/usage` (`ai_usage.read`) agrega sem nenhum campo de reunião.
+  Só leitura, não limita geração.
+- **Auditoria visível:** `GET /audit/me` (ator ou alvo, lista fechada de tipos) e `GET /admin/audit` (`audit.read`)
+  passam pela projeção `audit/projection.ts` (lista permitida de campos por tipo, default deny; `meetingId` e título
+  nunca). Login, falha de login (IP só na falha), logout e troca de senha são auditados; `external_llm` e
+  `external_asr` gravam o dono da reunião.
+- **Retenção (constituição 2.3.0):** `retention/prune.ts` poda `ai_usage_logs` (730 dias) e `audit_log` (365 dias) todo
+  dia, em lotes e com trava no banco; `0` desliga. O histórico `external_*` antigo do `audit_log` é incorporado uma
+  vez (`usage/backfill.ts`, idempotente).
 - **Ações administrativas:** criar, editar, trocar papel, ativar, redefinir senha e redefinir configurações; todas vão para `audit_log`.
 - host-agent autenticado por `AGENT_TOKEN` (Bearer, comparação em tempo constante, limite de
   falhas auditado).

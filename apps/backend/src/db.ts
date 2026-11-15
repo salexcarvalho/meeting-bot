@@ -126,6 +126,12 @@ export async function insertSession(tokenHash: string, userId: string, expiresAt
   ]);
 }
 
+/** Dono da sessão (válida ou não): usado só para auditar a saída da conta. */
+export async function sessionOwnerId(tokenHash: string): Promise<string | null> {
+  const { rows } = await pool.query(`SELECT user_id FROM sessions WHERE token_hash = $1`, [tokenHash]);
+  return rows[0]?.user_id ?? null;
+}
+
 export async function findSessionUser(tokenHash: string): Promise<User | null> {
   const { rows } = await pool.query(
     `${USER_AUTHZ_SELECT}
@@ -151,11 +157,13 @@ export async function deleteSession(tokenHash: string): Promise<void> {
   await pool.query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
 }
 
-export async function deleteUserSessions(userId: string, exceptTokenHash?: string): Promise<void> {
-  await pool.query(`DELETE FROM sessions WHERE user_id = $1 AND token_hash IS DISTINCT FROM $2`, [
+/** Revoga as sessões do usuário (menos a indicada) e devolve quantas. */
+export async function deleteUserSessions(userId: string, exceptTokenHash?: string): Promise<number> {
+  const result = await pool.query(`DELETE FROM sessions WHERE user_id = $1 AND token_hash IS DISTINCT FROM $2`, [
     userId,
     exceptTokenHash ?? null,
   ]);
+  return result.rowCount ?? 0;
 }
 
 export async function purgeExpiredSessions(): Promise<void> {

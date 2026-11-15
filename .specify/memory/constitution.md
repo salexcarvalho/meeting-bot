@@ -1,5 +1,16 @@
 <!--
 Sync Impact Report
+- Versão: 2.2.0 → 2.3.0 (MINOR: regra de retenção dos registros de consumo de IA e da auditoria em
+  "Regras Operacionais"; decisão do dono em 2026-11-15, spec 004-uso-custo, Q2-A)
+- Seção modificada: Regras Operacionais → "Retenção": os registros de uso de IA (`ai_usage_logs`) e
+  a auditoria (`audit_log`) têm prazo de guarda configurável (padrão 24 e 12 meses), podados
+  diariamente e só com contagens auditadas; valor 0 = guardar sempre. O áudio continua indefinido.
+  Os registros guardam só metadados e números, nunca conteúdo de reunião.
+- Artefatos dependentes: apps/backend/src/{config,retention/prune,usage/*,audit/*}.ts, .env.example,
+  README.md (3 idiomas), CLAUDE.md, CHANGELOG.md, specs/004-uso-custo/
+- TODOs adiados: nenhum
+
+Histórico anterior (2.1.0 → 2.2.0)
 - Versão: 2.1.0 → 2.2.0 (MINOR: o assistente pode entrar no Teams logado numa conta Microsoft
   dedicada ao agente, em vez de convidado sem conta; decisão do usuário em 2026-09-18)
 - Princípio modificado: II. Respeito às Políticas da Organização — conta dedicada do agente (nunca a
@@ -300,6 +311,11 @@ Racional: aproveita o código validado e a stack principal do usuário.
   Limite de segurança de 4 horas nos dois casos.
 - **Retenção**: o áudio de cada canal é guardado indefinidamente; exclusão só por ação do
   usuário.
+- **Retenção dos registros**: os registros de consumo de IA (uso de LLM e de ASR) e a auditoria
+  de segurança guardam só metadados e números, nunca conteúdo de reunião, e são podados por prazo
+  configurável (padrão: 24 meses para o uso e 12 meses para a auditoria; valor 0 = guardar
+  sempre). A poda é diária e só registra contagens na auditoria. Excluir reunião ou usuário
+  preserva o consumo histórico, sem o vínculo removido.
 - **Calendário (MVP)**: importação de convites `.ics` e cadastro manual; Microsoft Graph apenas
   após aprovação da TI.
 - **Canais de áudio**: na gravação pelo computador, microfone do usuário e áudio remoto são
@@ -342,4 +358,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 2.2.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-18
+**Version**: 2.3.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-11-15

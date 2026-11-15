@@ -961,20 +961,22 @@ describe.skipIf(!enabled)("compartilhamento de reunião (HTTP + WebSocket + Post
 
     it("consumo de IA é só das reuniões do próprio usuário (não das compartilhadas)", async () => {
       const own = await meeting("cs-bia", "Reunião própria da Bia");
-      const call1 = (meetingId: string, tokens: number) =>
+      const call1 = (meetingId: string, owner: string, tokens: number) =>
         pool.query(
-          `INSERT INTO audit_log (kind, detail, user_id) VALUES ('external_llm', $1, NULL)`,
-          [{ meetingId, provider: "openrouter", model: "m", label: "ata", promptTokens: tokens, completionTokens: 1, cost: 0.5 }],
+          `INSERT INTO ai_usage_logs (user_id, meeting_id, category, purpose, provider, model, input_tokens, output_tokens, cost_usd, success)
+           VALUES ($1, $2, 'llm', 'ata', 'openrouter', 'm', $3, 1, 0.5, true)`,
+          [owner, meetingId, tokens],
         );
-      await call1(id, 1000);
-      await call1(own, 7);
-      const bia = await call("cs-bia", "GET", "/llm/usage");
+      await call1(id, ids["cs-ana"], 1000);
+      await call1(own, ids["cs-bia"], 7);
+      const bia = await call("cs-bia", "GET", "/usage/me");
       expect(bia.status).toBe(200);
-      expect(bia.json.byMeeting.map((m: Json) => m.meetingId)).toEqual([own]);
-      expect(bia.json.recent.map((r: Json) => r.meetingId)).toEqual([own]);
-      expect(bia.json.totals.promptTokens).toBe(7);
-      const ana = await call("cs-ana", "GET", "/llm/usage");
-      expect(ana.json.byMeeting.map((m: Json) => m.meetingId)).toEqual([id]);
+      expect(bia.json.topMeetings.map((m: Json) => m.meetingId)).toEqual([own]);
+      expect(bia.json.totals.inputTokens).toBe(7);
+      const calls = await call("cs-bia", "GET", "/usage/me/calls");
+      expect(calls.json.items.map((r: Json) => r.meetingId)).toEqual([own]);
+      const ana = await call("cs-ana", "GET", "/usage/me");
+      expect(ana.json.topMeetings.map((m: Json) => m.meetingId)).toEqual([id]);
       expect(JSON.stringify(bia.json)).not.toContain("Isolamento");
     });
   });

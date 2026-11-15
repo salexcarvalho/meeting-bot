@@ -1,12 +1,29 @@
-import { SUBSCRIPTION_LLMS, type LlmChoice, type LlmOptions, type SubscriptionLlm } from "@meeting-bot/contracts";
+import {
+  SUBSCRIPTION_LLMS,
+  type LlmChoice,
+  type LlmOptions,
+  type SubscriptionLlm,
+  type UsageProviderValue,
+} from "@meeting-bot/contracts";
 import { config } from "../config";
 import { hostAgentCli } from "../recording/hostAgentState";
 import { hostAgentOwner } from "../recording/owner";
 import { audit } from "../security/audit";
+import { classifyError } from "../usage/errorCode";
+import { recordUsage } from "../usage/recorder";
 import { HostCliLlm } from "./hostCli";
 import { hostJobs } from "./hostJobs";
 import { OpenRouterLlm } from "./openrouter";
-import { createProvider, GenerateRequest, LLMProvider, LlmPriority, LlmQueue } from "./provider";
+import {
+  createProvider,
+  UsageCarryingError,
+  type Generation,
+  type GenerateRequest,
+  type LLMProvider,
+  type LlmPriority,
+  type LlmUsage,
+  LlmQueue,
+} from "./provider";
 
 export const llmQueue = new LlmQueue();
 let provider: LLMProvider | null = null;
@@ -55,22 +72,74 @@ function getSubscriptionLlm(choice: SubscriptionLlm): HostCliLlm {
   return subscriptionLlms[choice];
 }
 
+function usageIdentity(choice: LlmChoice): { provider: UsageProviderValue; model: string } {
+  if (choice === "openrouter") return { provider: "openrouter", model: config.externalLlm.model };
+  if (isSubscription(choice)) return { provider: choice, model: subscriptionModel(choice) };
+  return { provider: "ollama", model: config.ollamaModel };
+}
+
+const EMPTY_USAGE: LlmUsage = { inputTokens: null, outputTokens: null, costUsd: null, computeMs: null, attempts: 1, model: null };
+
+type Outcome<T> = { ok: true; generation: Generation<T>; ms: number } | { ok: false; error: unknown; usage: LlmUsage; ms: number };
+
+/** Mede só a chamada ao provedor (sem a espera na fila da GPU). */
+async function timedCall<T>(call: () => Promise<Generation<T>>): Promise<Outcome<T>> {
+  const started = Date.now();
+  try {
+    return { ok: true, generation: await call(), ms: Date.now() - started };
+  } catch (err) {
+    const usage = err instanceof UsageCarryingError ? err.usage : EMPTY_USAGE;
+    return { ok: false, error: err instanceof UsageCarryingError ? err.causeError : err, usage, ms: Date.now() - started };
+  }
+}
+
+/** Uma linha por chamada concluída (sucesso ou erro); nunca lança. */
+function recordGeneration<T>(req: GenerateRequest<T>, choice: LlmChoice, outcome: Outcome<T>): void {
+  const identity = usageIdentity(choice);
+  const usage = outcome.ok ? outcome.generation.usage : outcome.usage;
+  recordUsage({
+    category: "llm",
+    purpose: req.purpose,
+    provider: identity.provider,
+    model: usage.model ?? identity.model,
+    meetingId: req.meetingId ?? null,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    audioSeconds: null,
+    costUsd: usage.costUsd,
+    durationMs: outcome.ms,
+    computeMs: usage.computeMs,
+    attempts: usage.attempts,
+    success: outcome.ok,
+    errorCode: outcome.ok ? null : classifyError(outcome.error),
+    label: req.label,
+  });
+}
+
+function invokeExternal<T>(req: GenerateRequest<T>, provider: Exclude<LlmChoice, "local">): Promise<Generation<T>> {
+  const llm = provider === "openrouter" ? getExternalLlm() : getSubscriptionLlm(provider);
+  return llm.generate(req);
+}
+
 /**
  * Gera com o LLM local (fila única da GPU) ou, só em gerações pós-reunião/sob demanda, fora da
  * máquina: OpenRouter ou a assinatura do dono via host-agent (fora da fila: não usam a GPU).
- * O ao vivo é sempre local.
+ * O ao vivo é sempre local. Cada chamada concluída vira uma linha de uso (specs/004-uso-custo).
  */
-export function generate<T>(priority: LlmPriority, req: GenerateRequest<T>, provider: LlmChoice = "local"): Promise<T> {
-  if (provider !== "local") {
-    if (priority === "live") return Promise.reject(new Error("A análise ao vivo é sempre local."));
-    try {
-      const llm = provider === "openrouter" ? getExternalLlm() : getSubscriptionLlm(provider);
-      return llm.generate(req);
-    } catch (err) {
-      return Promise.reject(err);
-    }
+export async function generate<T>(priority: LlmPriority, req: GenerateRequest<T>, provider: LlmChoice = "local"): Promise<T> {
+  if (provider !== "local" && priority === "live") throw new Error("A análise ao vivo é sempre local.");
+  const outcome =
+    provider === "local"
+      ? await llmQueue.run(priority, () => timedCall(() => getLlm().generate(req)))
+      : await timedCall(() => invokeExternal(req, provider));
+  try {
+    recordGeneration(req, provider, outcome);
+  } catch (err) {
+    // o registro de uso nunca pode mudar o resultado da geração (FR-006)
+    console.error("[uso] falha ao registrar a geração:", err);
   }
-  return llmQueue.run(priority, () => getLlm().generate(req));
+  if (!outcome.ok) throw outcome.error;
+  return outcome.generation.data;
 }
 
 /** Rótulo gravado em itens, ADRs e análises: "<provedor>:<modelo>". */

@@ -112,6 +112,7 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
         schema: Extracao,
         numCtx: POST_NUM_CTX,
         label: `extração final ${tag} ${i + 1}/${chunks.length}`,
+        purpose: "itens",
         meetingId,
       });
       const valid = validateExtraction(result, map);
@@ -155,6 +156,7 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
         schema: Consolidacao,
         numCtx: POST_NUM_CTX,
         label: `consolidação final ${tag}${batches.length > 1 ? ` ${n + 1}/${batches.length}` : ""}`,
+        purpose: "itens",
         meetingId,
       });
       if (n === 0 && result.resumo.trim()) {
@@ -193,6 +195,7 @@ export async function runPostAnalysis(meetingId: string, report: Report, deps: P
     schema: Narrativa,
     numCtx: POST_NUM_CTX,
     label: `narrativa ${tag}`,
+    purpose: "ata",
     meetingId,
   });
   await deps.saveAnalysis(meetingId, narrative);
@@ -228,6 +231,7 @@ async function runSummaryOnly(
         schema: ResumoTrecho,
         numCtx: POST_NUM_CTX,
         label: `resumo ${tag} ${i + 1}/${chunks.length}`,
+        purpose: "resumo",
         meetingId,
       });
       const summary = result.resumo_trecho.trim();
@@ -253,6 +257,7 @@ async function runSummaryOnly(
     schema: Narrativa,
     numCtx: POST_NUM_CTX,
     label: `narrativa ${tag}`,
+    purpose: "resumo",
     meetingId,
   });
   // As observações do arquiteto vêm da análise de itens; sem ela, ficam de fora.
@@ -296,6 +301,7 @@ export async function runAdrGeneration(
         schema: AdrSugerido,
         numCtx: POST_NUM_CTX,
         label: `ADR ${tag} ${i + 1}/${decisions.length}`,
+        purpose: "adr",
         meetingId,
       });
       if (await deps.upsertAdr(meetingId, decision.id, adr)) result.generated++;

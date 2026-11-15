@@ -8,6 +8,8 @@ import { ToastProvider } from "./components/Toast";
 import { live } from "./live";
 import { Configuracoes } from "./pages/Configuracoes";
 import { Hoje } from "./pages/Hoje";
+import { Auditoria } from "./pages/admin/Auditoria";
+import { UsoIA } from "./pages/admin/UsoIA";
 import { Usuarios } from "./pages/admin/Usuarios";
 import { Login } from "./pages/Login";
 import { Pendencias } from "./pages/Pendencias";
@@ -73,6 +75,8 @@ export function App() {
               <Route path="/projetos" element={<Projetos />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
               <Route path="/admin/usuarios" element={can("users.read") ? <Usuarios /> : <Navigate to="/" replace />} />
+              <Route path="/admin/uso" element={can("ai_usage.read") ? <UsoIA /> : <Navigate to="/" replace />} />
+              <Route path="/admin/auditoria" element={can("audit.read") ? <Auditoria /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

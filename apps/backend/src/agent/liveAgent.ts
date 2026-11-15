@@ -172,6 +172,8 @@ export class LiveAgent {
         schema: Extracao,
         numCtx: 4096,
         label: `extração ao vivo ${this.meetingId.slice(0, 8)}`,
+        purpose: "ao_vivo",
+        meetingId: this.meetingId,
       });
       summary = result.resumo_trecho.trim();
       const valid = validateExtraction(result, map);
@@ -228,6 +230,8 @@ export class LiveAgent {
       schema: Consolidacao,
       numCtx: 4096,
       label: `consolidação ${this.meetingId.slice(0, 8)}`,
+      purpose: "ao_vivo",
+      meetingId: this.meetingId,
     });
 
     const summary = result.resumo.trim().slice(0, 1200);

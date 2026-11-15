@@ -245,9 +245,21 @@ Cada usuario tiene su propia configuración:
 - **Meu agente** ("Mi agente"): persona del agente arquitecto, tecnologías, tipos de decisión, prompt base, avatar, grabación del nombre hablado y cuenta del agente en Teams.
 - **Reuniões** ("Reuniones"): identidad en la sala.
 - **Documentação** ("Documentación"): nivel de detalle y formatos.
-- **Consumo de IA:** tokens y costo del mes por proveedor, modelo y reunión, más las últimas llamadas.
-  Viene de `audit_log`, es de solo lectura y no bloquea la generación. La suscripción no cobra por llamada: solo
-  tokens. Cada quien ve solo el consumo de las reuniones que creó: el costo es del dueño y una reunión compartida no cuenta.
+- **Consumo de IA:** cada llamada de LLM (modelo local, OpenRouter, suscripción) y cada transcripción (Whisper local o
+  Deepgram externo) queda registrada con finalidad, proveedor, modelo, tokens, minutos de audio, tiempo y resultado
+  (también los fallos, solo con un código corto). El panel muestra el mes o un rango libre (hasta 24 meses): totales, por
+  finalidad, proveedor, modelo y día, minutos de ASR local × externo, las reuniones que más consumieron y las últimas
+  llamadas, con filtro de fallos. El costo es el que informó el proveedor (nunca estimado): la suscripción y el modelo
+  local muestran "sem custo por chamada" (sin costo por llamada). Es de solo lectura y no bloquea la generación. Cada
+  quien ve solo el consumo de las reuniones que creó: el costo es del dueño y una reunión compartida no cuenta.
+- **Segurança** ("Seguridad"): los eventos que le conciernen (entradas e intentos rechazados, con IP solo en los
+  rechazos, cambio de contraseña, cuenta Teams, acciones de un administrador sobre su cuenta y envíos fuera de la
+  máquina en su nombre), sin contenido de reuniones.
+- **Administración > Uso de IA** (`ai_usage.read`) muestra el consumo agregado por usuario, proveedor, modelo,
+  finalidad y día, sin título ni id de reunión; **Administración > Auditoria** (`audit.read`) muestra los eventos del
+  sistema, siempre mediante una lista permitida de campos.
+- **Retención:** el uso de IA se guarda 24 meses (`USAGE_RETENTION_DAYS=730`) y la auditoría 12 meses
+  (`AUDIT_RETENTION_DAYS=365`), podados a diario; `0` guarda para siempre. El audio sigue indefinido.
 
 ## Configuración principal (`.env`)
 

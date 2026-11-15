@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-14
 
-**Status**: Draft (fase de especificação; sem código de aplicação)
+**Status**: Implementação (clarificações Q1–Q5 aceitas pelo dono em 2026-11-15: opção recomendada A em todas)
 
 **Input**: User description: "F6 do plano multiusuário: registrar cada chamada de IA (usuário, provedor, modelo, tokens de entrada e saída, custo estimado, reunião, tipo ata/ADR/itens/resumo/ASR, duração, sucesso ou erro), também os minutos de ASR (Whisper local × Deepgram) e o tempo de GPU quando viável. Painel do usuário (só os próprios dados) e painel de admin agregado (sem conteúdo de reunião alheia, sem títulos de reuniões alheias). Auditoria visível na interface (o usuário vê os eventos de segurança dele; o admin vê a auditoria do sistema, sem conteúdo). Retenção dos logs. Nada sai da máquina."
 
@@ -264,14 +264,12 @@ incorporação duas vezes não duplica nada.
 - **FR-018**: A exibição MUST ser por lista permitida de campos por tipo de evento; tipo ou campo
   desconhecido nunca é exibido (apenas tipo e data).
 - **FR-019**: Entrada, falha de entrada, saída e troca de senha MUST passar a ser auditadas;
-  envios externos de LLM e ASR MUST passar a gravar o usuário dono. [NEEDS CLARIFICATION: Q5 —
-  IP só nas falhas (recomendado), em nenhum ou em todos; ver Open Questions.]
+  envios externos de LLM e ASR MUST passar a gravar o usuário dono. (Decisão Q5-A: IP só nas falhas.)
 
 **Retenção e continuidade**
 
 - **FR-020**: O sistema MUST podar `ai_usage_logs` e `audit_log` por prazo configurável (valor 0 =
-  guardar sempre), diariamente, e auditar a poda só com contagens. [NEEDS CLARIFICATION: Q2 —
-  prazos padrão; ver Open Questions.]
+  guardar sempre), diariamente, e auditar a poda só com contagens. (Decisão Q2-A: uso 24 meses, auditoria 12 meses.)
 - **FR-021**: O histórico de chamadas externas já gravado no `audit_log` MUST ser incorporado uma
   única vez ao novo registro, de forma idempotente.
 - **FR-022**: Excluir reunião ou usuário MUST preservar o consumo histórico (vínculos viram nulos).
@@ -283,12 +281,10 @@ incorporação duas vezes não duplica nada.
   geração.
 - **FR-024**: A feature MUST NOT bloquear nem limitar geração por consumo ou orçamento.
 - **FR-025**: O registro de uso MUST ficar em tabela dedicada (`ai_usage_logs`), deixando o
-  `audit_log` para eventos de segurança. [NEEDS CLARIFICATION: Q1 — a decisão de 2026-09-17 foi
-  "sem tabela nova"; recomendação: tabela dedicada. Ver Open Questions.]
+  `audit_log` para eventos de segurança. (Decisão Q1-A: tabela dedicada.)
 - **FR-026**: O painel de admin MUST identificar o consumo por usuário (nome de usuário e totais),
-  sem dado de reunião. [NEEDS CLARIFICATION: Q3 — nível de identificação; ver Open Questions.]
-- **FR-027**: O custo MUST ser exibido em USD, como informado pelo provedor. [NEEDS
-  CLARIFICATION: Q4 — conversão para BRL e custo equivalente de assinatura; ver Open Questions.]
+  sem dado de reunião. (Decisão Q3-A: agregado por usuário.)
+- **FR-027**: O custo MUST ser exibido em USD, como informado pelo provedor. (Decisão Q4-A: só USD.)
 
 ### Key Entities *(include if feature involves data)*
 
@@ -301,7 +297,7 @@ incorporação duas vezes não duplica nada.
 - **Política de retenção**: prazos em dias para uso e auditoria; 0 = indefinido.
 - **Período de consulta**: mês ou intervalo, interpretado em `APP_TIMEZONE`.
 
-## Open Questions (5, requerem decisão do usuário)
+## Open Questions (5, decididas pelo dono em 2026-11-15: opção A em todas)
 
 **Q1 — Tabela dedicada ou continuar no `audit_log`?**
 - Contexto: em 2026-09-17 o usuário decidiu "só visualizar, sem tabela nova". O plano F6
