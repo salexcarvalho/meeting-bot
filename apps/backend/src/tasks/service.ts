@@ -255,50 +255,71 @@ async function lockOwned(client: PoolClient, ctx: TaskCtx, id: string): Promise<
   return rows[0];
 }
 
+function assigneeChange(current: Current, patch: TaskPatch): Change | null {
+  if (patch.assignee === undefined) return null;
+  const next = assigneeColumns(patch.assignee);
+  const before = { kind: current.assignee_kind, name: current.assignee_name };
+  const after = { kind: next.kind, name: next.name };
+  return same(before, after) ? null : { key: "assignee", column: "assignee_kind", value: next, before, after };
+}
+
+/** SET do UPDATE: uma coluna por campo alterado (o responsável ocupa duas) mais o status e `completed_at`. */
+function updateStatement(changes: Change[], status: TaskStatus | null): { sets: string[]; values: unknown[] } {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  const set = (column: string, value: unknown) => {
+    values.push(value);
+    sets.push(`${column} = $${values.length + 2}`);
+  };
+  for (const c of changes) {
+    const assignee = c.key === "assignee" ? (c.value as { kind: string; name: string | null }) : null;
+    if (assignee) {
+      set("assignee_kind", assignee.kind);
+      set("assignee_name", assignee.name);
+    } else {
+      set(c.column, c.value);
+    }
+  }
+  if (status) {
+    set("status", status);
+    sets.push(status === "concluida" ? "completed_at = now()" : "completed_at = NULL");
+  }
+  return { sets, values };
+}
+
+async function writeChangeHistory(
+  client: PoolClient,
+  ctx: TaskCtx,
+  id: string,
+  changes: Change[],
+  from: string,
+  status: TaskStatus | null,
+): Promise<void> {
+  if (changes.length) {
+    const before = Object.fromEntries(changes.map((c) => [c.key, c.before]));
+    const after = Object.fromEntries(changes.map((c) => [c.key, c.after]));
+    await addTaskHistory(client, id, "edited", before, after, ctx.user.id);
+  }
+  if (status) await addTaskHistory(client, id, "status_changed", { status: from }, { status }, ctx.user.id);
+}
+
 export async function patchTask(ctx: TaskCtx, id: string, patch: TaskPatch): Promise<Task> {
   await withTransaction(async (client) => {
     const current = await lockOwned(client, ctx, id);
     const changes = fieldChanges(current, patch);
     const projectChange = changes.find((c) => c.key === "projectId");
     if (projectChange?.after) await assertProject(client, projectChange.after as string);
-    if (patch.assignee !== undefined) {
-      const next = assigneeColumns(patch.assignee);
-      const before = { kind: current.assignee_kind, name: current.assignee_name };
-      const after = { kind: next.kind, name: next.name };
-      if (!same(before, after)) changes.push({ key: "assignee", column: "assignee_kind", value: next, before, after });
-    }
-    const statusChanged = patch.status !== undefined && patch.status !== current.status;
-    if (!changes.length && !statusChanged) return;
-
-    const sets: string[] = [];
-    const values: unknown[] = [ctx.user.id, id];
-    const set = (column: string, value: unknown) => {
-      values.push(value);
-      sets.push(`${column} = $${values.length}`);
-    };
-    for (const c of changes) {
-      if (c.key === "assignee") {
-        const next = c.value as { kind: string; name: string | null };
-        set("assignee_kind", next.kind);
-        set("assignee_name", next.name);
-      } else {
-        set(c.column, c.value);
-      }
-    }
-    if (statusChanged) {
-      set("status", patch.status);
-      sets.push(patch.status === "concluida" ? "completed_at = now()" : "completed_at = NULL");
-    }
-    await client.query(`UPDATE tasks SET ${sets.join(", ")}, updated_at = now() WHERE owner_id = $1 AND id = $2`, values);
-
-    if (changes.length) {
-      const before = Object.fromEntries(changes.map((c) => [c.key, c.before]));
-      const after = Object.fromEntries(changes.map((c) => [c.key, c.after]));
-      await addTaskHistory(client, id, "edited", before, after, ctx.user.id);
-    }
-    if (statusChanged) {
-      await addTaskHistory(client, id, "status_changed", { status: current.status }, { status: patch.status }, ctx.user.id);
-    }
+    const assignee = assigneeChange(current, patch);
+    if (assignee) changes.push(assignee);
+    const status = patch.status !== undefined && patch.status !== current.status ? patch.status : null;
+    if (!changes.length && !status) return;
+    const { sets, values } = updateStatement(changes, status);
+    await client.query(`UPDATE tasks SET ${sets.join(", ")}, updated_at = now() WHERE owner_id = $1 AND id = $2`, [
+      ctx.user.id,
+      id,
+      ...values,
+    ]);
+    await writeChangeHistory(client, ctx, id, changes, current.status, status);
   });
   return (await getTask(ctx, id))!;
 }

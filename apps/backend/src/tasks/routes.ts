@@ -22,6 +22,9 @@ import {
   TASK_NOT_FOUND,
 } from "./service";
 
+const READ = "tasks.read";
+const MANAGE = "tasks.manage";
+const TASK_PATH = "/tasks/:taskId";
 const NOT_FOUND = { error: TASK_NOT_FOUND };
 const FORBIDDEN = { error: "Você não tem permissão para esta ação." };
 const StatusBody = z.strictObject({ status: z.enum(TASK_STATUSES) });
@@ -34,7 +37,7 @@ const StatusBody = z.strictObject({ status: z.enum(TASK_STATUSES) });
 function taskParamGuard() {
   return async (req: Request, res: Response, next: NextFunction, value: unknown) => {
     const readOnly = req.method === "GET" || req.method === "HEAD";
-    if (!can(req.user, readOnly ? "tasks.read" : "tasks.manage")) return res.status(403).json(FORBIDDEN);
+    if (!can(req.user, readOnly ? READ : MANAGE)) return res.status(403).json(FORBIDDEN);
     const id = String(value);
     if (!z.uuid().safeParse(id).success) return res.status(404).json(NOT_FOUND);
     try {
@@ -72,7 +75,7 @@ function register(router: Router): void {
 
   router.get(
     "/tasks",
-    requirePermission("tasks.read"),
+    requirePermission(READ),
     wrap(async (req, res) => {
       const parsed = TaskQuery.safeParse(req.query);
       if (!parsed.success) {
@@ -89,7 +92,7 @@ function register(router: Router): void {
 
   router.get(
     "/tasks/summary",
-    requirePermission("tasks.read"),
+    requirePermission(READ),
     wrap(async (req, res) => {
       res.json(await taskSummary(await taskContext(req.user!)));
     }),
@@ -97,7 +100,7 @@ function register(router: Router): void {
 
   router.post(
     "/tasks/from-item",
-    requirePermission("tasks.manage"),
+    requirePermission(MANAGE),
     wrap(async (req, res) => {
       const body = parseBody(TaskFromItemInput, req, res);
       if (!body) return;
@@ -111,7 +114,7 @@ function register(router: Router): void {
 
   router.post(
     "/tasks",
-    requirePermission("tasks.manage"),
+    requirePermission(MANAGE),
     wrap(async (req, res) => {
       const body = parseBody(TaskInput, req, res);
       if (!body) return;
@@ -120,15 +123,15 @@ function register(router: Router): void {
   );
 
   router.get(
-    "/tasks/:taskId",
+    TASK_PATH,
     wrap(async (req, res) => {
       res.json(await getTask(await taskContext(req.user!), String(req.params.taskId)));
     }),
   );
 
   router.patch(
-    "/tasks/:taskId",
-    requirePermission("tasks.manage"),
+    TASK_PATH,
+    requirePermission(MANAGE),
     wrap(async (req, res) => {
       const body = parseBody(TaskPatch, req, res);
       if (!body) return;
@@ -137,8 +140,8 @@ function register(router: Router): void {
   );
 
   router.post(
-    "/tasks/:taskId/status",
-    requirePermission("tasks.manage"),
+    `${TASK_PATH}/status`,
+    requirePermission(MANAGE),
     wrap(async (req, res) => {
       const body = parseBody(StatusBody, req, res);
       if (!body) return;
@@ -147,8 +150,8 @@ function register(router: Router): void {
   );
 
   router.delete(
-    "/tasks/:taskId",
-    requirePermission("tasks.manage"),
+    TASK_PATH,
+    requirePermission(MANAGE),
     wrap(async (req, res) => {
       await deleteTask(await taskContext(req.user!), String(req.params.taskId));
       res.status(204).end();
@@ -156,7 +159,7 @@ function register(router: Router): void {
   );
 
   router.get(
-    "/tasks/:taskId/history",
+    `${TASK_PATH}/history`,
     wrap(async (req, res) => {
       res.json({ history: (await getHistory(await taskContext(req.user!), String(req.params.taskId))) ?? [] });
     }),
@@ -165,7 +168,7 @@ function register(router: Router): void {
   // O guarda de /meetings/:id já exige leitura da reunião (GET) antes deste handler.
   router.get(
     "/meetings/:id/tasks",
-    requirePermission("tasks.read"),
+    requirePermission(READ),
     wrap(async (req, res) => {
       res.json({ tasks: await listMeetingTasks(await taskContext(req.user!), String(req.params.id)) });
     }),
