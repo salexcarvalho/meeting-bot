@@ -210,6 +210,16 @@ On the meeting page, the owner clicks **Compartilhar** ("Share"), searches for a
 - **Today screen:** card with overdue, due today, open and proposed pending items to review.
 - Nothing leaves the machine and no AI is called. The migration is additive (`tasks`, `task_history`) and does not create tasks from old meetings; use **Virar tarefa**.
 
+### Searching and asking your meetings
+
+**Search** menu (shortcut `Ctrl+K`). Requires `meetings.read`; transcripts also need `transcripts.read`, and minutes, items and ADRs need `documents.read`.
+
+- **Search:** **hybrid** by default (Portuguese full text, accent- and inflection-insensitive, plus **semantic** search by meaning, fused with RRF). Filters by project, period, content type and mode; each result shows the highlighted snippet and whether it was found by text or semantics. Clicking opens the meeting at the segment and time (`?seg=`, `?t=`, `?item=`, `?adr=`) with the audio cued but not playing. Rejected items never appear; proposed items and ADRs appear flagged.
+- **Ask:** the **Ask** tab (local RAG). The answer uses only snippets from meetings you can read, each claim carries a clickable citation checked against the snippet, and without evidence the answer is **"I found no record"**. Items and ADRs not yet approved are labeled "proposed by the AI". The conversation history stays in the browser only. The chat **always runs on the local Ollama** (never OpenRouter or a subscription), queues behind the live analysis and, during a live meeting, uses a smaller context and warns it may take longer.
+- **Privacy:** permission is applied inside the query itself (owner or share); revoking a share removes the meeting from the results immediately; administrators do not read other people's content; search text, questions, answers and snippets never reach logs or the audit trail. Usage shows in **AI usage** (purposes "Search (embeddings)" and "Chat on meetings").
+- **Index:** pgvector in the same Postgres; embeddings (`bge-m3`) run on Ollama **on CPU** (0 MiB of VRAM) and wait while a recording or call is in progress; text search works even with Ollama down. Old meetings are indexed in the background (newest first, resumable after a restart). **Settings > Search** shows the state and **Reindex my meetings**; from the terminal: `docker compose exec backend npm run search:reindex`.
+- **Test server (VPS):** text search only; semantic search and chat are off (`SEARCH_SEMANTIC=off`).
+
 ### Upload and Agent Mode
 
 In **Reuniões** ("Meetings"):
@@ -276,6 +286,12 @@ Each user has their own settings:
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper on the worker |
 | `HF_TOKEN` | empty | Speaker diarization |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | Local LLM |
+| `SEARCH_ENABLED` / `SEARCH_SEMANTIC` | `true` / `auto` | Turns search on; `auto`/`on` require pgvector (boot fails with a clear message without it), `off` = text only |
+| `EMBED_MODEL` / `EMBED_DIM` | `bge-m3` / `1024` | Embedding model (Ollama, on CPU) and the `vector` column dimension |
+| `EMBED_KEEP_ALIVE` / `EMBED_BATCH` | `10m` / `16` | How long the model stays in RAM and texts per request |
+| `SEARCH_INDEX_DEBOUNCE_SECONDS` | 20 | Groups nearby edits before reindexing the meeting |
+| `CHAT_MIN_SIMILARITY` | `0.45` | Minimum relevance for the chat to answer (below it: "no record found") |
+| `CHAT_MAX_CONTEXT_TOKENS` / `CHAT_MAX_CONTEXT_TOKENS_LIVE` | 3500 / 2000 | Chat context (normal / with a live meeting) |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Live extraction every N s of new speech… |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | …or at most every M s |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Running summary and deduplication |
@@ -395,6 +411,23 @@ Don't expose port 3000 without TLS. With the included Caddy:
 # .env: DOMAIN=ata.suaempresa.com.br, COOKIE_SECURE=true, TRUST_PROXY=1
 docker compose --profile https up -d
 ```
+
+### Upgrading an existing installation for search (pgvector)
+
+Postgres now uses its own image (`docker/postgres`: `postgres:16-alpine` with pgvector compiled in). It is the **same major version and the same Alpine base**, so the `pgdata` volume opens as is: no `pg_upgrade`, no dump/restore and no `REINDEX`. Do it with the backend **idle** (nothing recording or processing):
+
+```bash
+export DOCKER_CONTEXT=default
+mkdir -p ~/backups && docker compose exec postgres pg_dump -U meetingbot -Fc meetingbot > ~/backups/meetingbot-$(date +%F).dump
+docker compose build postgres                       # image with pgvector
+docker compose up -d postgres ollama                # recreates both with the existing volumes
+docker compose exec ollama ollama pull bge-m3       # one-time download of the embedding model
+docker compose up -d --build backend                # the migration creates the extension and tables; indexing runs in the background
+```
+
+- The migration is idempotent (`CREATE EXTENSION IF NOT EXISTS vector`) and **fails with a clear message** if Postgres is not yet the new image (or use `SEARCH_SEMANTIC=off` for text only).
+- `OLLAMA_MAX_LOADED_MODELS` becomes 2 (CPU embedding and GPU LLM loaded together).
+- Restoring the dump needs Postgres of the same major version (16). **Rollback:** `SEARCH_ENABLED=false` in `.env` and `docker compose up -d backend`; to go back to the old image, run `DROP EXTENSION vector CASCADE;` before switching to `postgres:16-alpine` (the `search_*` tables are rebuildable).
 
 ### Test Server (VPS with Dokploy)
 

@@ -14,6 +14,7 @@
     "user:passwd": "node dist/cli/user.js passwd",
     "user:delete": "node dist/cli/user.js delete",
     "user:list": "node dist/cli/user.js list",
+    "search:reindex": "node dist/cli/reindex.js",
     "test:e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {

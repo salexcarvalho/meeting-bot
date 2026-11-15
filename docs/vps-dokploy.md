@@ -20,6 +20,7 @@ desta máquina para começar.
 | Gravação | assistente na chamada + "Gravar agora" no PC | só o assistente na chamada (servidor não tem desktop) |
 | Alertas no desktop | sim | não |
 | Acesso | `127.0.0.1:3000` | domínio com HTTPS pelo Traefik do Dokploy |
+| Busca nas reuniões | híbrida (texto + semântica) e chat local | **só texto** (`SEARCH_SEMANTIC=off`): sem Ollama não há onde calcular embeddings, e o chat fica desligado |
 
 O assistente entra nas reuniões a partir do servidor: funciona mesmo com o computador desligado.
 
@@ -74,8 +75,15 @@ O script:
 
 As senhas dos usuários vão junto (hash scrypt): o login é o mesmo daqui.
 
+## Busca no servidor
+
+- A imagem do `postgres` é a mesma da máquina local (`docker/postgres`, `postgres:16-alpine` com pgvector); o Dokploy a constrói pelo `build:` do `docker-compose.vps.yml`.
+- Com `SEARCH_SEMANTIC=off` (no `.env.vps.example`) o boot não exige o pgvector e o índice fica só em texto; reuniões novas e antigas são indexadas em segundo plano, sem Ollama.
+- **Atualizar um servidor que já tem dados** (mesma major 16 e mesma base Alpine: o volume `pgdata` abre como está, sem dump/restore): 1) backup `pg_dump` do banco do servidor; 2) com o backend ocioso, publicar a nova versão no Dokploy (reconstrói o `postgres` e o `backend`); 3) conferir que a busca de texto responde e que **Configurações > Busca** mostra as reuniões `somente texto`. Rollback: `SEARCH_ENABLED=false` e redeploy.
+
 ## Limites conhecidos
 
+- Sem busca semântica e sem chat (só texto), pelo mesmo motivo de não haver Ollama.
 - Sem transcrição ao vivo e sem itens ao vivo: eles aparecem depois do passe final.
 - "Gravar agora" fica indisponível no servidor: a rota recusa com uma mensagem explicando, porque
   não há desktop para capturar áudio.

@@ -8,7 +8,7 @@ ambiente do usuário sem a confirmação dele e com o backend ocioso** (sem reun
 
 - MVP da spec 001 rodando e ao menos uma reunião concluída (de preferência 3 ou mais, de assuntos diferentes).
 - Docker Engine nativo (`docker --context default`); `nvidia-smi` funcionando.
-- Branch `feat/003-busca-chat` implementada (tarefas T001–T061).
+- Branch `feat/003-busca-chat` implementada e mesclada (tarefas T001–T061).
 
 ## 1. Migração da infraestrutura (uma vez)
 
@@ -23,8 +23,10 @@ docker --context default compose exec ollama ollama pull bge-m3   # download ini
 docker --context default compose up -d --build backend
 ```
 
-Esperado: `vector` e `unaccent` listadas; backend sobe sem erro; log do backend mostra o worker de busca
-iniciado e o backfill enfileirado.
+Esperado: `vector` e `unaccent` listadas; backend sobe sem erro (se o Postgres ainda for a imagem antiga, o boot falha com a
+mensagem "A extensão pgvector não está disponível…"); o backfill roda em segundo plano (Configurações > Busca).
+A migração é idempotente (`CREATE EXTENSION IF NOT EXISTS vector`) e o `pg_dump` do passo 0 tem que ser da mesma major (16) para
+restaurar.
 
 Rollback: `SEARCH_ENABLED=false` no `.env` e `docker compose up -d backend`. Para voltar a imagem do Postgres:
 `DROP EXTENSION vector CASCADE;` e voltar `image: postgres:16-alpine`.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, LogOut, Pencil, RefreshCw, Share2, Sparkles, Square, Trash2 } from "lucide-react";
 import {
   IDLE_STATUSES,
@@ -12,11 +12,12 @@ import {
   type MeetingDetail,
   type MeetingSummary,
   type RecordingEvent,
+  type SearchIndexStatusValue,
   type Segment,
   type Task,
 } from "@meeting-bot/contracts";
-import { api, ApiError, errorMessage, ignoreError } from "../api";
-import { AdrList } from "../components/AdrList";
+import { api, ApiError, errorMessage, ignoreError, searchStatus } from "../api";
+import { AdrList, type AdrFocus } from "../components/AdrList";
 import { AtaView } from "../components/AtaView";
 import { AudioPlayers, type AudioPlayersHandle } from "../components/AudioPlayers";
 import { ItemsBoard, type ItemFocus } from "../components/ItemsBoard";
@@ -47,6 +48,7 @@ import { SkeletonLines } from "../components/ui";
 import { formatDateTime, formatTime, minutesBetween } from "../format";
 import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
+import { INDEX_BADGES } from "../searchUi";
 import {
   asrLabel,
   EXTERNAL_ASR_WARNING,
@@ -115,6 +117,20 @@ function waitingText(m: MeetingSummary): string | undefined {
   return WAITING_TEXT[m.status];
 }
 
+/** Segmento indicado pela busca: o `seg` se ainda existir; senão, o mais próximo de `t` (segundos). */
+function resolveSegment(segments: Segment[], seg: string | null, t: number | null): Segment | null {
+  const byId = seg === null ? undefined : segments.find((s) => s.id === Number(seg));
+  if (byId) return byId;
+  if (t === null || !segments.length) return null;
+  return segments.reduce((a, b) => (Math.abs(b.start - t) < Math.abs(a.start - t) ? b : a));
+}
+
+function secondsParam(value: string | null): number | null {
+  if (value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function Reuniao() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -146,6 +162,16 @@ export function Reuniao() {
   const [newTask, setNewTask] = useState(false);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [ataVersion, setAtaVersion] = useState(0);
+  const [indexStatus, setIndexStatus] = useState<SearchIndexStatusValue | null>(null);
+  const [adrFocus, setAdrFocus] = useState<AdrFocus | null>(null);
+  const [params] = useSearchParams();
+  const focusSeg = params.get("seg");
+  const focusT = params.get("t");
+  const focusItem = params.get("item");
+  const focusAdr = params.get("adr");
+  const appliedSeg = useRef("");
+  const appliedItem = useRef("");
+  const appliedAdr = useRef("");
   const { projects } = useProjects();
   const players = useRef<AudioPlayersHandle>(null);
 
@@ -168,6 +194,8 @@ export function Reuniao() {
     api<{ items: Item[] }>(`/meetings/${id}/items`).then((r) => setItems(r.items)).catch(() => {});
     api<{ adrs: Adr[] }>(`/meetings/${id}/adrs`).then((r) => setAdrs(r.adrs)).catch(() => {});
     setAtaVersion((v) => v + 1);
+    // 404 = reunião fora do índice ou busca desligada: sem selo
+    searchStatus(id).then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api<MeetingDetail>(`/meetings/${id}`)
       .then((d) => {
         setDetail(d);
@@ -183,8 +211,41 @@ export function Reuniao() {
     setTasks([]);
     setRecording(null);
     setProcessing(null);
+    setIndexStatus(null);
     load();
   }, [load]);
+
+  // Vindo da busca (?seg=&t=): destaca o segmento e posiciona o áudio, sem tocar.
+  useEffect(() => {
+    if (!detail || detail.meeting.id !== id || (focusSeg === null && focusT === null)) return;
+    const key = `${id}|${focusSeg}|${focusT}`;
+    if (appliedSeg.current === key) return;
+    const at = secondsParam(focusT);
+    const segment = resolveSegment(detail.segments, focusSeg, at);
+    if (!segment) return;
+    appliedSeg.current = key;
+    setTab("transcricao");
+    setHighlight(new Set([segment.id]));
+    window.setTimeout(() => players.current?.cue(segment.channel, at ?? segment.start), 150);
+  }, [detail, id, focusSeg, focusT]);
+
+  // Vindo da busca (?item=): abre a aba Itens (ao vivo, o quadro fica ao lado da transcrição) e destaca o item.
+  useEffect(() => {
+    if (!focusItem || !detail || detail.meeting.id !== id || !items.some((i) => i.id === focusItem)) return;
+    if (appliedItem.current === `${id}|${focusItem}`) return;
+    appliedItem.current = `${id}|${focusItem}`;
+    if (!LIVE_STATUSES.includes(detail.meeting.status)) setTab("itens");
+    setItemFocus({ id: focusItem, seq: Date.now() });
+  }, [detail, id, items, focusItem]);
+
+  // Vindo da busca (?adr=): abre a aba ADRs e destaca o ADR.
+  useEffect(() => {
+    if (!focusAdr || !detail || detail.meeting.id !== id || !adrs.some((a) => a.id === focusAdr)) return;
+    if (appliedAdr.current === `${id}|${focusAdr}`) return;
+    appliedAdr.current = `${id}|${focusAdr}`;
+    setTab("adrs");
+    setAdrFocus({ id: focusAdr, seq: Date.now() });
+  }, [detail, id, adrs, focusAdr]);
   useEffect(() => live.subscribe({ topic: "meeting", meetingId: id }), [id]);
   // Reunião compartilhada comigo: abrir marca como vista (some o selo "Nova"). Nada a fazer para o dono.
   const receivedShare = detail !== null && detail.access !== "owner";
@@ -272,6 +333,9 @@ export function Reuniao() {
           if (msg.meetingId === id) {
             setDetail((d) => (d ? { ...d, meeting: { ...d.meeting, botProgress: msg.progress } } : d));
           }
+          break;
+        case "search_index":
+          if (msg.meetingId === id) setIndexStatus(msg.status);
           break;
         case "gpu":
           setGpu({ utilization: msg.utilization, memoryUsedMb: msg.memoryUsedMb, memoryTotalMb: msg.memoryTotalMb, name: msg.name });
@@ -448,6 +512,14 @@ export function Reuniao() {
               {m.createdBy && <span>por {m.createdBy}</span>}
               {detail.access !== "owner" && <ShareBadge access={detail.access} ownerName={detail.ownerName} />}
               {m.botDisplayName && <span title="Nome do assistente na reunião">assistente: {m.botDisplayName}</span>}
+              {indexStatus && (
+                <span
+                  className={`badge ${INDEX_BADGES[indexStatus].tone}`}
+                  title={INDEX_BADGES[indexStatus].hint}
+                >
+                  {INDEX_BADGES[indexStatus].label}
+                </span>
+              )}
             </div>
             {m.attendees.length > 0 && (
               <details className="small" style={{ marginTop: 6 }}>
@@ -600,6 +672,7 @@ export function Reuniao() {
                 onChange={upsertItem}
                 onEvidence={showEvidence}
                 onGenerateAdr={onGenerateAdr}
+                focus={itemFocus}
                 tasksByItem={tasksByItem}
                 onMakeTask={canMakeTask ? setTaskItem : undefined}
                 onTaskResult={onTaskResult}
@@ -667,6 +740,7 @@ export function Reuniao() {
             adrs={adrs}
             items={items}
             readOnly={!writable}
+            focus={adrFocus}
             onChange={upsertAdr}
             onShowItem={(itemId) => {
               setTab("itens");

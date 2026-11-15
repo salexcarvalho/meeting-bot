@@ -9,6 +9,7 @@ import { toMeetingSummary } from "../meetings/summary";
 import { getSelf } from "../users/repo";
 import { parseBody, wrap } from "../routes";
 import { getSegments, getSpeakers, renameSpeaker, speakerNameResolver } from "../repo/transcripts";
+import { markDirtyLater } from "../search/dirty";
 import { renderAta, renderResumo, type AtaAnalysis, type AtaInput } from "./render";
 
 const SpeakerRename = z.object({ displayName: z.string().trim().min(1, "Informe o nome.").max(80) });
@@ -97,6 +98,7 @@ function register(router: Router): void {
       const speaker = await renameSpeaker(meetingId, String(req.params.label), body.displayName);
       if (!speaker) return res.status(404).json({ error: "Falante não encontrado nesta reunião." });
       emitMeetingChanged(meetingId);
+      markDirtyLater(meetingId);
       hub.publishToMeeting(meetingId, { type: "transcript_replaced", meetingId });
       res.json({ label: speaker.label, displayName: speaker.displayName });
     }),

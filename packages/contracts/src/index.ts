@@ -4,3 +4,4 @@ export * from "./llm";
 export * from "./platform";
 export * from "./tasks";
 export * from "./usage";
+export * from "./search";

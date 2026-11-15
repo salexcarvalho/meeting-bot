@@ -73,6 +73,8 @@ export type LiveServerMessage =
   | ({ type: "gpu" } & GpuStats)
   | { type: "host_agent"; online: boolean; lastSeenAt: string | null }
   | { type: "bot"; meetingId: string; progress: BotProgress | null }
+  /** estado do índice de busca da reunião; sem conteúdo de trecho */
+  | { type: "search_index"; meetingId: string; status: "pending" | "indexing" | "text_ready" | "indexed" | "failed" }
   | { type: "pong" };
 
 // WebSocket host-agent → backend (contracts/ws-audio.md)

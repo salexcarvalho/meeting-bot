@@ -210,6 +210,16 @@ Menú **Minhas pendências** (`tasks.read`/`tasks.manage`; el rol Lector no las 
 - **Pantalla Hoy:** tarjeta con atrasadas, vencen hoy, abiertas y pendientes propuestos por revisar.
 - Nada sale de la máquina y no se llama a ninguna IA. La migración es aditiva (`tasks`, `task_history`) y no crea tareas de reuniones antiguas; usa **Virar tarefa**.
 
+### Buscar y preguntar a las reuniones
+
+Menú **Búsqueda** (atajo `Ctrl+K`). Exige `meetings.read`; la transcripción también exige `transcripts.read`, y acta, ítems y ADR exigen `documents.read`.
+
+- **Buscar:** modo **híbrido** por defecto (texto en portugués, sin acento ni flexión, más búsqueda **semántica** por sentido, fusionadas con RRF). Filtros por proyecto, período, tipo de contenido y modo; cada resultado muestra el fragmento resaltado y si se halló por texto o por semántica. Al hacer clic se abre la reunión en el segmento y la hora (`?seg=`, `?t=`, `?item=`, `?adr=`), con el audio posicionado sin reproducir. Un ítem rechazado nunca aparece; un ítem o ADR propuesto aparece señalado.
+- **Preguntar:** pestaña **Preguntar** (RAG local). La respuesta usa solo fragmentos de reuniones que usted puede leer, cada afirmación trae una cita clicable verificada contra el fragmento y, sin evidencia, la respuesta es **"No encontré registro"**. Los ítems y ADR aún no aprobados se rotulan "propuesto por la IA". El historial de la conversación queda solo en el navegador. El chat **siempre corre en el Ollama local** (nunca OpenRouter ni suscripción), entra en la cola detrás del análisis en vivo y, con una reunión en vivo, usa un contexto menor y avisa que puede tardar.
+- **Privacidad:** el permiso se aplica dentro de la propia consulta (dueño o compartición); revocar una compartición saca la reunión de los resultados al instante; el administrador no lee contenido ajeno; el texto de búsqueda, la pregunta, la respuesta y los fragmentos nunca van a logs ni a la auditoría. El consumo aparece en **Consumo de IA** (finalidades "Búsqueda (embeddings)" y "Chat sobre reuniones").
+- **Índice:** pgvector en el mismo Postgres; los embeddings (`bge-m3`) corren en Ollama **en CPU** (0 MiB de VRAM) y esperan mientras haya grabación o llamada; la búsqueda de texto funciona incluso con Ollama caído. Las reuniones antiguas se indexan en segundo plano (de la más reciente a la más antigua, reanudable tras un reinicio). **Configuración > Búsqueda** muestra el estado y **Reindexar mis reuniones**; en la terminal: `docker compose exec backend npm run search:reindex`.
+- **Servidor de prueba (VPS):** solo búsqueda de texto; semántica y chat quedan desactivados (`SEARCH_SEMANTIC=off`).
+
 ### Carga y Modo Agente
 
 En **Reuniões** ("Reuniones"):
@@ -272,6 +282,12 @@ Cada usuario tiene su propia configuración:
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper en el worker |
 | `HF_TOKEN` | vacío | Separación de hablantes |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | LLM local |
+| `SEARCH_ENABLED` / `SEARCH_SEMANTIC` | `true` / `auto` | Activa la búsqueda; `auto`/`on` exigen pgvector (el arranque falla con mensaje claro sin él), `off` = solo texto |
+| `EMBED_MODEL` / `EMBED_DIM` | `bge-m3` / `1024` | Modelo de embedding (Ollama, en CPU) y dimensión de la columna `vector` |
+| `EMBED_KEEP_ALIVE` / `EMBED_BATCH` | `10m` / `16` | Permanencia del modelo en RAM y textos por solicitud |
+| `SEARCH_INDEX_DEBOUNCE_SECONDS` | 20 | Agrupa ediciones cercanas antes de reindexar la reunión |
+| `CHAT_MIN_SIMILARITY` | `0.45` | Relevancia mínima para que el chat responda (por debajo: "no encontré registro") |
+| `CHAT_MAX_CONTEXT_TOKENS` / `CHAT_MAX_CONTEXT_TOKENS_LIVE` | 3500 / 2000 | Contexto del chat (normal / con reunión en vivo) |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Extracción en vivo cada N s de habla nueva… |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | …o como máximo cada M s |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Resumen actual y deduplicación |
@@ -390,6 +406,23 @@ No expongas el puerto 3000 sin TLS. Con el Caddy incluido:
 # .env: DOMAIN=ata.suaempresa.com.br, COOKIE_SECURE=true, TRUST_PROXY=1
 docker compose --profile https up -d
 ```
+
+### Actualizar una instalación existente para la búsqueda (pgvector)
+
+Postgres pasa a usar una imagen propia (`docker/postgres`: `postgres:16-alpine` con pgvector compilado). Es la **misma versión major y la misma base Alpine**, así que el volumen `pgdata` abre tal cual: sin `pg_upgrade`, sin dump/restore y sin `REINDEX`. Hágalo con el backend **ocioso** (nada grabando ni procesando):
+
+```bash
+export DOCKER_CONTEXT=default
+mkdir -p ~/backups && docker compose exec postgres pg_dump -U meetingbot -Fc meetingbot > ~/backups/meetingbot-$(date +%F).dump
+docker compose build postgres                       # imagen con pgvector
+docker compose up -d postgres ollama                # recrea ambos con los volúmenes existentes
+docker compose exec ollama ollama pull bge-m3       # descarga inicial del modelo de embedding
+docker compose up -d --build backend                # la migración crea la extensión y las tablas; la indexación corre en segundo plano
+```
+
+- La migración es idempotente (`CREATE EXTENSION IF NOT EXISTS vector`) y **falla con un mensaje claro** si Postgres aún no es la imagen nueva (o use `SEARCH_SEMANTIC=off` para solo texto).
+- `OLLAMA_MAX_LOADED_MODELS` pasa a 2 (embedding en CPU y LLM en la GPU cargados a la vez).
+- Restaurar el dump exige Postgres de la misma versión major (16). **Rollback:** `SEARCH_ENABLED=false` en el `.env` y `docker compose up -d backend`; para volver a la imagen anterior, `DROP EXTENSION vector CASCADE;` antes de cambiar a `postgres:16-alpine` (las tablas `search_*` se reconstruyen).
 
 ### Servidor de prueba (VPS con Dokploy)
 

@@ -21,6 +21,8 @@ services:
       # atrás do proxy do Dokploy: cookie seguro e IP real
       COOKIE_SECURE: "true"
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      # sem Ollama no servidor: um .env antigo sem a chave não pode ligar embeddings nem o chat
+      SEARCH_SEMANTIC: ${SEARCH_SEMANTIC:-off}
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,8 +35,10 @@ services:
     stop_grace_period: 40s
     restart: unless-stopped
 
+  # postgres:16-alpine + pgvector (docker/postgres/Dockerfile): mesma major e mesma libc, o pgdata existente abre sem migração de dados.
   postgres:
-    image: postgres:16-alpine
+    build: ./docker/postgres
+    image: meeting-bot-postgres:16-pgvector
     environment:
       POSTGRES_DB: meetingbot
       POSTGRES_USER: meetingbot

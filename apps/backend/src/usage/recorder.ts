@@ -41,7 +41,7 @@ const MODEL_MAX = 120;
 const OWNER_TTL_MS = 60_000;
 const MAX_SMALLINT = 32_767;
 const PURPOSES_BY_CATEGORY: Record<UsageCategoryValue, ReadonlySet<UsagePurposeValue>> = {
-  llm: new Set<UsagePurposeValue>(["ata", "adr", "itens", "resumo", "ao_vivo", "outro"]),
+  llm: new Set<UsagePurposeValue>(["ata", "adr", "itens", "resumo", "ao_vivo", "busca", "chat", "outro"]),
   asr: new Set<UsagePurposeValue>(["asr_final", "asr_ao_vivo", "outro"]),
 };
 

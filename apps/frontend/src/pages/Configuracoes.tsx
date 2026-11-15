@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { MeResponse } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
+import { SearchStatusCard } from "../components/SearchStatusCard";
 import { PageHeader, SkeletonLines } from "../components/ui";
 import { AgentTab } from "./settings/AgentTab";
 import { ConsumoTab } from "./settings/ConsumoTab";
@@ -14,6 +15,7 @@ const TABS = [
   { key: "agente", label: "Meu agente" },
   { key: "reunioes", label: "Reuniões" },
   { key: "documentacao", label: "Documentação" },
+  { key: "busca", label: "Busca" },
   { key: "consumo", label: "Consumo de IA" },
   { key: "seguranca", label: "Segurança" },
 ] as const;
@@ -61,6 +63,7 @@ export function Configuracoes() {
         {me && tab === "agente" && <AgentTab me={me} setMe={setMe} />}
         {me && tab === "reunioes" && <MeetingsTab me={me} setMe={setMe} />}
         {me && tab === "documentacao" && <DocumentationTab me={me} setMe={setMe} />}
+        {me && tab === "busca" && <SearchStatusCard />}
         {me && tab === "consumo" && <ConsumoTab />}
         {me && tab === "seguranca" && <SecurityTab />}
       </div>

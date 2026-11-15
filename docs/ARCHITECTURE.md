@@ -28,9 +28,9 @@ data-model.md, contracts/).
 | Serviço | Imagem | Papel |
 |---|---|---|
 | `backend` | build de `apps/backend/Dockerfile` sobre `mcr.microsoft.com/playwright:v1.63.0-noble` | API, UI, WebSockets, agendador, agente, ata, Modo Agente |
-| `postgres` | `postgres:16-alpine` | persistência (`pgdata`) |
+| `postgres` | build de `docker/postgres` (`meeting-bot-postgres:16-pgvector`: `postgres:16-alpine` + pgvector 0.8.7) | persistência (`pgdata`), busca de texto e vetorial |
 | `worker-gpu` | build de `apps/worker-gpu` sobre `nvidia/cuda:12.8.1-base` | `/transcribe/chunk` (ao vivo) e `/jobs/transcribe` (passe final + diarização) |
-| `ollama` | `ollama/ollama:0.32.14` | LLM local (`qwen3.5:4b`) |
+| `ollama` | `ollama/ollama:0.32.14` | LLM local (`qwen3.5:4b`, GPU) e embeddings (`bge-m3`, CPU); `OLLAMA_MAX_LOADED_MODELS=2` |
 | `caddy` | `caddy:2-alpine` (profile `https`) | TLS quando exposto em rede |
 
 Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama`, `pgdata`.
@@ -84,6 +84,13 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
    - É renderizada na leitura (`ata/render.ts`) a partir da narrativa e do estado atual dos itens.
    - O resumo para enviar (`GET /meetings/:id/resumo`, `renderResumo`) sai dos mesmos dados, só com itens aprovados.
    - Rejeitados são omitidos e propostos aparecem marcados.
+
+6. **Busca e chat** (`apps/backend/src/search/`, specs/003)
+   - Índice: `search_chunks` (trechos de transcrição `final` em janelas de ~180 palavras, narrativa da ata, itens, ADRs e metadados) e `search_index_state` (fila durável, um estado por reunião), no mesmo Postgres. Texto: `tsvector` com a configuração `pt_unaccent`; vetor: `vector(1024)` com HNSW parcial.
+   - Indexação em duas fases (`indexer.ts`, `worker.ts`): **texto** (só banco, a qualquer momento) e **vetores** (`bge-m3` no Ollama com `num_gpu: 0`, 0 MiB de VRAM, RAM extra < 2,5 GB). O worker pega uma reunião por vez (alteração mais recente primeiro, depois a reunião mais recente), espera o debounce (`SEARCH_INDEX_DEBOUNCE_SECONDS`), **não calcula embeddings com reunião em `recording`/`stopping`/`joining`/`waiting_admission`/`in_call`**, usa hash do conteúdo mais o modelo para só recalcular o que mudou, espera 30 s, 2 min, 10 min, 1 h e 6 h entre falhas e marca `failed` na 5ª. No boot, `indexing` volta a `pending`; o backfill das reuniões antigas é o seed da migração (mais recente primeiro, retomável). Gatilhos: fim do pipeline e dos ADRs, passe final (a invalidação dos trechos de transcrição entra na mesma transação de `replaceWithFinal`), itens, ADRs, falantes, título, projeto.
+   - Consulta (`query.ts`): léxica (`websearch_to_tsquery`, AND com reserva em OR) e vetorial (`hnsw.iterative_scan = relaxed_order`), fundidas por RRF (k = 60). **A permissão é aplicada na consulta**: `visibleMeetingsSql` + tipos permitidos pelo papel + item/ADR rejeitado fora, antes do `LIMIT`; o índice não guarda dono, e a hidratação do resultado reaplica a permissão. Sem Ollama, pgvector ou modelo, a busca cai para texto e informa o motivo.
+   - Chat (`chat/`): recupera pela mesma consulta, descarta o que não passa de `CHAT_MIN_SIMILARITY` (ou de acerto léxico estrito), monta o prompt com trechos delimitados como dados, chama o **LLM local** pela fila única (`generate("post", …, "local")`, atrás do ao vivo, `num_ctx` 4096 com reunião ao vivo, senão 8192), e **valida** cada citação (`ref` existente, `quote` literal conferida); sem citação válida, "não encontrei". Histórico só no cliente.
+   - Consumo: embeddings (`busca`) e chat (`chat`) entram em `ai_usage_logs` (provedor `ollama`), sem conteúdo.
 
 O detalhamento do agente arquiteto (prompts, janelas, validação, deduplicação, schemas e onde alterar)
 está em [`agente-arquiteto.md`](agente-arquiteto.md).

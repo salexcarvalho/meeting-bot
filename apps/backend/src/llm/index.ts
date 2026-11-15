@@ -103,6 +103,7 @@ function recordGeneration<T>(req: GenerateRequest<T>, choice: LlmChoice, outcome
     provider: identity.provider,
     model: usage.model ?? identity.model,
     meetingId: req.meetingId ?? null,
+    userId: req.meetingId ? null : (req.userId ?? null),
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     audioSeconds: null,

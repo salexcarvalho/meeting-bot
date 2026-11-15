@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 // E2E contra o backend real + Postgres descartável (scripts/e2e.mjs sobe tudo e define E2E_BASE_URL).
 export default defineConfig({
   testDir: "e2e",
+  // o spec do chat precisa do Ollama de mentira (E2E_FAKE_OLLAMA=1, scripts/e2e.mjs); sem ele não entra na lista
+  testIgnore: process.env.E2E_FAKE_OLLAMA ? [] : ["**/chat-busca.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

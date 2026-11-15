@@ -146,6 +146,17 @@ README.md README.en.md README.es.md CHANGELOG.md CLAUDE.md
 poucos e pequenos (hooks `markDirty` e uma invalidação em `replaceWithFinal`). Nenhum container novo; a única
 mudança de infraestrutura é a imagem do Postgres e um parâmetro do Ollama.
 
+## Decisões do dono (registro da T066)
+
+Em 2026-11-15 o dono aceitou a **opção A** de Q1–Q5: chat só local (Q1), conversa efêmera no navegador (Q2), VPS só com busca de texto (Q3), itens propostos servem de fonte rotulados (Q4) e chat permitido com reunião ao vivo, atrás da análise ao vivo (Q5). Com isso **nenhuma emenda constitucional é necessária** (a exceção da 1.4.0 não se estende ao chat). Também autorizou: trocar a imagem do Postgres pela própria com pgvector (`docker/postgres`) mantendo a major 16 e a base Alpine, `OLLAMA_MAX_LOADED_MODELS=2` e a migração com `CREATE EXTENSION vector` que falha com mensagem clara se a extensão não existir (`SEARCH_SEMANTIC=off` ou `SEARCH_ENABLED=false` para rodar só com texto).
+
+Desvios do plano original registrados na implementação:
+
+- **Extensão ausente:** o `data-model.md` previa pular a parte vetorial; a decisão do dono é falhar com mensagem clara (evita subir o backend novo sobre a imagem antiga sem perceber). Quem quer só texto usa `SEARCH_SEMANTIC=off` (FR-036 continua valendo nesse modo).
+- **Fila:** o debounce usa `dirty_at` no banco (sem mapa de timers em memória), o que sobrevive a reinício.
+- **Uso de IA:** as finalidades `busca` (embeddings) e `chat` entram em `ai_usage_logs` (a restrição `ai_usage_logs_purpose_check` é recriada, idempotente) e no painel da 004.
+- **T006, T045, T055, T069** (medições com o Ollama real e reunião real) dependem de `ollama pull bge-m3` e de uma reunião real, que ficam para o dono; os valores sintéticos e de carga estão em `docs/analise/agente-local.md` §15.
+
 ## Migração e plano de rollout
 
 1. Implementar e testar tudo com o Postgres descartável (imagem própria). Nada toca o ambiente do usuário.

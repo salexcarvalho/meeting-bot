@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ensurePostgresImage, PG_TEST_IMAGE } from "./pg-image.mjs";
 
 const NAME = "meeting-bot-e2edb";
 const DB_PORT = process.env.E2E_DB_PORT || "55434";
@@ -19,6 +20,12 @@ const stopDb = () => {
     // já removido
   }
 };
+
+const fakeOllamaPort = process.env.E2E_FAKE_OLLAMA ? process.env.E2E_OLLAMA_PORT || "55435" : "";
+// processo à parte: o spawnSync do Playwright bloqueia o laço de eventos deste
+const fakeOllama = fakeOllamaPort
+  ? spawn(process.execPath, [path.join(import.meta.dirname, "fake-ollama.mjs"), fakeOllamaPort, "bge-m3", process.env.OLLAMA_MODEL || "qwen3.5:4b"], { stdio: "ignore" })
+  : null;
 
 const work = mkdtempSync(path.join(tmpdir(), "agente-e2e-"));
 // pactl falso: o bot falha na hora em vez de criar sinks e abrir Chromium no desktop.
@@ -35,7 +42,9 @@ const env = {
   PUBLIC_DIR: path.resolve(root, "../frontend/dist"),
   PORT: APP_PORT,
   WORKER_URL: "http://127.0.0.1:9",
-  OLLAMA_URL: "http://127.0.0.1:9",
+  // Com E2E_FAKE_OLLAMA=1 um Ollama de mentira atende embeddings e chat (só para o spec do chat); senão fica fora do ar.
+  OLLAMA_URL: fakeOllamaPort ? `http://127.0.0.1:${fakeOllamaPort}` : "http://127.0.0.1:9",
+  SEARCH_INDEX_DEBOUNCE_SECONDS: "0",
   LOCAL_ONLY: "true",
   ALLOW_EXTERNAL_ASR: "false",
   ASR_PROVIDER: "local",
@@ -59,10 +68,11 @@ console.log("[e2e] buildando o frontend…");
 execFileSync("npm", ["run", "build", "-w", "@meeting-bot/frontend"], { cwd: path.resolve(root, "../.."), stdio: "inherit" });
 
 stopDb();
+ensurePostgresImage(docker);
 docker([
   "run", "--rm", "-d", "--name", NAME,
   "-e", "POSTGRES_PASSWORD=teste", "-e", "POSTGRES_USER=teste", "-e", "POSTGRES_DB=agente_e2e",
-  "-p", `127.0.0.1:${DB_PORT}:5432`, "--tmpfs", "/var/lib/postgresql/data", "postgres:16-alpine",
+  "-p", `127.0.0.1:${DB_PORT}:5432`, "--tmpfs", "/var/lib/postgresql/data", PG_TEST_IMAGE,
 ]);
 
 let server = null;
@@ -119,6 +129,7 @@ try {
   else console.log(`\nbackend: ${logs.join("").split("\n").filter((l) => l.includes("[bot ")).slice(-8).join("\n")}`);
 } finally {
   server?.kill("SIGTERM");
+  fakeOllama?.kill("SIGTERM");
   stopDb();
   if (code === 0) rmSync(work, { recursive: true, force: true });
   else console.log(`artefatos do E2E em ${work}`);

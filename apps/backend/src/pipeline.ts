@@ -3,6 +3,7 @@ import { EXTERNAL_ASR_ID, providerLabel, transcribeFileExternal } from "./asr/op
 import { runTranscriptionJob, type JobChannelResult, type JobFile } from "./asr/workerClient";
 import { config } from "./config";
 import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
+import { markDirty } from "./search/dirty";
 import { automaticProvider, generationLabel, unloadLlm } from "./llm";
 import { hub } from "./live/hub";
 import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, replaceWithFinal } from "./repo/transcripts";
@@ -95,6 +96,7 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
       if (onlyAdrs) {
         const { provider, note } = await resolve();
         const result = await adrGeneration(meetingId, (s, p) => report(meetingId, s, p), provider, opts.itemId);
+        await markDirty(meetingId);
         finalEvent = { done: `${adrSummary(result)}${note ? ` (${note})` : ""}` };
       } else {
         const note = await processMeeting(meetingId, step, resolve);
@@ -239,5 +241,7 @@ async function processMeeting(
   if (provider !== "local") console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
   await postAnalysis(meetingId, (s, p) => report(meetingId, s, p), provider);
   await markDone(meetingId);
+  // reunião concluída: entra na fila de indexação da busca (nunca lança)
+  await markDirty(meetingId);
   return note;
 }

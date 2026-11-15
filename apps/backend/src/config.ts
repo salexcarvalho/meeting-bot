@@ -1,6 +1,7 @@
 import path from "path";
 import { recorderName } from "./bot/identity";
 import { parseWorkingDays } from "./calendar/workingDays";
+import { loadSearchConfig } from "./search/config";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -194,6 +195,8 @@ export const config = {
   ollamaUrl: (process.env.OLLAMA_URL || "http://ollama:11434").replace(/\/+$/, ""),
   ollamaModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || "30m",
+  // Busca e chat sobre as reuniões (specs/003-busca-chat): embeddings locais, sempre no Ollama
+  search: loadSearchConfig(),
   // Gerações pós-reunião e sob demanda: local ou OpenRouter (ao vivo é sempre local)
   generationProvider: generationProvider(llmExternal.allowed, llmSubscriptions),
   /** geração automática com assinatura: quanto esperar o host-agent/CLI voltar antes de desistir */

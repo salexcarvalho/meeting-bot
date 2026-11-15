@@ -130,11 +130,30 @@ Erros: `400` (período, filtro ou cursor inválidos), `401`, `403`. O custo é o
 `auth_login_failed`, `auth_logout`, `auth_password_changed`, `retention_pruned`; `external_llm`/`external_asr`
 passam a gravar o `user_id` do dono.
 
+## Busca e chat (specs/003-busca-chat)
+
+Contratos completos em `specs/003-busca-chat/contracts/`. Toda rota exige `meetings.read`; trechos de transcrição exigem
+`transcripts.read` e ata, item, ADR e metadados exigem `documents.read` (o filtro `kind` é interseção com o que o papel pode
+ler). O conteúdo sai só de reuniões visíveis (`visibleMeetingsSql`: dono ou `meeting_shares`), com a permissão **dentro da
+consulta**; reunião fora do alcance é indistinguível de inexistente. Com `SEARCH_ENABLED=false` as rotas respondem `404`.
+Consulta, pergunta, resposta e trechos nunca vão para log nem para `audit_log`.
+
+| Método | Rota | Corpo / query | Resposta |
+|---|---|---|---|
+| GET | `/search` | `q` (1–500), `mode=hybrid\|text\|semantic`, `kind=a,b`, `projectId`, `from`, `to`, `meetingId` (≤ 20), `limit` (1–50), `offset` (0–100) | `{query, mode, modeUsed, semantic: {available, reason}, hits: SearchHit[], total, tookMs}`; 60/min por usuário |
+| POST | `/search/chat` | `{question (≤ 500), history? (≤ 6 de ≤ 1000), scope? {projectId, from, to, meetingIds}}`, estrito (`llm`, `provider` e campos desconhecidos → 400) | `{answered, answer, citations[], sources: SearchHit[], retrieval, model, liveBusy, tookMs}`; sempre LLM local; 12/min por usuário; `503` com o modelo local fora ou o chat desligado (`SEARCH_SEMANTIC=off`) |
+| GET | `/search/status` | `meetingId?` | global: `{enabled, semantic: {available, model, dim, reason}, chat: {available, reason}, paused, totals, failures[]}` só das reuniões visíveis; com `meetingId`: `{meetingId, status, chunkCount, embeddedCount, indexedAt}` (`404` se não visível) |
+| POST | `/search/reindex` | `{meetingId?}` | `202 {queued}`; só reuniões do próprio usuário (`meetings.manage`); `404` para alheia; 6/hora |
+
+Erros: `400` (consulta vazia, só pontuação, > 500 caracteres, filtro inválido), `401`, `403`, `404`, `429`, `503` (chat).
+O evento WebSocket `{type: "search_index", meetingId, status}` informa o estado do índice da reunião (sem conteúdo).
+Navegação: `/reunioes/:id?seg=<segmentId>&t=<segundos>` (transcrição), `?item=<id>`, `?adr=<id>`; `/busca?q=…&tab=perguntar`.
+
 ## Sistema
 
 | Método | Rota | Resposta |
 |---|---|---|
-| GET | `/system/status` | `{hostAgent: {online, lastSeenAt, version, capture}, worker: {ok, model, diarization}, llm: {ok, model}, gpu: {utilization, memoryUsedMb, memoryTotalMb}\|null, recordingMeetingId, queue: {pending, current}}` |
+| GET | `/system/status` | `{hostAgent: {online, lastSeenAt, version, capture}, worker: {ok, model, diarization}, llm: {ok, model}, gpu: {utilization, memoryUsedMb, memoryTotalMb}\|null, recordingMeetingId, queue: {pending, current}, search: {enabled, semantic, paused}}` |
 | GET | `/healthz` (fora de `/api`) | `{ok: true}` |
 
 ## host-agent (`Authorization: Bearer AGENT_TOKEN`)

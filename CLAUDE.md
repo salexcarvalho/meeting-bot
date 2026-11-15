@@ -6,10 +6,11 @@ agente arquiteto, memória pesquisável.
 
 - Análise, decisões (D1–D8) e backlog: `docs/analise/agente-local.md`
 - Agente arquiteto no código (prompts, fluxo ao vivo e pós-reunião): `docs/agente-arquiteto.md`
+- Busca e chat sobre as reuniões (F3): `specs/003-busca-chat/` (módulo `apps/backend/src/search/`; Postgres com pgvector pela imagem `docker/postgres`, mesma major 16 e base Alpine; embeddings `bge-m3` no Ollama em CPU)
 - Especificação do MVP (Spec Kit): `specs/001-agente-reunioes-mvp/` (spec, plan, research, data-model, contracts, quickstart, tasks)
 - Minhas pendências e tarefas (Spec Kit): `specs/002-pendencias-tarefas/` (tarefas pessoais por `owner_id`; aprovar pendência vira tarefa; implementada em `apps/backend/src/tasks/`)
 - Estado atual do código: monorepo `apps/{backend,frontend,worker-gpu,host-agent}` + `packages/contracts` (Node 24 + TS, React, Python 3.12); visão geral em `docs/ARCHITECTURE.md`
-- Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
+- Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável com pgvector, imagem de `docker/postgres` construída uma vez), `npm run search:reindex -w @meeting-bot/backend` (fila de indexação da busca), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
 - Fluxo de trabalho: Spec Kit (`/speckit-*`), commits em português
 - Git: repositório público `github.com/salexcarvalho/meeting-bot` (AGPL-3.0-or-later). Branches `feat/*` → `develop` → `homolog` → `main`; tag `vX.Y.Z` em `main` (ver `CONTRIBUTING.md`). README em 3 idiomas (`README.md`, `README.en.md`, `README.es.md`): mudança de comportamento atualiza os três
 
@@ -31,6 +32,7 @@ agente arquiteto, memória pesquisável.
   - host-agent grava só as reuniões de `AGENT_OWNER` (host-agent do sócio fica para o futuro).
 
 - Sem agenda no fim de semana (`WORKING_DAYS`, padrão seg–sex, fuso `APP_TIMEZONE`): séries não geram ocorrência em sábado/domingo (manual, `.ics`, Aurora); reunião avulsa nesses dias aparece na agenda, mas sem lembrete e sem o assistente entrar/gravar sozinho, salvo pedido do usuário por reunião (`auto_on_off_day`) ou "Enviar assistente agora"/"Gravar agora".
+- Busca e chat (`specs/003-busca-chat`): o chat usa **sempre o LLM local** (nunca OpenRouter nem assinatura); busca e chat só enxergam reuniões visíveis (`visibleMeetingsSql`), com a permissão aplicada dentro da consulta; consulta, pergunta e trechos nunca vão para log nem auditoria; embeddings só rodam sem gravação ou chamada em curso; no servidor de teste é só busca de texto (`SEARCH_SEMANTIC=off`). Aplicar a imagem nova do Postgres exige `pg_dump` antes e backend ocioso.
 - Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados nas reuniões com a chave "Itens" ligada (`meetings.extract_items`, padrão desligada; ligada por "Gerar itens" na reunião). Desligada: sem extração ao vivo e análise final só com resumo.
 - Retenção de registros (constituição 2.3.0): consumo de IA (`ai_usage_logs`, só metadados) 24 meses e auditoria 12 meses, podados diariamente (`USAGE_RETENTION_DAYS`/`AUDIT_RETENTION_DAYS`; 0 = guardar sempre); o áudio segue indefinido.
 - Servidor de teste (constituição 2.0.0): VPS com Dokploy, `docker-compose.vps.yml` + `.env.vps.example`; transcrição final pelo OpenRouter (sem GPU), ata/ADR pela assinatura do Claude no container `agent-cli` (`AGENTE_MODE=llm`), sem passe ao vivo e sem gravação pelo PC. Guia: `docs/vps-dokploy.md`.

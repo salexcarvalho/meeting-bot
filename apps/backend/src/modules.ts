@@ -12,3 +12,4 @@ import "./shares/routes";
 import "./tasks/routes";
 import "./usage/routes";
 import "./audit/routes";
+import "./search/module";

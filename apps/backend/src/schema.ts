@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { rbacSeedStatements } from "./authz/matrix";
+import { migrateSearch } from "./search/migration";
 
 // Idempotente: roda a cada boot. Mudanças futuras entram como novos
 // ALTER ... IF NOT EXISTS no fim da lista.
@@ -423,6 +424,18 @@ const statements = [
   `DROP TRIGGER IF EXISTS trg_usage_owner_removed ON users`,
   `CREATE TRIGGER trg_usage_owner_removed BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION mark_usage_owner_removed()`,
   `CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log ((detail->>'target')) WHERE detail ? 'target'`,
+  // ---------- F3 busca e chat (specs/003-busca-chat): novas finalidades de uso de IA (embeddings e chat) ----------
+  `DO $$ BEGIN
+     IF EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'ai_usage_logs'::regclass AND conname = 'ai_usage_logs_purpose_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%''chat''%'
+     ) THEN
+       ALTER TABLE ai_usage_logs DROP CONSTRAINT ai_usage_logs_purpose_check;
+       ALTER TABLE ai_usage_logs ADD CONSTRAINT ai_usage_logs_purpose_check
+         CHECK (purpose IN ('ata', 'adr', 'itens', 'resumo', 'ao_vivo', 'asr_final', 'asr_ao_vivo', 'busca', 'chat', 'outro'));
+     END IF;
+   END $$`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {
@@ -430,6 +443,7 @@ export async function migrate(pool: Pool): Promise<void> {
   try {
     await client.query("SELECT pg_advisory_lock(727001)");
     for (const sql of [...statements, ...rbacSeedStatements()]) await client.query(sql);
+    await migrateSearch(client);
   } finally {
     await client.query("SELECT pg_advisory_unlock(727001)").catch(() => {});
     client.release();
