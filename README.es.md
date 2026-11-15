@@ -185,6 +185,18 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
   (Claude Code o Codex), según lo que esté habilitado. Lo que se generó fuera aparece marcado
   ("OpenRouter", "Claude" o "Codex" en el elemento, en el ADR y en el acta).
 
+### Compartir una reunión
+
+En la página de la reunión, el dueño hace clic en **Compartilhar** ("Compartir"), busca a la persona por nombre o usuario (mínimo 3 letras) y elige **Leitura** (lectura) o **Edição** (edición):
+
+- **Lectura:** la persona ve la reunión (enlace, participantes, transcripción, audio, ítems y acta).
+- **Edición:** también edita ítems, ADR y nombres de hablantes. Grabar, detener, reprocesar, reprogramar, cambiar el enlace, "no grabar", "día sin agenda", cancelar, generar acta/ADR, activar ítems y eliminar siguen siendo solo del dueño. Quien no gestiona reuniones (VIEWER) solo recibe lectura.
+- El dueño ve **Quem tem acesso** ("Quién tiene acceso"), cambia el nivel y quita personas. Vale al instante, incluso para quien tiene la reunión abierta (la transcripción en vivo deja de llegar). Solo el dueño ve la lista; el destinatario ve su propio nivel y el nombre del dueño.
+- En una reunión recurrente, el diálogo ofrece **solo esta ocurrencia** o **esta y las siguientes ya en la agenda**. Las ocurrencias pasadas quedan fuera y las creadas después no heredan el acceso.
+- En **Reuniões**, los filtros **Todas**, **Minhas** (mías), **Compartilhadas comigo** (compartidas conmigo) y **Compartilhadas por mim** (compartidas por mí) (`?escopo=`); insignia con el nivel y el dueño, marca **Nova** ("Nueva") hasta abrirla y aviso en pantalla. Nada sale de la máquina (sin correo).
+- **Sair desta reunião** ("Salir de esta reunión") quita tu propio acceso. El administrador no lee contenido ajeno, y desactivar al dueño no quita el acceso de quien recibió.
+- Compartir, cambiar, revocar y salir quedan en `audit_log` solo con ids (nunca título ni contenido).
+
 ### Carga y Modo Agente
 
 En **Reuniões** ("Reuniones"):
@@ -222,7 +234,7 @@ Cada usuario tiene su propia configuración:
 - **Documentação** ("Documentación"): nivel de detalle y formatos.
 - **Consumo de IA:** tokens y costo del mes por proveedor, modelo y reunión, más las últimas llamadas.
   Viene de `audit_log`, es de solo lectura y no bloquea la generación. La suscripción no cobra por llamada: solo
-  tokens. Cada quien ve el consumo de las reuniones que puede ver.
+  tokens. Cada quien ve solo el consumo de las reuniones que creó: el costo es del dueño y una reunión compartida no cuenta.
 
 ## Configuración principal (`.env`)
 
@@ -398,7 +410,6 @@ scripts/fixture-ics.sh 20      # invitación de prueba que empieza en 20 min
   genera solo con la descripción y el resumen de la reunión.
 - **Un host-agent por máquina**, vinculado a un solo usuario (`AGENT_OWNER`). Otros usuarios usan la
   carga o el asistente invitado.
-- **Compartir reunión** todavía no tiene pantalla (la estructura `meeting_shares` ya existe en el backend).
 - **El asistente invitado aparece solo con las iniciales** en la reunión: el invitado anónimo no tiene foto en Meet
   ni en Teams. La cámara virtual (`BOT_CAMERA`) muestra el ícono, pero como cuadro de video. En Teams, la
   cuenta del agente reemplaza al invitado por el nombre de la cuenta.

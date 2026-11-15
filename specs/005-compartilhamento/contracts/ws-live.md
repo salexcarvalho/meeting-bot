@@ -13,7 +13,8 @@ Complementa `specs/001-agente-reunioes-mvp/contracts/ws-live.md`. Tipos novos en
   access: "edit" | "read" | null,          // null em revoked e deleted
   by: string | null,                        // nome de quem agiu (null em deleted)
   title: string | null,                     // só em granted e changed (o destinatário já tem acesso)
-  meeting: MeetingListItem | null           // só em granted: o item com o `access` do destinatário
+  meeting: MeetingListItem | null,          // só em granted: o item com o `access` do destinatário
+  silent?: boolean                          // parte de um lote ("esta e as próximas"): atualiza a lista, sem aviso
 }
 ```
 

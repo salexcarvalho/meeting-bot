@@ -470,5 +470,5 @@ Typecheck e build também passaram.
 
 **Ainda não feito:**
 
-- tela de compartilhamento (quando existir, revogar deve derrubar na hora as assinaturas do WebSocket; hoje a revalidação acontece a cada 30 s);
+- ~~tela de compartilhamento~~ (feita em `specs/005-compartilhamento`: busca mínima, leitura/edição, série, "Compartilhadas comigo", "Nova", auditoria; revogar derruba na hora a assinatura do WebSocket e o consumo de IA ficou só do dono);
 - resto da F3 (prompts no banco, perfil no agente, cadastro de provedores com chave cifrada) e F4 a F6.

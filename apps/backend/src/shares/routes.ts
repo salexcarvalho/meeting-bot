@@ -30,6 +30,8 @@ import {
 // cada função de serviço confere o dono de novo. As rotas do destinatário não têm :id de propósito: só tocam
 // a linha do próprio usuário.
 
+const ACCESS_EVENT = "meeting_access" as const;
+
 function fail(res: Response, err: unknown): void {
   if (err instanceof ShareError) {
     res.status(err.status).json({ error: err.message });
@@ -56,7 +58,7 @@ async function notifyGranted(actorId: string, targetId: string, access: ShareAcc
     if (!item) continue;
     const granted = created.has(meetingId);
     const msg: MeetingAccessEvent = {
-      type: "meeting_access",
+      type: ACCESS_EVENT,
       meetingId,
       change: granted ? "granted" : "changed",
       access,
@@ -138,7 +140,7 @@ features.authedRouters.push((router) => {
         const [first] = revoked.meetingIds;
         for (const id of revoked.meetingIds) {
           const msg: MeetingAccessEvent = {
-            type: "meeting_access",
+            type: ACCESS_EVENT,
             meetingId: id,
             change: "revoked",
             access: null,
@@ -180,7 +182,7 @@ features.authedRouters.push((router) => {
       }
       audit("meeting_share_left", { meetingId }, req.user!.id);
       hub.revokeAccess(meetingId, req.user!.id, {
-        type: "meeting_access",
+        type: ACCESS_EVENT,
         meetingId,
         change: "revoked",
         access: null,
