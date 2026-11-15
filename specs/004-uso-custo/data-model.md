@@ -38,6 +38,7 @@ audit_log (inalterada: ganha kinds novos e user_id nos envios externos)
 | `label` | `TEXT NULL CHECK (char_length(label) <= 80)` | rótulo interno ("extração final 1/3"); nunca conteúdo |
 | `source` | `TEXT NOT NULL DEFAULT 'live' CHECK (source IN ('live','audit_backfill'))` | |
 | `audit_log_id` | `BIGINT NULL` | id da linha incorporada de `audit_log`; único quando preenchido |
+| `owner_removed` | `BOOLEAN NOT NULL DEFAULT false` | marcada pelo gatilho `trg_usage_owner_removed` antes de excluir o usuário; distingue "usuário removido" de "instância" no painel de admin |
 
 Restrições de consistência:
 
@@ -124,7 +125,7 @@ recebe todas (exceto `meetings.read_all`).
 
 - Linha de uso: criada pronta (`success` true/false); não muda. Removida só pela poda.
 - Acumulador de ASR ao vivo (memória): `acumulando → flush (INSERT delta) → zerado → ... → close (flush final)`.
-- Incorporação do histórico: `external_llm`/`external_asr` do `audit_log` sem `ai_usage_logs.audit_log_id`
+- Incorporação do histórico (só linhas dentro do prazo de retenção do uso, para a poda não ser desfeita): `external_llm`/`external_asr` do `audit_log` sem `ai_usage_logs.audit_log_id`
   correspondente → `INSERT ... ON CONFLICT (audit_log_id) DO NOTHING` (com `source='audit_backfill'`,
   `purpose` deduzido do `label` por regra tolerante, desconhecido → `outro`, `success = true`).
 

@@ -43,7 +43,7 @@ Esperado: toast de sucesso; `meeting_share_granted` no `audit_log` só com ids.
 2. Como `bia` com **Edição**: `POST /api/meetings/<id>/shares` devolve 403; `/api/MEETINGS/<id>/shares` também.
 3. Desative `bia` em Administração > Usuários: ela some da busca; `ana` vê "Desativado" na lista; reativar
    restaura o acesso.
-4. Como `bia` (destinatária), `GET /api/llm/usage` não mostra consumo de reuniões da Ana.
+4. Como `bia` (destinatária), `GET /api/usage/me` não mostra consumo de reuniões da Ana (o antigo `/api/llm/usage` foi removido pela spec 004).
 
 ## 6. Comandos de verificação
 

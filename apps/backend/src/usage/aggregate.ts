@@ -92,14 +92,17 @@ export async function grouped(scope: UsageScope, spec: GroupSpec): Promise<Usage
 const purposeLabel: KeyLabel = (key) => USAGE_PURPOSE_LABELS[key as UsagePurposeValue] ?? key;
 const providerLabel: KeyLabel = (key) => USAGE_PROVIDER_LABELS[key as UsageProviderValue] ?? key;
 
+/** Mais chamadas primeiro; empate pela chave. */
+const MOST_CALLS_FIRST = "count(*) DESC, 1";
+
 export const byPurpose = (scope: UsageScope) =>
-  grouped(scope, { key: "l.purpose", order: "count(*) DESC, 1", label: purposeLabel });
+  grouped(scope, { key: "l.purpose", order: MOST_CALLS_FIRST, label: purposeLabel });
 
 export const byProvider = (scope: UsageScope) =>
-  grouped(scope, { key: "l.provider", order: "count(*) DESC, 1", label: providerLabel });
+  grouped(scope, { key: "l.provider", order: MOST_CALLS_FIRST, label: providerLabel });
 
 export const byModel = (scope: UsageScope) =>
-  grouped(scope, { key: "COALESCE(l.model, '—')", order: "count(*) DESC, 1", label: (key) => key });
+  grouped(scope, { key: "COALESCE(l.model, '—')", order: MOST_CALLS_FIRST, label: (key) => key });
 
 /** Dia no fuso da aplicação (AAAA-MM-DD); o rótulo é DD/MM. */
 export const byDay = (scope: UsageScope) =>
