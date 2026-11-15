@@ -27,6 +27,8 @@ export interface ParseResult {
   ignored: number;
   /** Títulos que vieram só como ocorrência (RECURRENCE-ID sem RRULE): a série não está no arquivo. */
   partialSeries: string[];
+  /** uids de séries cujas ocorrências em dia não útil foram descartadas (nunca causam remoção de linhas) */
+  offDayUids: string[];
 }
 
 const MAX_DESCRIPTION = 20_000;
@@ -129,7 +131,16 @@ function endOf(event: VEvent, start: Date): Date {
   return end > start ? end : new Date(start.getTime() + 30 * 60_000);
 }
 
-export function parseIcs(text: string, range: { from: Date; to: Date }): ParseResult {
+/**
+ * `isWorking` decide se uma ocorrência gerada pela regra de repetição (RRULE) vale: dia não útil não gera
+ * ocorrência (a série não se espalha pelo fim de semana). Ocorrência remarcada de propósito (RECURRENCE-ID)
+ * e evento único entram sempre; sem lembrete nem gravação automática, quem cuida disso é o agendador.
+ */
+export function parseIcs(
+  text: string,
+  range: { from: Date; to: Date },
+  isWorking: (start: Date) => boolean = () => true,
+): ParseResult {
   if (!/BEGIN:VCALENDAR/i.test(text)) {
     throw new Error("O arquivo não parece um arquivo de calendário (.ics).");
   }
@@ -137,6 +148,7 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
   const calendarCancelled = String(data.vcalendar?.method ?? "").toUpperCase() === "CANCEL";
   const occurrences: Occurrence[] = [];
   const partialSeries = new Set<string>();
+  const offDayUids = new Set<string>();
   let ignored = 0;
 
   for (const [key, component] of Object.entries(data)) {
@@ -153,6 +165,11 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
       for (const inst of instances) {
         if (inst.isFullDay) continue;
         const source = inst.event;
+        if (!source.recurrenceid && !isWorking(new Date(inst.start))) {
+          ignored++;
+          offDayUids.add(source.uid);
+          continue;
+        }
         const originalStart = source.recurrenceid ? new Date(source.recurrenceid) : new Date(inst.start);
         const start = new Date(inst.start);
         const end = new Date(inst.end);
@@ -187,5 +204,5 @@ export function parseIcs(text: string, range: { from: Date; to: Date }): ParseRe
   }
 
   occurrences.sort((a, b) => a.start.getTime() - b.start.getTime());
-  return { occurrences, ignored, partialSeries: [...partialSeries] };
+  return { occurrences, ignored, partialSeries: [...partialSeries], offDayUids: [...offDayUids] };
 }

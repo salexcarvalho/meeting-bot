@@ -351,7 +351,7 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
 
   it("dois envios simultâneos do mesmo dia respondem 200 e não duplicam", async () => {
     const base = await serve();
-    const day = "2031-04-05";
+    const day = "2031-04-04"; // sexta: série no sábado não entra (WORKING_DAYS)
     const body = payload([
       { uid: "conc-a@teste", title: "A", start: hour(day, 9), end: hour(day, 10) },
       { uid: "conc-s@teste", title: "S", start: hour(day, 14), end: hour(day, 15), recurring: true },

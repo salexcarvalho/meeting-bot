@@ -1,5 +1,6 @@
 import path from "path";
 import { recorderName } from "./bot/identity";
+import { parseWorkingDays } from "./calendar/workingDays";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -142,6 +143,8 @@ export const config = {
   sessionTtlHours: int("SESSION_TTL_HOURS", 24 * 7),
   appTimezone: process.env.APP_TIMEZONE || "America/Sao_Paulo",
   userDisplayName: process.env.USER_DISPLAY_NAME || "Sérgio",
+  /** dias com agenda (ISO, segunda = 1 … domingo = 7): fora deles não há lembrete nem gravação automática */
+  workingDays: parseWorkingDays(process.env.WORKING_DAYS),
 
   // Modo Agente (bot convidado)
   /** nome usado só quando o dono da reunião não existe mais */
