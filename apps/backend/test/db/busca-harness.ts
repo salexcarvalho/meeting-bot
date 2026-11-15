@@ -34,7 +34,10 @@ export async function startSearchHarness(specs: UserSpec[]): Promise<SearchHarne
   const { markDirty } = await import("../../src/search/dirty");
   const { tick } = await import("../../src/search/worker");
   const { resetGateCache } = await import("../../src/search/gate");
+  const { searchLimits } = await import("../../src/search/limits");
 
+  // os limites de taxa são testados à parte; aqui ficam folgados
+  Object.assign(searchLimits, { search: 10_000, chat: 10_000, reindex: 10_000 });
   config.search.indexDebounceSeconds = 0;
   config.search.semantic = "auto";
   const embedder = new FakeEmbedder();

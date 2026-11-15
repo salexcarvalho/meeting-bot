@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SearchKindValue } from "@meeting-bot/contracts";
+import { ITEM_TYPE_LABELS, type ItemType, type SearchKindValue } from "@meeting-bot/contracts";
 
 // Divide o conteúdo de uma reunião em trechos pesquisáveis (specs/003-busca-chat/data-model.md).
 // Módulo puro: não toca em banco nem em rede.
@@ -174,7 +174,8 @@ function attributeLines(attributes: Record<string, unknown>): string[] {
 /** Item rejeitado não gera trecho. O selo proposto/aprovado não entra no texto: é lido na consulta. */
 export function buildItemChunk(item: ItemInput): ChunkDraft | null {
   if (item.reviewStatus === "rejeitado") return null;
-  const lines = [`${item.type}: ${item.description.trim()}`];
+  const label = Object.hasOwn(ITEM_TYPE_LABELS, item.type) ? ITEM_TYPE_LABELS[item.type as ItemType] : item.type;
+  const lines = [`${label}: ${item.description.trim()}`];
   if (item.owner) lines.push(`Responsável: ${item.owner}`);
   if (item.due) lines.push(`Prazo: ${item.due}`);
   lines.push(...attributeLines(item.attributes));

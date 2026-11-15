@@ -127,11 +127,17 @@ async function lexicalCandidates(user: User, q: string, kinds: SearchKindValue[]
 }
 
 /** Texto: AND de todos os termos; sem resultado, OR (só quando a consulta não tem negação). */
-async function textCandidates(user: User, q: string, kinds: SearchKindValue[], filters: ScopeFilters, fallback: boolean): Promise<Candidate[]> {
+async function textCandidates(
+  user: User,
+  q: string,
+  kinds: SearchKindValue[],
+  filters: ScopeFilters,
+  fallback: boolean,
+): Promise<{ list: Candidate[]; strict: boolean }> {
   const strict = await lexicalCandidates(user, q, kinds, filters, false);
-  if (strict.length || !fallback) return strict;
-  if (q.includes("-") || q.includes('"')) return strict;
-  return lexicalCandidates(user, q, kinds, filters, true);
+  if (strict.length) return { list: strict, strict: true };
+  if (!fallback || q.includes("-") || q.includes('"')) return { list: strict, strict: false };
+  return { list: await lexicalCandidates(user, q, kinds, filters, true), strict: false };
 }
 
 /** Vetorial: iterative scan do HNSW para o filtro de permissão não esvaziar a lista (pgvector ≥ 0.8). */
@@ -177,13 +183,17 @@ export interface Retrieval {
   text: Candidate[];
   semantic: Candidate[];
   modeUsed: "hybrid" | "text" | "semantic";
+  /** a consulta léxica estrita (todos os termos) achou algo; o OR de reserva não conta */
+  textStrict: boolean;
   semanticInfo: { available: boolean; reason: SearchSemanticReason | null };
 }
 
 export interface RetrieveOptions {
   mode: SearchModeValue;
-  /** OR quando o AND não acha nada (busca); o chat não usa */
+  /** OR quando o AND não acha nada */
   orFallback: boolean;
+  /** texto usado só para o embedding (o chat junta a pergunta anterior); padrão: a própria consulta */
+  semanticText?: string;
 }
 
 async function semanticPart(
@@ -205,17 +215,19 @@ export async function retrieve(user: User, q: string, filters: ScopeFilters, opt
   const wantText = options.mode !== "semantic";
   const wantSemantic = options.mode !== "text";
   if (!kinds.length) {
-    return { text: [], semantic: [], modeUsed: wantText ? "text" : "semantic", semanticInfo: await semanticState() };
+    return { text: [], semantic: [], modeUsed: wantText ? "text" : "semantic", textStrict: false, semanticInfo: await semanticState() };
   }
   const [text, semantic] = await Promise.all([
-    wantText ? textCandidates(user, q, kinds, filters, options.orFallback) : Promise.resolve([] as Candidate[]),
-    wantSemantic ? semanticPart(user, q, kinds, filters) : semanticState().then((info) => ({ list: [] as Candidate[], info })),
+    wantText ? textCandidates(user, q, kinds, filters, options.orFallback) : Promise.resolve({ list: [] as Candidate[], strict: false }),
+    wantSemantic
+      ? semanticPart(user, options.semanticText ?? q, kinds, filters)
+      : semanticState().then((info) => ({ list: [] as Candidate[], info })),
   ]);
   const semanticOn = wantSemantic && semantic.info.available;
   let modeUsed: Retrieval["modeUsed"] = "text";
   if (semanticOn) modeUsed = wantText ? "hybrid" : "semantic";
   else if (!wantText) modeUsed = "semantic";
-  return { text, semantic: semantic.list, modeUsed, semanticInfo: semantic.info };
+  return { text: text.list, semantic: semantic.list, modeUsed, textStrict: text.strict, semanticInfo: semantic.info };
 }
 
 export interface HydratedHit {

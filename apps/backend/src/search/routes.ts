@@ -4,6 +4,7 @@ import { SearchQuery, SearchReindexInput } from "@meeting-bot/contracts";
 import { normalizeText } from "../agent/text";
 import { requirePermission } from "../authz";
 import { wrap } from "../routes";
+import { searchLimits } from "./limits";
 import { meetingIndexStatus, reindexOwn, runSearch, searchStatus } from "./service";
 
 // Rotas da busca (specs/003-busca-chat/contracts/rest-api.md). Só rotas de UI (cookie).
@@ -11,7 +12,7 @@ import { meetingIndexStatus, reindexOwn, runSearch, searchStatus } from "./servi
 
 const INVALID = { error: "Consulta inválida." };
 
-function perUser(name: string, windowMs: number, limit: number, message: string) {
+function perUser(name: string, windowMs: number, limit: () => number, message: string) {
   return rateLimit({
     windowMs,
     limit,
@@ -22,8 +23,8 @@ function perUser(name: string, windowMs: number, limit: number, message: string)
   });
 }
 
-const searchLimiter = perUser("search", 60_000, 60, "Muitas buscas. Tente de novo em instantes.");
-const reindexLimiter = perUser("reindex", 3_600_000, 6, "Muitos pedidos de reindexação. Tente de novo mais tarde.");
+const searchLimiter = perUser("search", 60_000, () => searchLimits.search, "Muitas buscas. Tente de novo em instantes.");
+const reindexLimiter = perUser("reindex", 3_600_000, () => searchLimits.reindex, "Muitos pedidos de reindexação. Tente de novo mais tarde.");
 
 async function search(req: Request, res: Response): Promise<void> {
   const parsed = SearchQuery.safeParse(req.query);

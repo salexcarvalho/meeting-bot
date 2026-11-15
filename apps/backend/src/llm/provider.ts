@@ -14,6 +14,8 @@ export interface GenerateRequest<T> {
   purpose: UsagePurposeValue;
   /** só para auditoria e registro de uso (nunca o conteúdo) */
   meetingId?: string;
+  /** usuário de quem partiu a chamada, quando não há reunião de origem (ex.: chat sobre várias reuniões) */
+  userId?: string;
 }
 
 /** Uso medido numa geração, somado entre as tentativas; nulo = o provedor não informou. */

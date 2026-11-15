@@ -14,6 +14,7 @@ import {
   type AnalysisInput,
   type ChunkDraft,
 } from "./chunker";
+import { dateLabel } from "./format";
 import { EmbedError, getEmbedder, vectorLiteral, type Embedder } from "./embedder";
 import { vectorInstalled } from "./gate";
 import { recordEmbedUsage } from "./usage";
@@ -47,10 +48,6 @@ async function loadMeeting(meetingId: string): Promise<MeetingRow | null> {
     [meetingId],
   );
   return rows[0] ?? null;
-}
-
-export function dateLabel(date: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", { timeZone: config.appTimezone, day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
 /** Contexto que acompanha cada trecho no embedding (não é guardado: entra no hash). */
