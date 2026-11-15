@@ -2,7 +2,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "./config";
-import { deleteSession, findSessionUser, insertSession } from "./db";
+import { deleteSession, findSessionUser, insertSession, sessionOwnerId } from "./db";
 import { User } from "./types";
 
 const scryptAsync = promisify(scrypt) as (
@@ -71,10 +71,17 @@ export async function startSession(res: Response, userId: string): Promise<void>
   });
 }
 
-export async function endSession(req: Request, res: Response): Promise<void> {
+/** Encerra a sessão do cookie e devolve de quem era (null sem sessão), para a auditoria. */
+export async function endSession(req: Request, res: Response): Promise<string | null> {
   const token = req.cookies?.[SESSION_COOKIE];
-  if (typeof token === "string") await deleteSession(hashToken(token));
+  let owner: string | null = null;
+  if (typeof token === "string") {
+    const hash = hashToken(token);
+    owner = await sessionOwnerId(hash);
+    await deleteSession(hash);
+  }
   res.clearCookie(SESSION_COOKIE, { path: "/" });
+  return owner;
 }
 
 declare global {

@@ -132,7 +132,12 @@ export async function generate<T>(priority: LlmPriority, req: GenerateRequest<T>
     provider === "local"
       ? await llmQueue.run(priority, () => timedCall(() => getLlm().generate(req)))
       : await timedCall(() => invokeExternal(req, provider));
-  recordGeneration(req, provider, outcome);
+  try {
+    recordGeneration(req, provider, outcome);
+  } catch (err) {
+    // o registro de uso nunca pode mudar o resultado da geração (FR-006)
+    console.error("[uso] falha ao registrar a geração:", err);
+  }
   if (!outcome.ok) throw outcome.error;
   return outcome.generation.data;
 }

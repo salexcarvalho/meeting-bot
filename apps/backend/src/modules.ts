@@ -10,3 +10,5 @@ import "./users/routes";
 import "./users/lookup";
 import "./shares/routes";
 import "./tasks/routes";
+import "./usage/routes";
+import "./audit/routes";

@@ -24,12 +24,18 @@ import { meetingEvents, pool, purgeExpiredSessions, recoverInterruptedMeetings }
 import { hub } from "./live/hub";
 import { notifyMeeting } from "./live/notify";
 import { enqueueProcessing } from "./pipeline";
+import { runRetention } from "./retention/prune";
 import { migrate } from "./schema";
+import { backfillUsageFromAudit } from "./usage/backfill";
 import { features, UpgradeHandler } from "./features";
 import "./modules";
 
 async function main() {
   await migrate(pool);
+  // Histórico de envios externos do audit_log entra uma vez no registro de uso (idempotente).
+  await backfillUsageFromAudit()
+    .then((n) => n > 0 && console.log(`[uso] ${n} chamadas antigas incorporadas ao registro de uso`))
+    .catch((err) => console.error("[uso] falha ao incorporar o histórico:", err));
   meetingEvents.on("changed", (id: string) => void notifyMeeting(id));
   onBotProgress((meetingId, progress) => hub.publishBoth(meetingId, { type: "bot", meetingId, progress }));
   for (const { id, step } of await recoverInterruptedMeetings()) {
@@ -37,6 +43,10 @@ async function main() {
     enqueueProcessing(id, step);
   }
   setInterval(() => purgeExpiredSessions().catch(console.error), 3600_000).unref();
+  // Poda por prazo (constituição 2.3.0): no boot e a cada 24 h; prazo 0 = guardar sempre.
+  const prune = () => runRetention().catch((err) => console.error("[retenção] falha na poda:", err));
+  void prune();
+  setInterval(prune, 24 * 3600_000).unref();
 
   const app = createApp();
 

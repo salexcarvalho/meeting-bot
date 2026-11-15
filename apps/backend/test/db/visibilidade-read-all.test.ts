@@ -42,7 +42,8 @@ describe.skipIf(!enabled)("visibleMeetingsSql com meetings.read_all (Postgres + 
     await h.seedMeeting("vr-ana", { scheduledStart: new Date("2026-11-12T13:00:00Z") });
     expect((await h.call("vr-admin", "GET", "/meetings")).status).toBe(200);
     expect((await h.call("vr-admin", "GET", "/agenda?date=2026-11-12")).status).toBe(200);
-    expect((await h.call("vr-admin", "GET", "/llm/usage")).status).toBe(200);
+    expect((await h.call("vr-admin", "GET", "/usage/me")).status).toBe(200);
+    expect((await h.call("vr-admin", "GET", "/admin/usage")).status).toBe(200);
   });
 
   it("resumo de tarefas e reunião sem acesso continuam funcionando", async () => {

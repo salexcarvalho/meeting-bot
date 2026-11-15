@@ -4,7 +4,7 @@ import { OWNER_ONLY_ANY_METHOD, OWNER_ONLY_ROUTES, extraPermissionsFor, isOwnerO
 import { escapeLike, foldText, LOOKUP_MAX_CHARS, lookupPattern } from "../src/users/lookupPattern";
 import { hasSeries } from "../src/shares/service";
 import { toMeetingListItem, toMeetingSummary } from "../src/meetings/summary";
-import { visibilitySql } from "../src/llm/usage";
+import { userScope } from "../src/usage/queries";
 import type { MeetingRow } from "../src/db";
 import type { User } from "../src/types";
 
@@ -144,16 +144,13 @@ describe("projeção por espectador", () => {
 });
 
 describe("consumo de IA é do dono (FR-015)", () => {
-  const user = (permissions: string[]) => ({ id: "u", username: "u", roles: [], permissions }) as unknown as User;
+  const period = { from: new Date("2026-11-01T00:00:00Z"), to: new Date("2026-12-01T00:00:00Z"), month: "2026-11" };
 
-  it("sem read_all só entram chamadas de reuniões criadas pelo usuário, nunca as compartilhadas", () => {
-    const sql = visibilitySql(user(["meetings.read"]));
-    expect(sql).toContain("m.created_by = $3");
-    expect(sql).not.toContain("meeting_shares");
-  });
-
-  it("quem lê todas segue vendo o consumo da instância", () => {
-    expect(visibilitySql(user(["meetings.read_all"]))).toContain("m.id IS NULL");
+  it("o painel filtra sempre por user_id = $1 (o dono), nunca pelas reuniões compartilhadas", () => {
+    const scope = userScope("u1", period);
+    expect(scope.where).toContain("l.user_id = $1");
+    expect(scope.where).not.toContain("meeting_shares");
+    expect(scope.params[0]).toBe("u1");
   });
 });
 

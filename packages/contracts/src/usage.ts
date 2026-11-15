@@ -183,7 +183,7 @@ export const AuditQuery = z.object({
   from: instant.optional(),
   to: instant.optional(),
   kind: z.string().max(60).optional(),
-  userId: z.uuid().optional(),
+  userId: z.guid().optional(),
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });

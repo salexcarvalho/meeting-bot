@@ -57,8 +57,13 @@ export interface UsagePeriod {
 }
 
 const DAY_MS = 86_400_000;
-// 24 meses podem ter até 731 dias; folga de 1 dia para o fuso.
-const MAX_WINDOW_MS = Math.ceil((USAGE_MAX_WINDOW_MONTHS * 365.25 + 1) * DAY_MS);
+
+/** Fim máximo da janela: 24 meses de calendário depois do início, com 1 dia de folga para o fuso. */
+function maxWindowEnd(start: Date): Date {
+  const limit = new Date(start);
+  limit.setUTCMonth(limit.getUTCMonth() + USAGE_MAX_WINDOW_MONTHS);
+  return new Date(limit.getTime() + DAY_MS);
+}
 
 /** Valida e resolve `month` ou `from`/`to` (sem nada = mês corrente). */
 export function resolvePeriod(query: Record<string, unknown>, now = new Date(), timezone = config.appTimezone): UsagePeriod {
@@ -73,7 +78,7 @@ export function resolvePeriod(query: Record<string, unknown>, now = new Date(), 
     const start = new Date(from);
     const end = new Date(to);
     if (end <= start) throw new PeriodError("Período inválido: to precisa ser depois de from.");
-    if (end.getTime() - start.getTime() > MAX_WINDOW_MS) {
+    if (end > maxWindowEnd(start)) {
       throw new PeriodError(`Período inválido: a janela máxima é de ${USAGE_MAX_WINDOW_MONTHS} meses.`);
     }
     return { from: start, to: end, month: null };
