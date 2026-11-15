@@ -849,6 +849,12 @@ describe.skipIf(!enabled)("compartilhamento de reunião (HTTP + WebSocket + Post
       expect((await share("cs-ana", id, "cs-ana", "read")).status).toBe(422);
     });
 
+    it(":userId que não é UUID dá 404, nunca 500", async () => {
+      expect((await call("cs-ana", "PUT", `/meetings/${id}/${SHARES}/nao-uuid`, { access: "read" })).status).toBe(404);
+      expect((await call("cs-ana", "DELETE", `/meetings/${id}/${SHARES}/nao-uuid`)).status).toBe(404);
+      expect((await call("cs-ana", "DELETE", `/meetings/${id}/${SHARES}/nao-uuid?scope=following`)).status).toBe(404);
+    });
+
     it("maiúsculas, barras duplas e codificação não contornam o guard", async () => {
       const variants = [
         `/api/MEETINGS/${id}/${SHARES}`,

@@ -219,6 +219,7 @@ export async function changeShare(
 ): Promise<ShareChange> {
   return withTransaction(async (client) => {
     const batch = await resolveBatch(client, meetingId, actorId, input.scope);
+    if (!UUID_RE.test(targetUserId)) throw new ShareError(404, SHARE_MESSAGES.noShare);
     const current = await entryOf(client, batch.ref.id, targetUserId);
     if (!current) throw new ShareError(404, SHARE_MESSAGES.noShare);
     if (input.access === "edit") {
@@ -260,6 +261,7 @@ export async function revokeShare(
 ): Promise<ShareRevoke> {
   return withTransaction(async (client) => {
     const batch = await resolveBatch(client, meetingId, actorId, scope);
+    if (!UUID_RE.test(targetUserId)) throw new ShareError(404, SHARE_MESSAGES.noShare);
     if (!(await entryOf(client, batch.ref.id, targetUserId))) throw new ShareError(404, SHARE_MESSAGES.noShare);
     const { rows } = await client.query(
       `DELETE FROM meeting_shares WHERE meeting_id = ANY($1::uuid[]) AND user_id = $2 RETURNING meeting_id`,
