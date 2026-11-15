@@ -1,9 +1,11 @@
 import type { AgentLlmResult, SubscriptionLlm } from "@meeting-bot/contracts";
 import { z } from "zod";
 import { audit } from "../security/audit";
+import { classifyError } from "../usage/errorCode";
+import { ownerOfMeeting } from "../usage/recorder";
 import { HostJobError, type HostJobQueue } from "./hostJobs";
 import { toJsonSchema } from "./ollama";
-import type { GenerateRequest, LLMProvider } from "./provider";
+import { UsageMeter, type Generation, type GenerateRequest, type LLMProvider } from "./provider";
 
 // Geração com a assinatura pessoal (Constituição 1.4.0, princípio I): o host-agent roda o CLI
 // oficial (claude -p / codex exec) isolado, sem ferramentas, com o login do dono da máquina.
@@ -45,32 +47,57 @@ export class HostCliLlm implements LLMProvider {
     return this.settings.model || "padrão";
   }
 
-  async generate<T>(req: GenerateRequest<T>): Promise<T> {
+  async generate<T>(req: GenerateRequest<T>): Promise<Generation<T>> {
+    const meter = new UsageMeter(this.model);
+    return meter.run(() => this.attempts(req, meter));
+  }
+
+  /** Rastro de saída (princípio I): só metadados, com o dono da reunião; nunca o conteúdo. */
+  private async auditSent<T>(req: GenerateRequest<T>, detail: Record<string, unknown>): Promise<void> {
+    const owner = req.meetingId ? await ownerOfMeeting(req.meetingId).catch(() => null) : null;
+    audit(
+      "external_llm",
+      { meetingId: req.meetingId ?? null, label: req.label, provider: this.settings.provider, purpose: req.purpose, ...detail },
+      owner,
+    );
+  }
+
+  private async attempts<T>(req: GenerateRequest<T>, meter: UsageMeter): Promise<T> {
     // O Claude encurta o texto para caber no limite; o Codex corta no meio da frase, então só o
     // Claude recebe os tamanhos máximos (o zod confere os dois depois).
     const schema = toJsonSchema(req.schema, { limits: this.settings.provider === "claude" }) as Record<string, unknown>;
     let user = req.user;
     let lastError = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const result = await this.run(req, user, schema);
+      const result = await this.run(req, user, schema).catch(async (err) => {
+        await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(err) });
+        throw err;
+      });
+      meter.add({
+        inputTokens: result.ok ? result.usage?.inputTokens : null,
+        outputTokens: result.ok ? result.usage?.outputTokens : null,
+        // assinatura: sem custo por chamada
+        costUsd: null,
+        model: result.ok ? result.usage?.model : null,
+      });
       if (!result.ok) {
         if (!OUTPUT_RETRIES.test(result.error ?? "")) {
-          throw new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${result.error}`);
+          const failure = new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${result.error}`);
+          await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(failure) });
+          throw failure;
         }
         lastError = `${NAMES[this.settings.provider]} não conseguiu seguir o schema`;
         user = req.user + retryNote("(sem resposta)", lastError);
         continue;
       }
-      audit("external_llm", {
-        meetingId: req.meetingId ?? null,
-        label: req.label,
-        provider: this.settings.provider,
+      await this.auditSent(req, {
         model: result.usage?.model ?? this.model,
         promptTokens: result.usage?.inputTokens ?? null,
         completionTokens: result.usage?.outputTokens ?? null,
         // assinatura: sem custo por chamada
         cost: null,
         durationMs: result.durationMs ?? null,
+        success: true,
       });
       console.log(
         `[llm-assinatura] ${this.settings.provider} ${req.label}: ` +

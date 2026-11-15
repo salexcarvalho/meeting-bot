@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { GenerateRequest, LLMProvider } from "./provider";
+import { UsageMeter, type Generation, type GenerateRequest, type LLMProvider } from "./provider";
 
 export interface OllamaSettings {
   url: string;
@@ -35,12 +35,20 @@ export function toOllamaSchema(schema: z.ZodType): unknown {
 
 interface ChatResponse {
   message?: { content?: string };
+  prompt_eval_count?: number;
+  prompt_eval_duration?: number;
   eval_count?: number;
   eval_duration?: number;
   error?: string;
 }
 
 const REQUEST_TIMEOUT_MS = 10 * 60_000;
+
+/** Tempo de inferência (nanossegundos do Ollama) em ms; nulo quando o Ollama não informou nenhum. */
+export function inferenceMs(data: { prompt_eval_duration?: number; eval_duration?: number }): number | null {
+  if (data.prompt_eval_duration === undefined && data.eval_duration === undefined) return null;
+  return Math.round(((data.prompt_eval_duration ?? 0) + (data.eval_duration ?? 0)) / 1e6);
+}
 
 export class OllamaProvider implements LLMProvider {
   readonly name = "ollama";
@@ -51,7 +59,12 @@ export class OllamaProvider implements LLMProvider {
     return this.settings.model;
   }
 
-  async generate<T>(req: GenerateRequest<T>): Promise<T> {
+  async generate<T>(req: GenerateRequest<T>): Promise<Generation<T>> {
+    const meter = new UsageMeter(this.settings.model);
+    return meter.run(() => this.attempts(req, meter));
+  }
+
+  private async attempts<T>(req: GenerateRequest<T>, meter: UsageMeter): Promise<T> {
     const format = toOllamaSchema(req.schema);
     const messages: { role: string; content: string }[] = [
       { role: "system", content: req.system },
@@ -69,6 +82,7 @@ export class OllamaProvider implements LLMProvider {
         options: { temperature: 0, num_ctx: req.numCtx },
         messages,
       });
+      meter.add({ inputTokens: data.prompt_eval_count, outputTokens: data.eval_count, computeMs: inferenceMs(data) });
       const content = data.message?.content ?? "";
       const tokS = data.eval_count && data.eval_duration ? data.eval_count / (data.eval_duration / 1e9) : 0;
       console.log(

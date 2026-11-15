@@ -4,11 +4,16 @@ import { HostCliLlm, SubscriptionLlmError } from "../src/llm/hostCli";
 import { HostJobError, HostJobQueue } from "../src/llm/hostJobs";
 
 const { audits, owner } = vi.hoisted(() => ({
-  audits: [] as { kind: string; detail: Record<string, unknown> }[],
+  audits: [] as { kind: string; detail: Record<string, unknown>; userId: string | null }[],
   owner: { current: { id: "dono", name: "Sérgio" } as { id: string; name: string } | null },
 }));
 vi.mock("../src/security/audit", () => ({
-  audit: (kind: string, detail: Record<string, unknown>) => audits.push({ kind, detail }),
+  audit: (kind: string, detail: Record<string, unknown>, userId: string | null = null) =>
+    audits.push({ kind, detail, userId }),
+}));
+vi.mock("../src/usage/recorder", () => ({
+  ownerOfMeeting: async () => "dono",
+  recordUsage: vi.fn(),
 }));
 vi.mock("../src/recording/owner", () => ({
   hostAgentOwner: async () => owner.current,
@@ -23,6 +28,7 @@ const request = {
   schema: Narrativa,
   numCtx: 8192,
   label: "narrativa abc",
+  purpose: "ata" as const,
   meetingId: "11111111-1111-1111-1111-111111111111",
 };
 
@@ -109,7 +115,7 @@ describe("HostCliLlm", () => {
   it("manda sistema, texto e schema; valida e audita sem conteúdo", async () => {
     const agent = withAgent([VALID]);
     const llm = new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 600 }, agent.q);
-    await expect(llm.generate(request)).resolves.toEqual(VALID);
+    await expect(llm.generate(request)).resolves.toMatchObject({ data: VALID });
     await agent.done();
     expect(agent.jobs).toHaveLength(1);
     expect(agent.jobs[0]).toMatchObject({ provider: "claude", model: "sonnet", system: "sistema", user: SECRET_TEXT, timeoutSeconds: 600 });
@@ -117,18 +123,45 @@ describe("HostCliLlm", () => {
     expect(audits).toEqual([
       {
         kind: "external_llm",
+        userId: "dono",
         detail: {
           meetingId: request.meetingId,
           label: "narrativa abc",
           provider: "claude",
+          purpose: "ata",
           model: "claude-sonnet-5",
           promptTokens: 100,
           completionTokens: 20,
           cost: null,
           durationMs: 1500,
+          success: true,
         },
       },
     ]);
+    expect(JSON.stringify(audits)).not.toContain(SECRET_TEXT);
+  });
+
+  it("devolve o uso da assinatura: tokens e tempo, sem custo por chamada", async () => {
+    const agent = withAgent([VALID]);
+    const llm = new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 600 }, agent.q);
+    const out = await llm.generate(request);
+    await agent.done();
+    expect(out.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      costUsd: null,
+      computeMs: null,
+      attempts: 1,
+      model: "claude-sonnet-5",
+    });
+  });
+
+  it("falha do CLI audita a recusa com código e sem conteúdo", async () => {
+    const agent = withAgent([new Error("Not logged in")]);
+    const llm = new HostCliLlm({ provider: "codex", model: "", timeoutSeconds: 60 }, agent.q);
+    await expect(llm.generate(request)).rejects.toThrow(/Not logged in/);
+    await agent.done();
+    expect(audits.at(-1)).toMatchObject({ kind: "external_llm", detail: { success: false, errorCode: "unavailable" } });
     expect(JSON.stringify(audits)).not.toContain(SECRET_TEXT);
   });
 
@@ -149,7 +182,7 @@ describe("HostCliLlm", () => {
   it("CLI que desiste do schema vira resposta inválida, com nova tentativa", async () => {
     const agent = withAgent([new Error("error_max_structured_output_retries"), VALID]);
     const llm = new HostCliLlm({ provider: "claude", model: "sonnet", timeoutSeconds: 60 }, agent.q);
-    await expect(llm.generate(request)).resolves.toEqual(VALID);
+    await expect(llm.generate(request)).resolves.toMatchObject({ data: VALID });
     await agent.done();
     expect(agent.jobs[1].user).toMatch(/não seguiu o schema \(Claude não conseguiu seguir o schema\)/);
 
@@ -166,7 +199,7 @@ describe("HostCliLlm", () => {
   it("aceita JSON em texto, tenta de novo com a resposta anterior e falha como resposta inválida", async () => {
     const agent = withAgent([JSON.stringify(VALID)]);
     const llm = new HostCliLlm({ provider: "codex", model: "", timeoutSeconds: 60 }, agent.q);
-    await expect(llm.generate(request)).resolves.toEqual(VALID);
+    await expect(llm.generate(request)).resolves.toMatchObject({ data: VALID });
     await agent.done();
 
     const bad = withAgent([{ objetivo: "o" }, "não é json"]);
@@ -181,7 +214,7 @@ describe("HostCliLlm", () => {
   it("erro do CLI vira falha com o nome da assinatura", async () => {
     const agent = withAgent([new Error("Not logged in")]);
     const llm = new HostCliLlm({ provider: "codex", model: "", timeoutSeconds: 60 }, agent.q);
-    await expect(llm.generate(request)).rejects.toThrow(new SubscriptionLlmError("Codex: Not logged in"));
+    await expect(llm.generate(request)).rejects.toMatchObject({ message: "Codex: Not logged in", causeError: expect.any(SubscriptionLlmError) });
     await agent.done();
   });
 });
