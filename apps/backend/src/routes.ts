@@ -10,9 +10,11 @@ import {
   ExtractItemsRequest,
   GenerateAdrsRequest,
   IDLE_STATUSES,
+  MEETING_LIST_SCOPES,
   MEETING_STATUSES,
   IdentityChoice,
   type AsrOptions,
+  type MeetingListScope,
   type LlmChoice,
   type MeetingDetail,
   type MeetingStatus,
@@ -51,13 +53,15 @@ import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBo
 import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
 import { detectPlatform } from "./bot/link";
 import { botForUrl, botUrlKey, releaseBotUrl, reserveBotUrl } from "./bot/state";
-import { meetingAccess, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
+import { meetingAccess, meetingAudience, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
+import { extraPermissionsFor, isOwnerOnlyRoute } from "./authz/ownerOnly";
 import { resolveBotIdentity } from "./users/identity";
-import { getAgent, getProfile } from "./users/repo";
+import { getAgent, getProfile, getSelf } from "./users/repo";
 import type { User } from "./types";
-import { toMeetingSummary } from "./meetings/summary";
+import { toMeetingListItem, toMeetingSummary } from "./meetings/summary";
 import { countFinalSegments, getSegments, getSpeakers, speakerNameResolver, toSegmentJson } from "./repo/transcripts";
 import { features } from "./features";
+import { hub } from "./live/hub";
 import { EXTERNAL_ASR_ID, externalAsrStatus } from "./asr/openrouter";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -126,6 +130,11 @@ async function requestedLlm(
   return llm;
 }
 
+/** Nome de exibição do dono (só vai a quem recebeu o compartilhamento). */
+async function ownerNameOf(ownerId: string | null): Promise<string | null> {
+  return (await getSelf(ownerId))?.name ?? null;
+}
+
 export async function loadMeetingDetail(meetingId: string, user: User): Promise<MeetingDetail | null> {
   const [meeting, myAccess] = await Promise.all([getMeeting(meetingId), meetingAccess(user, meetingId)]);
   if (!meeting || !myAccess) return null;
@@ -152,24 +161,12 @@ export async function loadMeetingDetail(meetingId: string, user: User): Promise<
     transcriptionProvider: meeting.transcription_provider,
     asrProvider: meeting.asr_provider,
     access: myAccess,
+    ownerName: myAccess === "owner" ? null : await ownerNameOf(meeting.created_by),
     analysisProvider: meeting.analysis_provider,
   };
 }
 
-const TRANSCRIPT_ROUTES = new Set(["/meetings/:id", "/meetings/:id/audio"]);
-// Compartilhamento "edit" mexe no conteúdo (itens, falantes); agenda, gravação, link e envio de áudio são do dono.
-const OWNER_ONLY_ROUTES = new Set([
-  "/meetings/:id",
-  "/meetings/:id/record",
-  "/meetings/:id/end",
-  "/meetings/:id/assistant",
-  "/meetings/:id/reprocess",
-  "/meetings/:id/skip",
-  "/meetings/:id/auto-off-day",
-  "/meetings/:id/cancel",
-  "/meetings/:id/extract-items",
-  "/meetings/:id/adrs/generate",
-]);
+const TRANSCRIPT_ROUTES: ReadonlySet<string> = new Set(["/meetings/:id", "/meetings/:id/audio"]);
 
 export function buildRouter(): Router {
   const router = Router({ caseSensitive: true });
@@ -255,12 +252,8 @@ export function buildRouter(): Router {
   router.param(
     "id",
     meetingParamGuard({
-      extraFor: (req, pattern) => {
-        if (req.method === "DELETE") return ["transcripts.delete"];
-        if (req.method === "GET" && TRANSCRIPT_ROUTES.has(pattern)) return ["transcripts.read"];
-        return [];
-      },
-      ownerOnly: (req, pattern) => req.method !== "GET" && OWNER_ONLY_ROUTES.has(pattern),
+      extraFor: (req, pattern) => extraPermissionsFor(req.method, pattern, TRANSCRIPT_ROUTES),
+      ownerOnly: (req, pattern) => isOwnerOnlyRoute(req.method, pattern),
     }),
   );
 
@@ -276,14 +269,20 @@ export function buildRouter(): Router {
         typeof req.query.status === "string"
           ? req.query.status.split(",").filter((v): v is MeetingStatus => (MEETING_STATUSES as readonly string[]).includes(v))
           : null;
+      const rawScope = req.query.scope ?? "all";
+      if (typeof rawScope !== "string" || !(MEETING_LIST_SCOPES as readonly string[]).includes(rawScope)) {
+        return res.status(400).json({ error: "Escopo inválido." });
+      }
+      const viewerId = req.user!.id;
       const meetings = await listMeetings({
-        visibleTo: { userId: req.user!.id, sql: visibleMeetingsSql(req.user!, "m", 1) },
+        visibleTo: { userId: viewerId, sql: visibleMeetingsSql(req.user!, "m", 1) },
         limit: Number(req.query.limit) || 50,
         before: before && !Number.isNaN(before.getTime()) ? before : null,
         projectId,
         status,
+        scope: rawScope as MeetingListScope,
       });
-      res.json({ meetings: meetings.map(toMeetingSummary) });
+      res.json({ meetings: meetings.map((m) => toMeetingListItem(m, viewerId)) });
     }),
   );
 
@@ -543,7 +542,19 @@ export function buildRouter(): Router {
         return res.status(409).json({ error: "Encerre a gravação e aguarde o processamento antes de excluir." });
       }
       const audio = await listAudio(meeting.id);
+      const recipients = [...(await meetingAudience(meeting.id))].filter((id) => id !== req.user!.id);
       await deleteMeeting(meeting.id);
+      for (const userId of recipients) {
+        hub.revokeAccess(meeting.id, userId, {
+          type: "meeting_access",
+          meetingId: meeting.id,
+          change: "deleted",
+          access: null,
+          by: null,
+          title: null,
+          meeting: null,
+        });
+      }
       for (const a of audio) await rm(a.path, { force: true });
       if (meeting.audio_path) await rm(meeting.audio_path, { force: true });
       await rm(path.join(audioDir, meeting.id), { recursive: true, force: true });

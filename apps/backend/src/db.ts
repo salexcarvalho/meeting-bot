@@ -4,6 +4,7 @@ import type {
   Attendee,
   Channel,
   ItemType,
+  MeetingListScope,
   MeetingSource,
   MeetingStatus,
   Platform,
@@ -213,6 +214,11 @@ export interface MeetingRow {
   analysis_provider: string | null;
   series_id: string | null;
   recurrence_rule: RecurrenceRule | null;
+  /** só nas consultas por espectador (meetingSelectFor): nome do dono, nível próprio e contagens */
+  owner_name?: string | null;
+  viewer_share_access?: "read" | "edit" | null;
+  share_unseen?: boolean;
+  share_count?: number | string | null;
 }
 
 export interface MeetingAnalysis {
@@ -301,6 +307,39 @@ export const meetingSelect = `
   LEFT JOIN users u ON u.id = m.created_by
   LEFT JOIN projects p ON p.id = m.project_id`;
 
+/**
+ * Mesma consulta de `meetingSelect` mais as colunas que dependem de quem pergunta (`$viewerParam` = id do
+ * usuário): nome do dono, nível do compartilhamento, "Nova" e, só para o dono, quantas pessoas têm acesso.
+ */
+export function meetingSelectFor(viewerParam: number): string {
+  const v = `$${viewerParam}`;
+  return `
+  SELECT m.*, u.username AS created_by_username, p.name AS project_name,
+         COALESCE(NULLIF(u.display_name, ''), NULLIF(u.real_name, ''), u.username) AS owner_name,
+         vs.access AS viewer_share_access,
+         (vs.meeting_id IS NOT NULL AND vs.seen_at IS NULL) AS share_unseen,
+         CASE WHEN m.created_by = ${v}
+              THEN (SELECT count(*) FROM meeting_shares x WHERE x.meeting_id = m.id) END AS share_count
+  FROM meetings m
+  LEFT JOIN users u ON u.id = m.created_by
+  LEFT JOIN projects p ON p.id = m.project_id
+  LEFT JOIN meeting_shares vs ON vs.meeting_id = m.id AND vs.user_id = ${v}`;
+}
+
+/** Filtro por escopo da lista (`$1` = id do usuário). `all` não filtra além da visibilidade. */
+export function scopeSql(scope: MeetingListScope): string | null {
+  switch (scope) {
+    case "mine":
+      return "m.created_by = $1";
+    case "shared":
+      return "EXISTS (SELECT 1 FROM meeting_shares sc WHERE sc.meeting_id = m.id AND sc.user_id = $1)";
+    case "shared_by_me":
+      return "(m.created_by = $1 AND EXISTS (SELECT 1 FROM meeting_shares sc WHERE sc.meeting_id = m.id))";
+    default:
+      return null;
+  }
+}
+
 export async function getMeeting(id: string): Promise<MeetingRow | null> {
   const { rows } = await pool.query(`${meetingSelect} WHERE m.id = $1`, [id]);
   return rows[0] ?? null;
@@ -313,9 +352,12 @@ export async function listMeetings(opts: {
   before?: Date | null;
   projectId?: string | null;
   status?: MeetingStatus[] | null;
+  scope?: MeetingListScope;
 }): Promise<MeetingRow[]> {
   const params: unknown[] = [opts.visibleTo.userId];
   const where: string[] = [opts.visibleTo.sql];
+  const scoped = scopeSql(opts.scope ?? "all");
+  if (scoped) where.push(scoped);
   // Histórico: reuniões que aconteceram ou vão acontecer, ordenadas pelo horário efetivo.
   const when = `COALESCE(m.started_at, m.scheduled_start, m.created_at)`;
   if (opts.before) {
@@ -332,7 +374,7 @@ export async function listMeetings(opts: {
   }
   params.push(Math.min(Math.max(opts.limit ?? 50, 1), 200));
   const { rows } = await pool.query(
-    `${meetingSelect} ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    `${meetingSelectFor(1)} ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY ${when} DESC LIMIT $${params.length}`,
     params,
   );
