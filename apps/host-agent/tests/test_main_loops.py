@@ -188,3 +188,92 @@ async def test_tarefa_avulsa_que_falha_e_logada(tmp_path, caplog):
         agent._spawn(boom(), "alerta")
         await wait_until(lambda: not agent._background)
     assert any(r.exc_info for r in caplog.records)
+
+
+# ---------- supervisão ponta a ponta (run) e processos filhos ----------
+
+
+async def _idle(agent):
+    await agent._stopping.wait()
+
+
+def _idle_loops(agent):
+    agent.heartbeat_loop = lambda: _idle(agent)
+    agent.llm_status_loop = lambda: _idle(agent)
+    agent.llm_loop = lambda: _idle(agent)
+
+
+async def test_run_sai_com_codigo_1_quando_um_laco_morre(tmp_path):
+    agent = make_agent(tmp_path, mode="llm")
+    agent.api = FakeApi([])
+    _idle_loops(agent)
+
+    async def boom():
+        raise RuntimeError("laço morreu")
+
+    agent.heartbeat_loop = boom
+    await asyncio.wait_for(agent.run(), 3)
+    assert agent.exit_code == 1
+
+
+async def test_run_encerra_com_codigo_0_em_shutdown_normal(tmp_path):
+    agent = make_agent(tmp_path, mode="llm")
+    agent.api = FakeApi([])
+    _idle_loops(agent)
+    asyncio.get_running_loop().call_later(0.1, agent._stopping.set)
+    await asyncio.wait_for(agent.run(), 3)
+    assert agent.exit_code == 0
+
+
+async def test_falha_ao_encerrar_gravacao_e_logada(tmp_path, caplog):
+    agent = make_agent(tmp_path)
+
+    class Rec:
+        title = "x"
+
+        async def stop(self):
+            raise OSError("disco cheio")
+
+    with caplog.at_level(logging.ERROR, logger="host_agent"):
+        agent._spawn(agent._finish(Rec()), "fim-gravacao")
+        await wait_until(lambda: not agent._background)
+    assert any(r.exc_info and "disco cheio" in str(r.exc_info[1]) for r in caplog.records)
+
+
+@pytest.fixture
+def slow_notify_send(tmp_path, monkeypatch):
+    """notify-send falso que nunca termina; guarda o processo para conferir se foi morto."""
+    from host_agent import notifier as nt
+
+    script = tmp_path / "notify-send"
+    script.write_text("#!/bin/sh\nexec sleep 60\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    procs = []
+    real = asyncio.create_subprocess_exec
+
+    async def spy(*args, **kwargs):
+        proc = await real(*args, **kwargs)
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(nt.asyncio, "create_subprocess_exec", spy)
+    return nt, procs
+
+
+async def test_notify_send_preso_e_morto_no_timeout(slow_notify_send, monkeypatch):
+    nt, procs = slow_notify_send
+    monkeypatch.setattr(nt, "INFO_TIMEOUT", 0.2)
+    await asyncio.wait_for(nt.Notifier().info("t", "b"), 5)
+    assert procs[0].returncode is not None  # não sobrou filho vivo
+
+
+async def test_notify_send_cancelado_de_fora_e_morto(slow_notify_send):
+    nt, procs = slow_notify_send
+    task = asyncio.create_task(nt.Notifier().info("t", "b"))
+    await wait_until(lambda: procs)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert procs[0].returncode is not None

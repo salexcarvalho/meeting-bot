@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import shutil
 
@@ -56,6 +57,13 @@ def _when(alert: Alert) -> str:
     return alert.meeting.start.astimezone().strftime("%H:%M")
 
 
+async def _kill(proc: asyncio.subprocess.Process) -> None:
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+    await proc.wait()
+
+
 class Notifier:
     def __init__(self) -> None:
         self._open: dict[str, asyncio.subprocess.Process] = {}
@@ -74,8 +82,11 @@ class Notifier:
         except asyncio.TimeoutError:
             # notify-send preso (daemon de notificações travado) não pode prender quem chamou.
             log.warning("notify-send não respondeu em %s s; encerrado", INFO_TIMEOUT)
-            proc.kill()
-            await proc.wait()
+            await _kill(proc)
+        except asyncio.CancelledError:
+            # Cancelado de fora (ex.: teto do converge): não deixa o filho vivo para trás.
+            await _kill(proc)
+            raise
 
     async def notify(self, alert: Alert) -> str | None:
         """Notificação persistente com ações. Retorna 'entrar', 'nao_gravar' ou None."""
