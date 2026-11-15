@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
@@ -105,10 +106,8 @@ class HostAgent:
 
     async def _sleep(self, seconds: float) -> None:
         """Espera interrompível pelo encerramento."""
-        try:
+        with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(self._stopping.wait(), seconds)
-        except asyncio.TimeoutError:
-            pass
 
     async def _run_loop(self, name: str, step: Callable[[], Awaitable[None]], interval: float) -> None:
         """Repete `step`; falha de uma iteração é logada e o laço segue no próximo ciclo.
@@ -237,7 +236,7 @@ class HostAgent:
                 log.info("parando gravação %s", current.meeting_id[:8])
                 self.recording = None
                 # Em segundo plano: o envio do restante não pode travar o heartbeat.
-                self._background.add(asyncio.create_task(self._finish(current)))
+                self._spawn(self._finish(current), "fim-gravacao")
             if desired and self.recording is None:
                 started = desired.get("startedAt")
                 origin = (
@@ -265,11 +264,8 @@ class HostAgent:
         self._stopping.set()
 
     async def _finish(self, rec: ActiveRecording) -> None:
-        try:
-            await rec.stop()
-            await self.notifier.info("Gravação encerrada", rec.title)
-        finally:
-            self._background.discard(asyncio.current_task())
+        await rec.stop()
+        await self.notifier.info("Gravação encerrada", rec.title)
 
     def _check_conflicts(self) -> None:
         now = datetime.now(timezone.utc)
@@ -328,8 +324,9 @@ class HostAgent:
         for t in tasks:
             t.add_done_callback(self._on_loop_done)
         if self.cfg.mode == "full":
-            await asyncio.sleep(HEARTBEAT_SECONDS + 1)
-            self._spawn(self.resume_pending_spools(), "spools-pendentes")
+            await self._sleep(HEARTBEAT_SECONDS + 1)
+            if not self._stopping.is_set():
+                self._spawn(self.resume_pending_spools(), "spools-pendentes")
         await self._stopping.wait()
         log.info("encerrando host-agent")
         for t in tasks:
