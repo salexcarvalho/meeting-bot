@@ -331,6 +331,23 @@ export interface AgentMeeting {
   status: MeetingStatus;
 }
 
+/** Reunião da agenda do dia vista pelo agente externo (leitura). */
+export interface AgentDayMeeting {
+  id: string;
+  /** uid do evento de origem (.ics/Aurora); null em reunião cadastrada à mão */
+  icalUid: string | null;
+  title: string;
+  start: string;
+  end: string;
+  url: string | null;
+  /** null quando não há link reconhecido */
+  platform: Platform | null;
+  skipRecording: boolean;
+  status: MeetingStatus;
+  /** ocorrência de série (ou de recorrência manual) */
+  recurring: boolean;
+}
+
 export interface MeetingDetail {
   meeting: MeetingSummary;
   segments: Segment[];
@@ -444,17 +461,20 @@ export const AgentCalendarEvent = z.object({
 });
 export type AgentCalendarEvent = z.infer<typeof AgentCalendarEvent>;
 
+/** dia civil AAAA-MM-DD, existente no calendário */
+const CalendarDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "use AAAA-MM-DD")
+  .refine((v) => {
+    const day = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v);
+  }, INVALID_DATE);
+
 export const AgentCalendarImportInput = z
   .object({
     source: z.literal(AGENT_CALENDAR_SOURCE),
     /** dia da agenda (AAAA-MM-DD) no fuso da aplicação; só reuniões desse dia são tocadas */
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "use AAAA-MM-DD")
-      .refine((v) => {
-        const day = new Date(`${v}T00:00:00Z`);
-        return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v);
-      }, INVALID_DATE),
+    date: CalendarDay,
     events: z.array(AgentCalendarEvent).max(AGENT_CALENDAR_MAX_EVENTS, `Máximo de ${AGENT_CALENDAR_MAX_EVENTS} eventos por envio.`).optional(),
     ics: z.string().min(1).max(AGENT_CALENDAR_MAX_ICS_CHARS, "Arquivo .ics grande demais.").optional(),
     /** lista vazia só cancela as reuniões do dia com esta confirmação explícita (padrão false: evita apagar a agenda por engano) */
@@ -462,6 +482,16 @@ export const AgentCalendarImportInput = z
   })
   .refine((v) => (v.events === undefined) !== (v.ics === undefined), "envie 'events' ou 'ics' (um dos dois)");
 export type AgentCalendarImportInput = z.infer<typeof AgentCalendarImportInput>;
+
+/** Consulta de leitura da agenda do dia pelo agente externo (GET /api/agent/meetings); sem `date` vale hoje. */
+export const AgentMeetingsQuery = z.object({ date: CalendarDay.optional() });
+export type AgentMeetingsQuery = z.infer<typeof AgentMeetingsQuery>;
+
+export interface AgentMeetingsResponse {
+  /** dia consultado (AAAA-MM-DD) no fuso da aplicação */
+  date: string;
+  meetings: AgentDayMeeting[];
+}
 
 export interface AgentCalendarImportResult extends ImportResult {
   source: string;

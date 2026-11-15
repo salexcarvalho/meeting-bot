@@ -163,6 +163,7 @@ Navegação: `/reunioes/:id?seg=<segmentId>&t=<segundos>` (transcrição), `?ite
 | POST | `/agent/heartbeat` | `{version, capture: null \| {meetingId, channels: {mic\|remote: {state: "recording"\|"restarting"\|"unavailable", device, bytes}}}}` | `{now, userDisplayName, timezone, alerts: {minutesBefore: [15,5,1]}, meetings: AgentMeeting[], recording: {meetingId, title} \| null}` |
 | POST | `/agent/meetings/:id/skip` | — | `{ok: true}`; `409` se já estiver gravando |
 | POST | `/agent/calendar/import` | `AgentCalendarImportInput` (abaixo) | `AgentCalendarImportResult`; `400` corpo ou `.ics` inválido; `413` corpo acima de 256 kB; `503` sem `AGENT_OWNER` |
+| GET | `/agent/meetings?date=YYYY-MM-DD` | `date` opcional (padrão hoje em `APP_TIMEZONE`) | `{date, meetings: AgentDayMeeting[]}`; `400` data inválida; `503` sem `AGENT_OWNER` |
 | WS | `/agent/audio` | ver [ws-audio.md](ws-audio.md) | — |
 
 ```ts
@@ -259,3 +260,27 @@ Regras:
 - **Escolhas do usuário:** reenviar nunca muda "Não gravar" (`skip_recording`), "Gerar itens" (`extract_items`),
   projeto, nem apaga descrição, participantes, organizador, local ou link que o envio não informou. O envio não
   altera as regras de gravação: o assistente entra nas reuniões com link no horário, exceto "Não gravar".
+
+### Agenda do dia, leitura (`GET /api/agent/meetings`)
+
+Mesmo token (`AGENT_TOKEN`) e mesmo escopo do envio e do heartbeat: só as reuniões agendadas (`source` `ics` ou
+`manual`) do `AGENT_OWNER`. Somente leitura: não registra heartbeat, não grava nada e não faz auditoria. Devolve
+as reuniões cujo início cai no dia `date` (`AAAA-MM-DD`, fuso `APP_TIMEZONE`; sem `date`, hoje), em ordem de início,
+em qualquer status (inclusive `cancelled`; filtre por `status` se não quiser as canceladas). `date` inválida
+(formato, dia inexistente ou repetida) responde `400` com `{error: "date: ..."}`; token ausente ou errado, `401`.
+
+```ts
+AgentDayMeeting = {
+  id, icalUid: string|null,          // uid do evento de origem (.ics/Aurora); null em reunião cadastrada à mão
+  title, start, end,                 // ISO 8601 (UTC)
+  url: string|null, platform: "meet"|"teams"|"upload"|"other"|null,   // null = sem link reconhecido
+  skipRecording: boolean,            // "Não gravar"
+  status: MeetingStatus,             // scheduled, skipped, recording, done, cancelled, ...
+  recurring: boolean,                // ocorrência de série (recorrência manual, .ics ou Aurora)
+}
+// resposta: { date: "AAAA-MM-DD", meetings: AgentDayMeeting[] }
+```
+
+```bash
+curl -sS "$MEETBOT_URL/api/agent/meetings?date=2026-11-14" -H "Authorization: Bearer $AGENT_TOKEN"
+```
