@@ -8,6 +8,7 @@ import type {
 import { config } from "../config";
 import { emitMeetingChanged, withTransaction } from "../db";
 import { detectMeetingUrl, parseIcs, type Occurrence } from "./ics";
+import { pairReschedules } from "./reschedule";
 import { dayRange } from "./rules";
 import { CalendarError, listProjectMatchers } from "./service";
 import { applyOccurrence, type ApplyContext } from "./upsert";
@@ -161,6 +162,12 @@ export async function importAgentCalendar(
     window: range,
   };
   await withTransaction(async (client) => {
+    // Dois envios simultâneos do mesmo dono, origem e dia esperam um ao outro: sem isso ambos tentam criar a mesma
+    // linha e um deles quebra no índice único (created_by, ical_uid, recurrence_key).
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `agent-calendar:${ownerId}:${input.source}:${input.date}`,
+    ]);
+    await pairReschedules(client, ownerId, input.source, range, REMOVABLE_STATUSES, occurrences);
     for (const o of occurrences) await applyOccurrence(client, o, ctx);
     if (skipRemoval) return;
     const removed = await cancelMissing(client, ownerId, input.source, range, seen, ignoredUids);

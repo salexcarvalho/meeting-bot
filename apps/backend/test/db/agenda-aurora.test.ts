@@ -283,6 +283,87 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
     expect(await rowOf("repete@teste")).toHaveLength(2);
   });
 
+  it("remarcar ocorrência de série no mesmo dia atualiza a linha e preserva o que o usuário escolheu", async () => {
+    const base = await serve();
+    const day = "2031-04-01";
+    const serie = (h: number, uid = "remarca@teste") => ({ uid, title: "Daily", start: hour(day, h), end: hour(day, h + 1), recurring: true });
+    await send(base, payload([serie(10)], day));
+    const [antes] = await rowOf("remarca@teste");
+    await setSkip(antes.id, true);
+    await pool.query(`UPDATE meetings SET extract_items = true, description = 'nota manual' WHERE id = $1`, [antes.id]);
+    const total = await countAll();
+
+    const res = await send(base, payload([serie(15)], day));
+    expect(res.json).toMatchObject({ created: 0, updated: 1, removed: 0, cancelled: 0 });
+    expect(await countAll()).toBe(total);
+
+    const rows = await rowOf("remarca@teste");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: antes.id, status: "skipped", recurrence_key: new Date(hour(day, 15)).toISOString() });
+    const kept = (await pool.query(`SELECT skip_recording, extract_items, description, scheduled_start FROM meetings WHERE id = $1`, [antes.id])).rows[0];
+    expect(kept).toMatchObject({ skip_recording: true, extract_items: true, description: "nota manual" });
+    expect(kept.scheduled_start.toISOString()).toBe(new Date(hour(day, 15)).toISOString());
+
+    // reenviar o mesmo horário é idempotente
+    expect((await send(base, payload([serie(15)], day))).json).toMatchObject({ created: 0, updated: 0, unchanged: 1 });
+  });
+
+  it("remarcar vários da mesma série pareia por ordem de início; um evento a mais vira linha nova", async () => {
+    const base = await serve();
+    const day = "2031-04-02";
+    const serie = (h: number) => ({ uid: "multi@teste", title: "Série", start: hour(day, h), end: hour(day, h + 1), recurring: true });
+    await send(base, payload([serie(9), serie(11)], day));
+    const [r9, r11] = await rowOf("multi@teste").then((rows) => rows.sort((a, b) => a.recurrence_key.localeCompare(b.recurrence_key)));
+
+    const res = await send(base, payload([serie(13), serie(16), serie(18)], day));
+    expect(res.json).toMatchObject({ created: 1, updated: 2, removed: 0 });
+    const rows = await pool.query(`SELECT id, scheduled_start FROM meetings WHERE ical_uid = 'multi@teste' AND created_by = $1 ORDER BY scheduled_start`, [owner]);
+    expect(rows.rows).toHaveLength(3);
+    expect(rows.rows[0].id).toBe(r9.id);
+    expect(rows.rows[1].id).toBe(r11.id);
+  });
+
+  it("remarcar evento único no mesmo dia já é atualização da mesma linha", async () => {
+    const base = await serve();
+    const day = "2031-04-03";
+    const unico = (h: number) => ({ uid: "unico-remarca@teste", title: "Único", start: hour(day, h), end: hour(day, h + 1) });
+    await send(base, payload([unico(10)], day));
+    const [antes] = await rowOf("unico-remarca@teste");
+    await setSkip(antes.id, true);
+
+    const res = await send(base, payload([unico(15)], day));
+    expect(res.json).toMatchObject({ created: 0, updated: 1, removed: 0 });
+    const rows = await rowOf("unico-remarca@teste");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: antes.id, status: "skipped", recurrence_key: "" });
+  });
+
+  it("série remarcada para outro dia não pareia: a linha antiga some da lista e é cancelada", async () => {
+    const base = await serve();
+    const day = "2031-04-04";
+    const serie = (d: string, h: number) => ({ uid: "outro-dia-serie@teste", title: "Série", start: hour(d, h), end: hour(d, h + 1), recurring: true });
+    await send(base, payload([serie(day, 10)], day));
+    // o envio do dia agora só traz outra reunião; a série foi para o dia seguinte (ignorada por estar fora do dia)
+    const res = await send(base, payload([{ uid: "fica@teste", title: "Fica", start: hour(day, 9), end: hour(day, 10) }], day));
+    expect(res.json).toMatchObject({ created: 1, removed: 1 });
+    expect((await rowOf("outro-dia-serie@teste"))[0].status).toBe("cancelled");
+  });
+
+  it("dois envios simultâneos do mesmo dia respondem 200 e não duplicam", async () => {
+    const base = await serve();
+    const day = "2031-04-05";
+    const body = payload([
+      { uid: "conc-a@teste", title: "A", start: hour(day, 9), end: hour(day, 10) },
+      { uid: "conc-s@teste", title: "S", start: hour(day, 14), end: hour(day, 15), recurring: true },
+    ], day);
+
+    const results = await Promise.all(Array.from({ length: 4 }, () => send(base, body)));
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    expect(results.reduce((n, r) => n + Number(r.json.created), 0)).toBe(2);
+    expect(await rowOf("conc-a@teste")).toHaveLength(1);
+    expect(await rowOf("conc-s@teste")).toHaveLength(1);
+  });
+
   it("não cancela por sumiço reunião passada, perdida, em andamento ou já gravada", async () => {
     const base = await serve();
     const day = "2031-03-19";
