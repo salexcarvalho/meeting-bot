@@ -150,7 +150,7 @@ features.authedRouters.push((router) => {
       const body = parseBody(z.object({ enabled: z.boolean() }), req, res);
       if (!body) return;
       try {
-        res.json(toMeetingSummary(await setAutoOnOffDay(String(req.params.id), body.enabled)));
+        res.json(toMeetingSummary(await setAutoOnOffDay(String(req.params.id), body.enabled, req.user!.id)));
       } catch (err) {
         handleError(res, err);
       }

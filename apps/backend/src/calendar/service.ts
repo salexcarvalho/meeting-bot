@@ -289,9 +289,10 @@ export async function setSkip(id: string, skip: boolean): Promise<MeetingRow> {
 }
 
 // Reunião em dia não útil não tem lembrete nem entrada automática; aqui o usuário pede que tenha.
-export async function setAutoOnOffDay(id: string, enabled: boolean): Promise<MeetingRow> {
+// Só o dono pede isso (defesa em profundidade: a rota também é owner-only).
+export async function setAutoOnOffDay(id: string, enabled: boolean, userId: string): Promise<MeetingRow> {
   const meeting = await getMeeting(id);
-  if (!meeting) throw new CalendarError("Reunião não encontrada.", 404);
+  if (meeting?.created_by !== userId) throw new CalendarError("Reunião não encontrada.", 404);
   if (!["scheduled", "skipped"].includes(meeting.status)) {
     throw new CalendarError("Não é possível mudar o lembrete desta reunião agora.", 409);
   }

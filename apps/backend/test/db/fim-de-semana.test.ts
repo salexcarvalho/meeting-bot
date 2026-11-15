@@ -183,7 +183,7 @@ describe.skipIf(!enabled)("fim de semana sem agenda (Postgres)", async () => {
     expect(launches).not.toContain(sabado.id);
     expect((await getMeeting(sabado.id))?.status).toBe("scheduled");
 
-    const asked = await setAutoOnOffDay(sabado.id, true);
+    const asked = await setAutoOnOffDay(sabado.id, true, user.id);
     expect(toMeetingSummary(asked)).toMatchObject({ offDay: true, autoOnOffDay: true });
     launches.length = 0;
     await tickAutoAssistant(new Date(at(SABADO, 16, 15)));
@@ -199,13 +199,16 @@ describe.skipIf(!enabled)("fim de semana sem agenda (Postgres)", async () => {
       { title: "Sábado desfeito", start: new Date(at(SABADO, 18)).toISOString(), durationMinutes: 30, url: teams("undo"), skipRecording: false },
       user.id,
     );
-    expect((await setAutoOnOffDay(m.id, true)).auto_on_off_day).toBe(true);
-    expect((await setAutoOnOffDay(m.id, false)).auto_on_off_day).toBe(false);
+    expect((await setAutoOnOffDay(m.id, true, user.id)).auto_on_off_day).toBe(true);
+    expect((await setAutoOnOffDay(m.id, false, user.id)).auto_on_off_day).toBe(false);
     launches.length = 0;
     await tickAutoAssistant(new Date(at(SABADO, 18, 15)));
     expect(launches).not.toContain(m.id);
 
+    // outro usuário (mesmo sabendo o id) não mexe: 404 no serviço, além da rota owner-only
+    await expect(setAutoOnOffDay(m.id, true, "00000000-0000-0000-0000-000000000000")).rejects.toMatchObject({ status: 404 });
+
     await pool.query(`UPDATE meetings SET status = 'done' WHERE id = $1`, [m.id]);
-    await expect(setAutoOnOffDay(m.id, true)).rejects.toMatchObject({ status: 409 });
+    await expect(setAutoOnOffDay(m.id, true, user.id)).rejects.toMatchObject({ status: 409 });
   });
 });
