@@ -378,6 +378,42 @@ const statements = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   `CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history (task_id, id)`,
+  // ---------- F6 uso e custo de IA (specs/004-uso-custo): só metadados e números, append-only ----------
+  `CREATE TABLE IF NOT EXISTS ai_usage_logs (
+     id BIGSERIAL PRIMARY KEY,
+     at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+     meeting_id UUID REFERENCES meetings(id) ON DELETE SET NULL,
+     category TEXT NOT NULL CHECK (category IN ('llm', 'asr')),
+     purpose TEXT NOT NULL CHECK (purpose IN ('ata', 'adr', 'itens', 'resumo', 'ao_vivo', 'asr_final', 'asr_ao_vivo', 'outro')),
+     provider TEXT NOT NULL,
+     model TEXT CHECK (char_length(model) <= 120),
+     channel TEXT CHECK (channel IN ('mic', 'remote', 'mixed')),
+     input_tokens BIGINT CHECK (input_tokens >= 0),
+     output_tokens BIGINT CHECK (output_tokens >= 0),
+     audio_seconds NUMERIC(12, 2) CHECK (audio_seconds >= 0),
+     cost_usd NUMERIC(14, 8) CHECK (cost_usd >= 0),
+     duration_ms INTEGER CHECK (duration_ms >= 0),
+     compute_ms INTEGER CHECK (compute_ms >= 0),
+     attempts SMALLINT NOT NULL DEFAULT 1,
+     success BOOLEAN NOT NULL,
+     error_code TEXT CHECK (
+       error_code IN ('timeout', 'unavailable', 'schema_invalid', 'refused', 'truncated', 'disabled', 'cancelled', 'other')
+       OR error_code ~ '^http_[0-9]{3}$'
+     ),
+     label TEXT CHECK (char_length(label) <= 80),
+     source TEXT NOT NULL DEFAULT 'live' CHECK (source IN ('live', 'audit_backfill')),
+     audit_log_id BIGINT,
+     CHECK (success OR error_code IS NOT NULL),
+     CHECK (category = 'asr' OR audio_seconds IS NULL),
+     CHECK (category = 'llm' OR purpose IN ('asr_final', 'asr_ao_vivo', 'outro')),
+     CHECK (category = 'asr' OR purpose NOT IN ('asr_final', 'asr_ao_vivo'))
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_user_at ON ai_usage_logs (user_id, at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_at ON ai_usage_logs (at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_meeting ON ai_usage_logs (meeting_id) WHERE meeting_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_audit_log ON ai_usage_logs (audit_log_id) WHERE audit_log_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log ((detail->>'target')) WHERE detail ? 'target'`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {

@@ -31,6 +31,7 @@ export const PERMISSIONS = {
   "projects.manage": "Renomear e excluir projetos do catálogo",
   "providers.manage": "Gerenciar provedores e modelos de IA",
   "audit.read": "Ver auditoria",
+  "ai_usage.read": "Ver o uso e o custo de IA da instância (agregado, sem conteúdo)",
   "tasks.read": "Ver as próprias tarefas",
   "tasks.manage": "Criar, editar e excluir as próprias tarefas",
 } as const;

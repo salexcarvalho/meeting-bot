@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentMonth, monthRange } from "../src/llm/usage";
+import { currentMonth, monthRange } from "../src/usage/period";
 
 // O relatório soma por mês no fuso da aplicação: a virada não pode cair no dia errado.
 describe("mês do consumo de LLM", () => {
