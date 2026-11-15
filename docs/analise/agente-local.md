@@ -460,3 +460,36 @@ Conclusões:
   - validar que cada item aponta para um timestamp existente;
   - deduplicar itens;
   - classificar "decisão" só com verbo de decisão explícito.
+
+## 15. Busca e chat sobre reuniões — medições (specs/003-busca-chat)
+
+Medições feitas na implementação (2026-11-15) com Postgres descartável (`docker/postgres`, pgvector 0.8.7), sem tocar o banco real nem o Ollama do projeto.
+
+### Carga sintética (T068, SC-002)
+
+`npx tsx scripts/search-load.ts` (a partir de `apps/backend`): 100 mil trechos em 2 mil reuniões, vetores aleatórios de 1024 dimensões, 60 consultas por modo. O usuário "sem filtro" enxerga 95% das reuniões; o "seletivo", 5%. A permissão entra dentro da consulta (`hnsw.iterative_scan = relaxed_order`, `ef_search = 80`, `max_scan_tuples = 20000`).
+
+| Usuário | Modo | p50 | p95 | Resultados (média) |
+|---|---|---|---|---|
+| sem filtro (95%) | híbrido | 102 ms | 111 ms | 20 |
+| sem filtro (95%) | semântico | 16 ms | 23 ms | 20 |
+| sem filtro (95%) | texto | 100 ms | 103 ms | 20 |
+| seletivo (5%) | híbrido | 101 ms | 107 ms | 20 |
+| seletivo (5%) | semântico | 49 ms | 62 ms | 20 |
+| seletivo (5%) | texto | 99 ms | 105 ms | 20 |
+
+- **SC-002** (≤ 1,5 s p95 com 100 mil trechos): atendido com folga (p95 máximo de 111 ms), inclusive com o filtro seletivo, que nunca devolve menos de 20 resultados nem vaza reuniões fora do alcance.
+- Tamanho: índice HNSW de 781 MB e tabela de 34 MB (o vetor completo fica em TOAST). Construir o índice depois da carga leva minutos; inserir com o índice presente é muito mais lento (a carga de 100 mil trechos passou de 10 s para mais de 9 min). Para o volume real (milhares de trechos) o índice é pequeno; `halfvec` só vale a pena se o volume crescer ordens de grandeza.
+- O modo texto custa ~100 ms com 100 mil trechos (tsvector + GIN); é o piso da busca híbrida.
+
+### Golden set e isolamento (testes, embedder determinístico)
+
+- Golden set sintético (`test/fixtures/search/golden.json`: 4 reuniões, 20 consultas, 6 sem resposta): recall@5 híbrido ≥ 0,85 verificado em `busca.test.ts` com o embedder de teste (não mede o `bge-m3` real).
+- Isolamento (`busca-isolamento.test.ts`, 14 testes): outro usuário, administrador sem acesso, compartilhamento e revogação imediata, filtro dentro da consulta (não depois do `LIMIT`), transcrição vs. ata por permissão.
+
+### Pendente (precisa de Ollama real e de uma reunião real; dono)
+
+- **T006** spike de adoção do modelo de embedding: `OLLAMA_URL=... node scripts/spike-embeddings.mjs bge-m3 qwen3-embedding:0.6b embeddinggemma` depois de `ollama pull` (VRAM antes/depois com `num_gpu: 0`, RAM do container, lote de 16, 1 h de reunião em ≤ 5 min, norma). Critério: VRAM +0, RAM ≤ 2,5 GB, ≤ 5 min por hora de reunião, recall@5 híbrido ≥ 0,85 no golden set real. Calibrar `CHAT_MIN_SIMILARITY` com o modelo real.
+- **T045** tempo até pesquisável por texto e por sentido numa reunião de 1 h e interferência com a transcrição ao vivo.
+- **T055** avaliação do chat (`qwen3.5:4b`) no golden set: ≥ 90% com citação válida, 6/6 perguntas sem resposta recusadas, ≤ 30 s p90.
+- **T069** validação com reunião real seguindo `specs/003-busca-chat/quickstart.md`.

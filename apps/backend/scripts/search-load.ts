@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   stop();
   docker([
     "run", "--rm", "-d", "--name", NAME, "-e", "POSTGRES_PASSWORD=teste", "-e", "POSTGRES_USER=teste", "-e", "POSTGRES_DB=carga",
-    "-p", "127.0.0.1::5432", "--shm-size=512m", "--tmpfs", "/var/lib/postgresql/data", PG_TEST_IMAGE,
+    "-p", "127.0.0.1::5432", "--shm-size=2g", "--tmpfs", "/var/lib/postgresql/data", PG_TEST_IMAGE,
   ]);
   try {
     const port = docker(["port", NAME, "5432/tcp"]).trim().split("\n")[0].split(":").pop();
@@ -86,6 +86,8 @@ async function main(): Promise<void> {
     process.stdout.write(`[carga] inserindo ${CHUNKS} trechos com vetores sintéticos…\n`);
     const started = Date.now();
     await pool.query(`SET maintenance_work_mem = '1GB'`);
+    // índice HNSW construído depois da carga (inserir com ele presente é ordens de grandeza mais lento)
+    await pool.query(`DROP INDEX idx_search_chunks_hnsw`);
     await pool.query(
       `INSERT INTO search_chunks (meeting_id, kind, source_id, seq, content, content_hash, embedding, embed_model, embedded_at)
        SELECT m.id, 'transcript', '', s.n,
@@ -95,8 +97,11 @@ async function main(): Promise<void> {
          FROM meetings m CROSS JOIN LATERAL generate_series(1, $1::int) AS s(n)`,
       [Math.ceil(CHUNKS / MEETINGS)],
     );
-    process.stdout.write(`[carga] inseridos em ${((Date.now() - started) / 1000).toFixed(0)} s; reindexando o HNSW e o GIN…\n`);
-    await pool.query(`REINDEX INDEX idx_search_chunks_hnsw`);
+    process.stdout.write(`[carga] inseridos em ${((Date.now() - started) / 1000).toFixed(0)} s; construindo o HNSW…\n`);
+    await pool.query(
+      `CREATE INDEX idx_search_chunks_hnsw ON search_chunks USING hnsw (embedding vector_cosine_ops)
+         WITH (m = 16, ef_construction = 64) WHERE embedding IS NOT NULL`,
+    );
     await pool.query(`ANALYZE search_chunks`);
     const total = (await pool.query(`SELECT count(*)::int AS n FROM search_chunks`)).rows[0].n;
     const sizes = (await pool.query(

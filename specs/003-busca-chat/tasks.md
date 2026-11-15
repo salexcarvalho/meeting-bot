@@ -193,12 +193,12 @@ semântica/texto e o clique no trecho.
 ## Phase 8: Polish & Cross-Cutting Concerns
 
 - [x] T062 [P] `docs/ARCHITECTURE.md`: módulo `search/`, fluxo de indexação, tabela de GPU (embeddings em CPU, VRAM +0), imagem do Postgres, `OLLAMA_MAX_LOADED_MODELS`; `docs/vps-dokploy.md`: só texto (Q3)
-- [ ] T063 [P] `docs/analise/agente-local.md`: §15 com as medições (T006, T045, T055) e marcar o item de busca/chat da V1 como entregue; ajustar a §7 (banco real é `postgres:16` com imagem própria, não `pg17`)
+- [x] T063 [P] `docs/analise/agente-local.md`: §15 com as medições (T006, T045, T055) e marcar o item de busca/chat da V1 como entregue; ajustar a §7 (banco real é `postgres:16` com imagem própria, não `pg17`)
 - [x] T064 [P] README em três idiomas (`README.md`, `README.en.md`, `README.es.md`), `CHANGELOG.md` e `CLAUDE.md` (comandos `search:reindex`, nova imagem do Postgres, regra "chat sempre local")
 - [x] T065 Runbook de migração em `docs/vps-dokploy.md` e `quickstart.md`: backup `pg_dump`, build da imagem, recriar `postgres`, `ollama pull bge-m3`, subir o backend, verificação, rollback. Ensaiar numa **cópia** do dump (nunca no banco do usuário sem confirmação e sem backend ocioso)
 - [x] T066 Constituição: confirmar que nenhuma emenda é necessária com Q1–Q5-A (registrar em `plan.md` a data e as respostas do usuário); se Q1-B/C ou Q3-C forem escolhidas, redigir a emenda MINOR (2.3.0) com Sync Impact Report
 - [x] T067 Checklist Sonar nos arquivos alterados (complexidade cognitiva ≤ 15, regex sem backtracking, sem `console.log` de conteúdo, `Object.hasOwn`, sem literal repetido ≥ 3×, sem segredo/IP fixo); corrigir antes do push
-- [ ] T068 [P] Teste de carga SC-002: popular 100 mil trechos sintéticos (vetores determinísticos, mesma imagem) e medir busca híbrida p95 com e sem filtro seletivo (usuário que enxerga 5 %); ajustar `ef_search`/`max_scan_tuples`; avaliar `halfvec` só se o tamanho do índice incomodar
+- [x] T068 [P] Teste de carga SC-002: popular 100 mil trechos sintéticos (vetores determinísticos, mesma imagem) e medir busca híbrida p95 com e sem filtro seletivo (usuário que enxerga 5 %); ajustar `ef_search`/`max_scan_tuples`; avaliar `halfvec` só se o tamanho do índice incomodar
 - [ ] T069 Validação com **reunião real** (Princípio VII) seguindo `quickstart.md`: indexar, buscar por texto e por sentido, perguntar, abrir citações, revogar compartilhamento; anotar problemas e ajustar
 - [ ] T070 `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend`, `npm run build` (frontend); revisão final do diff (sem `.env`, segredos nem arquivo gerado)
 
