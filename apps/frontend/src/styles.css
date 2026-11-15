@@ -1285,3 +1285,34 @@ dialog.task-dialog { width: min(680px, calc(100vw - 32px)); overflow-y: auto; }
   .task-form-grid { grid-template-columns: 1fr; }
   .toast-action { display: inline-block; margin: 4px 0 0; }
 }
+
+/* ---------- uso de IA e auditoria visível (specs/004-uso-custo) ---------- */
+.usage-table tbody th { text-align: left; font-weight: 500; white-space: nowrap; }
+.usage-table tbody th + td { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table td:last-child { white-space: normal; }
+.usage-calls td:last-child, .usage-calls th:last-child { text-align: left; }
+.usage-table a { color: var(--text); text-decoration: none; }
+.usage-table a:hover { color: var(--primary); text-decoration: underline; }
+.usage-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.usage-block-head h3 { margin: 0; }
+.status-ok { color: var(--ok); }
+.status-fail { color: var(--error); }
+.period-picker { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius-md); background: var(--surface-2); }
+.seg button { min-height: 28px; padding: 0 10px; border: 0; background: none; color: var(--muted); border-radius: calc(var(--radius-md) - 2px); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-xs); }
+.usage-bars-scroll { overflow-x: auto; padding-bottom: 4px; }
+.usage-bar { fill: var(--primary); }
+.usage-bar-label { fill: var(--muted); font-size: 10px; }
+.usage-bars-table { margin-top: 8px; }
+.usage-bars-table summary { cursor: pointer; color: var(--muted); }
+.audit-filters { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 12px; }
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-item { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 4px 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.audit-item:last-child { border-bottom: 0; }
+.audit-title { font-weight: 500; }
+.audit-fields { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 0.8125rem; }
+@media (max-width: 640px) { .audit-item { grid-template-columns: minmax(0, 1fr); } }
+.usage-calls td:nth-child(2), .usage-calls td:nth-child(3), .usage-table thead th:first-child { text-align: left; }
+.usage-calls th[scope="col"]:nth-child(2), .usage-calls th[scope="col"]:nth-child(3) { text-align: left; }
+.usage-table td, .usage-table tbody th { vertical-align: top; }

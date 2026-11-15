@@ -7,6 +7,7 @@ import { AgentTab } from "./settings/AgentTab";
 import { ConsumoTab } from "./settings/ConsumoTab";
 import { DocumentationTab, MeetingsTab } from "./settings/MeetingsTab";
 import { ProfileTab } from "./settings/ProfileTab";
+import { SecurityTab } from "./settings/SecurityTab";
 
 const TABS = [
   { key: "perfil", label: "Perfil" },
@@ -14,6 +15,7 @@ const TABS = [
   { key: "reunioes", label: "Reuniões" },
   { key: "documentacao", label: "Documentação" },
   { key: "consumo", label: "Consumo de IA" },
+  { key: "seguranca", label: "Segurança" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -60,6 +62,7 @@ export function Configuracoes() {
         {me && tab === "reunioes" && <MeetingsTab me={me} setMe={setMe} />}
         {me && tab === "documentacao" && <DocumentationTab me={me} setMe={setMe} />}
         {me && tab === "consumo" && <ConsumoTab />}
+        {me && tab === "seguranca" && <SecurityTab />}
       </div>
     </main>
   );

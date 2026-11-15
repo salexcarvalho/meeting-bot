@@ -96,3 +96,61 @@ export function fromLocalInput(value: string): string {
   const offset = asTz - guess;
   return new Date(guess - offset).toISOString();
 }
+
+// ---------- uso de IA (specs/004-uso-custo) ----------
+
+const NUMBER_BR = new Intl.NumberFormat("pt-BR");
+const NO_VALUE = "—";
+
+export function formatCount(n: number | null | undefined): string {
+  return n === null || n === undefined ? NO_VALUE : NUMBER_BR.format(n);
+}
+
+/** Tokens: 950, 12,3 mil, 1,2 mi. */
+export function formatTokens(n: number | null | undefined): string {
+  if (n === null || n === undefined) return NO_VALUE;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
+  if (n >= 1000) return `${(n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
+  return NUMBER_BR.format(n);
+}
+
+/** USD como o provedor informou; valores pequenos ganham mais casas. Nulo nunca vira zero. */
+export function formatUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined) return NO_VALUE;
+  const digits = value !== 0 && Math.abs(value) < 0.01 ? 6 : 2;
+  return `US$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+/** Minutos de áudio: 45 s, 12 min, 1 h 30 min. */
+export function formatAudio(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return NO_VALUE;
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}
+
+/** Duração em ms: 850 ms, 4,2 s, 2 min 03 s. */
+export function formatMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined) return NO_VALUE;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`;
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  return minutes < 60
+    ? `${minutes} min ${String(total % 60).padStart(2, "0")} s`
+    : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}
+
+/** Meses (AAAA-MM) do atual para trás, para o seletor de período. */
+export function recentMonths(count: number, current = todayIso().slice(0, 7)): string[] {
+  const [y, m] = current.split("-").map(Number);
+  return Array.from({ length: count }, (_, i) => {
+    const date = new Date(Date.UTC(y, m - 1 - i, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+export function formatMonth(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, 1)));
+}

@@ -1,4 +1,4 @@
-import { CalendarDays, FolderKanban, ListChecks, Settings, Users, Video, type LucideIcon } from "lucide-react";
+import { BarChart3, CalendarDays, FolderKanban, ListChecks, ScrollText, Settings, Users, Video, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -38,6 +38,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/configuracoes", label: "Configurações", icon: Settings },
       { to: "/admin/usuarios", label: "Usuários", icon: Users, permission: "users.read" },
+      { to: "/admin/uso", label: "Uso de IA", icon: BarChart3, permission: "ai_usage.read" },
+      { to: "/admin/auditoria", label: "Auditoria", icon: ScrollText, permission: "audit.read" },
     ],
   },
 ];
