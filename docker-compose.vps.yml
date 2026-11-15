@@ -21,6 +21,8 @@ services:
       # atrás do proxy do Dokploy: cookie seguro e IP real
       COOKIE_SECURE: "true"
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      # sem Ollama no servidor: um .env antigo sem a chave não pode ligar embeddings nem o chat
+      SEARCH_SEMANTIC: ${SEARCH_SEMANTIC:-off}
     depends_on:
       postgres:
         condition: service_healthy
