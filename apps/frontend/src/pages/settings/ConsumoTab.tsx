@@ -28,6 +28,12 @@ export function errorLabel(code: string | null): string {
   return ERROR_LABELS[code] ?? "erro";
 }
 
+function callVolume(call: UsageCallValue): string {
+  if (call.category === "asr") return formatAudio(call.audioSeconds);
+  if (call.inputTokens === null && call.outputTokens === null) return "—";
+  return formatTokens(call.inputTokens) + " + " + formatTokens(call.outputTokens);
+}
+
 function CallRow({ call }: { call: UsageCallValue }) {
   const purpose = USAGE_PURPOSE_LABELS[call.purpose];
   const provider = USAGE_PROVIDER_LABELS[call.provider as keyof typeof USAGE_PROVIDER_LABELS] ?? call.provider;
@@ -40,11 +46,7 @@ function CallRow({ call }: { call: UsageCallValue }) {
       </td>
       <td className="hide-sm">{call.model ?? "—"}</td>
       <td>
-        {call.category === "asr"
-          ? formatAudio(call.audioSeconds)
-          : call.inputTokens === null && call.outputTokens === null
-            ? "—"
-            : `${formatTokens(call.inputTokens)} + ${formatTokens(call.outputTokens)}`}
+        {callVolume(call)}
       </td>
       <td className="hide-sm">{formatMs(call.durationMs)}</td>
       <td>
@@ -80,7 +82,8 @@ function CallsList({ period }: { period: Period }) {
   const load = useCallback(
     (after: string | null, signal?: AbortSignal) => {
       setBusy(true);
-      api<UsageCallsPageValue>(`${base}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`, { signal })
+      const next = after ? "&cursor=" + encodeURIComponent(after) : "";
+      api<UsageCallsPageValue>(base + next, { signal })
         .then((page) => {
           setItems((prev) => (after ? [...prev, ...page.items] : page.items));
           setCursor(page.nextCursor);

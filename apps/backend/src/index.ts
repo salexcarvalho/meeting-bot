@@ -34,7 +34,7 @@ async function main() {
   await migrate(pool);
   // Histórico de envios externos do audit_log entra uma vez no registro de uso (idempotente).
   await backfillUsageFromAudit()
-    .then((n) => n > 0 && console.log(`[uso] ${n} chamadas antigas incorporadas ao registro de uso`))
+    .then((n) => n > 0 && console.warn(`[uso] ${n} chamadas antigas incorporadas ao registro de uso`))
     .catch((err) => console.error("[uso] falha ao incorporar o histórico:", err));
   meetingEvents.on("changed", (id: string) => void notifyMeeting(id));
   onBotProgress((meetingId, progress) => hub.publishBoth(meetingId, { type: "bot", meetingId, progress }));

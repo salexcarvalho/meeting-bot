@@ -69,10 +69,7 @@ export class HostCliLlm implements LLMProvider {
     let user = req.user;
     let lastError = "";
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const result = await this.run(req, user, schema).catch(async (err) => {
-        await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(err) });
-        throw err;
-      });
+      const result = await this.runAudited(req, user, schema);
       meter.add({
         inputTokens: result.ok ? result.usage?.inputTokens : null,
         outputTokens: result.ok ? result.usage?.outputTokens : null,
@@ -81,12 +78,7 @@ export class HostCliLlm implements LLMProvider {
         model: result.ok ? result.usage?.model : null,
       });
       if (!result.ok) {
-        if (!OUTPUT_RETRIES.test(result.error ?? "")) {
-          const failure = new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${result.error}`);
-          await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(failure) });
-          throw failure;
-        }
-        lastError = `${NAMES[this.settings.provider]} não conseguiu seguir o schema`;
+        lastError = await this.refusal(req, result.error);
         user = req.user + retryNote("(sem resposta)", lastError);
         continue;
       }
@@ -104,22 +96,52 @@ export class HostCliLlm implements LLMProvider {
           `${result.usage?.inputTokens ?? "?"}+${result.usage?.outputTokens ?? "?"} tokens` +
           (result.durationMs !== undefined ? ` em ${(result.durationMs / 1000).toFixed(1)}s` : ""),
       );
-      let output = result.output;
-      if (typeof output === "string") {
-        try {
-          output = JSON.parse(output);
-        } catch {
-          lastError = "JSON inválido";
-          user = req.user + retryNote(String(result.output), lastError);
-          continue;
-        }
-      }
-      const parsed = req.schema.safeParse(output);
-      if (parsed.success) return parsed.data;
-      lastError = z.prettifyError(parsed.error).slice(0, 800);
-      user = req.user + retryNote(JSON.stringify(output), lastError);
+      const checked = this.check(req, result.output);
+      if (checked.ok) return checked.data;
+      lastError = checked.problem;
+      user = req.user + retryNote(checked.previous, lastError);
     }
     throw new Error(`Resposta do LLM inválida (${req.label}): ${lastError}`);
+  }
+
+  /** Envia ao host-agent; falha de transporte também vira linha de auditoria (com código). */
+  private async runAudited<T>(
+    req: GenerateRequest<T>,
+    user: string,
+    schema: Record<string, unknown>,
+  ): Promise<AgentLlmResult> {
+    try {
+      return await this.run(req, user, schema);
+    } catch (err) {
+      await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(err) });
+      throw err;
+    }
+  }
+
+  /** Erro do CLI: só "desistiu do schema" é resposta inválida (nova tentativa); o resto derruba a geração. */
+  private async refusal<T>(req: GenerateRequest<T>, error: string | undefined): Promise<string> {
+    if (OUTPUT_RETRIES.test(error ?? "")) return `${NAMES[this.settings.provider]} não conseguiu seguir o schema`;
+    const failure = new SubscriptionLlmError(`${NAMES[this.settings.provider]}: ${error}`);
+    await this.auditSent(req, { model: this.model, success: false, errorCode: classifyError(failure) });
+    throw failure;
+  }
+
+  /** Valida a saída (objeto ou JSON em texto) contra o schema. */
+  private check<T>(
+    req: GenerateRequest<T>,
+    raw: unknown,
+  ): { ok: true; data: T } | { ok: false; problem: string; previous: string } {
+    let output = raw;
+    if (typeof output === "string") {
+      try {
+        output = JSON.parse(output);
+      } catch {
+        return { ok: false, problem: "JSON inválido", previous: String(raw) };
+      }
+    }
+    const parsed = req.schema.safeParse(output);
+    if (parsed.success) return { ok: true, data: parsed.data };
+    return { ok: false, problem: z.prettifyError(parsed.error).slice(0, 800), previous: JSON.stringify(output) };
   }
 
   async unload(): Promise<void> {

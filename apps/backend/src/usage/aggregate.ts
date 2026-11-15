@@ -73,11 +73,13 @@ interface GroupSpec {
 }
 
 export async function grouped(scope: UsageScope, spec: GroupSpec): Promise<UsageGroupValue[]> {
+  const extraColumn = spec.extra ? spec.extra + "," : "";
+  const groupBy = spec.extra ? "1, 2" : "1";
   const { rows } = await pool.query(
-    `SELECT ${spec.key} AS key, ${spec.extra ? `${spec.extra},` : ""} ${TOTALS_COLUMNS}
+    `SELECT ${spec.key} AS key, ${extraColumn} ${TOTALS_COLUMNS}
        FROM ai_usage_logs l ${spec.join ?? ""}
       WHERE ${scope.where}
-      GROUP BY ${spec.extra ? "1, 2" : "1"}
+      GROUP BY ${groupBy}
       ORDER BY ${spec.order}`,
     [...scope.params, ...(spec.extraParams ?? [])],
   );

@@ -61,7 +61,8 @@ function purposeLabel(detail: Record<string, unknown>): string | null {
 
 function externalLlmTitle(ctx: RuleContext): string {
   const purpose = purposeLabel(ctx.detail);
-  const base = `Texto enviado ao ${externalProvider(ctx.detail)}${purpose ? ` (${purpose.toLowerCase()})` : ""}`;
+  const suffix = purpose ? " (" + purpose.toLowerCase() + ")" : "";
+  const base = `Texto enviado ao ${externalProvider(ctx.detail)}${suffix}`;
   return ctx.detail.success === false ? `${base}: recusado` : base;
 }
 

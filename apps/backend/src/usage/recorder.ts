@@ -87,6 +87,7 @@ export function normalizeSample(sample: UsageSample): Normalized | null {
   if (!PURPOSES_BY_CATEGORY[category.data].has(purpose.data)) return null;
   const isAsr = category.data === "asr";
   const code = sample.success ? null : UsageErrorCode.safeParse(sample.errorCode ?? "other");
+  const errorCode = code?.success ? code.data : null;
   return {
     category: category.data,
     purpose: purpose.data,
@@ -101,7 +102,7 @@ export function normalizeSample(sample: UsageSample): Normalized | null {
     computeMs: count(sample.computeMs),
     attempts: Math.min(Math.max(count(sample.attempts) ?? 1, 1), MAX_SMALLINT),
     success: sample.success,
-    errorCode: code?.success ? code.data : sample.success ? null : "other",
+    errorCode: sample.success ? null : (errorCode ?? "other"),
     label: textOrNull(sample.label, LABEL_MAX),
   };
 }

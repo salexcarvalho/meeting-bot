@@ -112,11 +112,10 @@ export function DailyBars({ days }: { days: UsageGroupValue[] }) {
 }
 
 export function RetentionNote({ days, what }: { days: number; what: ReactNode }) {
+  const span = days >= 60 ? Math.round(days / 30) + " meses" : days + " dias";
   return (
     <p className="small muted">
-      {days > 0
-        ? `${what} são guardados por ${days >= 60 ? `${Math.round(days / 30)} meses` : `${days} dias`} e depois apagados automaticamente.`
-        : `${what} ficam guardados sem prazo de exclusão.`}
+      {days > 0 ? `${what} são guardados por ${span} e depois apagados automaticamente.` : `${what} ficam guardados sem prazo de exclusão.`}
     </p>
   );
 }

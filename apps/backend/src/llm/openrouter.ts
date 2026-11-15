@@ -44,6 +44,22 @@ function errorText(data: ChatCompletion, status: number): string {
   return `${status}: ${message}`.slice(0, 300);
 }
 
+/** Valida o texto devolvido contra o schema (JSON inválido e schema violado viram o motivo da nova tentativa). */
+function checkContent<T>(schema: z.ZodType<T>, content: string): { ok: true; data: T } | { ok: false; problem: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { ok: false, problem: "JSON inválido" };
+  }
+  const result = schema.safeParse(parsed);
+  return result.success ? { ok: true, data: result.data } : { ok: false, problem: z.prettifyError(result.error).slice(0, 800) };
+}
+
+type AttemptResult =
+  | { ok: true; data: ChatCompletion }
+  | { ok: false; error: string; status?: number; timedOut: boolean; fatal: boolean };
+
 function retryNote(problem: string): string {
   return `A resposta anterior não seguiu o schema (${problem}). Responda de novo apenas com o JSON válido.`;
 }
@@ -100,23 +116,15 @@ export class OpenRouterLlm implements LLMProvider {
           (usage.cost !== undefined ? `, US$ ${usage.cost}` : ""),
       );
       const choice = data.choices?.[0];
-      const content = choice?.message?.content ?? "";
       if (choice?.message?.refusal) throw new ExternalLlmError(`O modelo recusou a tarefa: ${choice.message.refusal.slice(0, 200)}`);
       if (choice?.finish_reason === "length") {
         lastError = "resposta cortada pelo limite de tokens (OPENROUTER_LLM_MAX_TOKENS)";
         break;
       }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        lastError = "JSON inválido";
-        messages.push({ role: "assistant", content }, { role: "user", content: retryNote(lastError) });
-        continue;
-      }
-      const result = req.schema.safeParse(parsed);
-      if (result.success) return result.data;
-      lastError = z.prettifyError(result.error).slice(0, 800);
+      const content = choice?.message?.content ?? "";
+      const checked = checkContent(req.schema, content);
+      if (checked.ok) return checked.data;
+      lastError = checked.problem;
       messages.push({ role: "assistant", content }, { role: "user", content: retryNote(lastError) });
     }
     throw new Error(`Resposta do LLM inválida (${req.label}): ${lastError}`);
@@ -159,49 +167,43 @@ export class OpenRouterLlm implements LLMProvider {
       : { ok: false, model: this.model, error: "OPENROUTER_API_KEY não configurada" };
   }
 
-  private async post(body: Record<string, unknown>): Promise<ChatCompletion> {
-    let lastError = "";
-    let lastStatus: number | undefined;
-    let timedOut = false;
-    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-      let res: Response;
-      try {
-        res = await fetch(`${this.settings.url}/chat/completions`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${this.settings.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(this.settings.timeoutMs),
-        });
-      } catch (err) {
-        lastError = (err as Error).message;
-        lastStatus = undefined;
-        timedOut = (err as Error).name === "TimeoutError";
-        if (attempt < RETRY_DELAYS_MS.length) {
-          await this.sleep(RETRY_DELAYS_MS[attempt]);
-          continue;
-        }
-        break;
-      }
-      timedOut = false;
-      const text = await res.text();
-      let data: ChatCompletion = {};
-      try {
-        data = text ? (JSON.parse(text) as ChatCompletion) : {};
-      } catch {
-        data = { error: text.slice(0, 200) };
-      }
-      // O OpenRouter pode responder 200 com erro do provedor no corpo.
-      if (res.ok && !data.error) return data;
-      lastError = errorText(data, res.status);
-      lastStatus = res.status;
-      if (FATAL_STATUS.has(res.status)) break;
-      if (attempt < RETRY_DELAYS_MS.length) {
-        await this.sleep(RETRY_DELAYS_MS[attempt]);
-        continue;
-      }
+  /** Uma ida ao OpenRouter: devolve a resposta ou o motivo da falha (com status HTTP e se foi timeout). */
+  private async attemptOnce(body: Record<string, unknown>): Promise<AttemptResult> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.settings.url}/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.settings.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.settings.timeoutMs),
+      });
+    } catch (err) {
+      const error = err as Error;
+      return { ok: false, error: error.message, timedOut: error.name === "TimeoutError", fatal: false };
     }
-    const failure = new ExternalLlmError(`OpenRouter recusou a geração (${lastError})`, lastStatus);
-    if (timedOut) failure.name = "TimeoutError";
+    const text = await res.text();
+    let data: ChatCompletion = {};
+    try {
+      data = text ? (JSON.parse(text) as ChatCompletion) : {};
+    } catch {
+      data = { error: text.slice(0, 200) };
+    }
+    // O OpenRouter pode responder 200 com erro do provedor no corpo.
+    if (res.ok && !data.error) return { ok: true, data };
+    return { ok: false, error: errorText(data, res.status), status: res.status, timedOut: false, fatal: FATAL_STATUS.has(res.status) };
+  }
+
+  private async post(body: Record<string, unknown>): Promise<ChatCompletion> {
+    let last: Extract<AttemptResult, { ok: false }> = { ok: false, error: "", timedOut: false, fatal: false };
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      const result = await this.attemptOnce(body);
+      if (result.ok) return result.data;
+      last = result;
+      if (result.fatal || attempt >= RETRY_DELAYS_MS.length) break;
+      await this.sleep(RETRY_DELAYS_MS[attempt]);
+    }
+    const failure = new ExternalLlmError(`OpenRouter recusou a geração (${last.error})`, last.status);
+    if (last.timedOut) failure.name = "TimeoutError";
     throw failure;
   }
 }

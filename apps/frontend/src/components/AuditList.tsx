@@ -91,14 +91,16 @@ export function AuditList({
       .catch(() => setKinds([]));
   }, []);
 
-  const base = `${endpoint}?limit=30&from=${encodeURIComponent(new Date(Date.now() - days * 86_400_000).toISOString())}${
-    kind ? `&kind=${kind}` : ""
-  }${userId ? `&userId=${userId}` : ""}`;
+  const params = new URLSearchParams({ limit: "30", from: new Date(Date.now() - days * 86_400_000).toISOString() });
+  if (kind) params.set("kind", kind);
+  if (userId) params.set("userId", userId);
+  const base = `${endpoint}?${params.toString()}`;
 
   const load = useCallback(
     (after: string | null, signal?: AbortSignal) => {
       setBusy(true);
-      api<AuditPageValue>(`${base}${after ? `&cursor=${encodeURIComponent(after)}` : ""}`, { signal })
+      const next = after ? "&cursor=" + encodeURIComponent(after) : "";
+      api<AuditPageValue>(base + next, { signal })
         .then((page) => {
           setItems((prev) => (after ? [...prev, ...page.items] : page.items));
           setCursor(page.nextCursor);

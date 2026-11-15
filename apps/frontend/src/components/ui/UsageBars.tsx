@@ -32,7 +32,8 @@ export function UsageBars({ days, metric }: { days: UsageGroupValue[]; metric: B
   const max = Math.max(...values, 0);
   const width = Math.max(days.length * (BAR_WIDTH + GAP) - GAP, BAR_WIDTH);
   const metricLabel = BAR_METRICS.find((m) => m.key === metric)?.label ?? "";
-  const summary = `${metricLabel} por dia: ${days.map((d, i) => `${d.label} ${format(values[i], metric)}`).join("; ")}`;
+  const perDay = days.map((d, i) => d.label + " " + format(values[i], metric)).join("; ");
+  const summary = `${metricLabel} por dia: ${perDay}`;
 
   if (!days.length || max === 0) return <p className="small muted">Sem consumo de {metricLabel.toLowerCase()} neste período.</p>;
 
