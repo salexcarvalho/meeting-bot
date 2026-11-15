@@ -105,6 +105,13 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - revogação imediata: `LiveHub.revokeAccess` invalida a audiência, remove a assinatura do usuário e só então envia o evento direcionado `meeting_access` (sem esperar o `sweep` de 30 s); excluir a reunião avisa os destinatários (`deleted`);
   - os campos por espectador (`access`, `ownerName`, `shareCount`, `shareUnseen`) existem só em `MeetingListItem` (`GET /meetings`, `/agenda`); o resumo difundido `meeting` continua igual para todos;
   - a busca de usuário devolve só `id`, `username`, `name`, `canEdit` (prefixo, mínimo 3 letras, até 8, 30 por minuto por usuário); a lista de acessos é só do dono; auditoria `meeting_share_*` só com ids.
+- **Tarefas pessoais (`tasks/`, specs/002):**
+  - `tasks` e `task_history` (aditivo em `schema.ts`); permissões `tasks.read`/`tasks.manage` em `OWN_CONTENT` (Leitor sem elas);
+  - o dono é `tasks.owner_id` e **toda** consulta do módulo filtra por ele (`TASK_SELECT` só é usado depois de `t.owner_id = $1`; `test/tasks-scope.test.ts` falha se uma consulta perder o escopo);
+  - `router.param("taskId")` (`taskParamGuard`) devolve 404 a id inválido, inexistente ou de outro dono, também para ADMIN, SUPER_ADMIN e quem tem `meetings.read_all`; não existe rota que liste tarefa alheia;
+  - a tarefa copia o texto e um instantâneo da origem (reunião, item, citação) enquanto o dono tinha acesso; título atual, item e links só saem se `visibleMeetingsSql` ainda o permite, e revogar o compartilhamento ou excluir a reunião (`ON DELETE SET NULL`) mantém a tarefa sem o vínculo;
+  - fluxo aprovar → tarefa: `POST /items/:itemId/approve` chama `createFromApproval` depois do commit da revisão (pendência do próprio aprovador ou sem responsável, `isSelfOwner`); falha da tarefa nunca desfaz a aprovação. `POST /tasks/from-item` (leitura da reunião + `meetings.read` + `tasks.manage`) serve ao botão "Virar tarefa". Uma tarefa por `(item, dono)` (índice único parcial + `ON CONFLICT DO NOTHING`) e dedup por Jaccard (`agent/dedup.ts`) na mesma reunião;
+  - só item `aprovado` vira tarefa; sem IA, sem rede e sem WebSocket nesta feature; `audit_log` registra `task_created_from_item` só com ids.
 - **Host-agent:**
   - grava só as reuniões do dono (`AGENT_OWNER`; vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo — o dono nunca passa sozinho para outra pessoa);
   - o heartbeat e o "não gravar" do agente são limitados a esse dono.

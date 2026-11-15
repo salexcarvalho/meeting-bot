@@ -7,6 +7,7 @@ agente arquiteto, memória pesquisável.
 - Análise, decisões (D1–D8) e backlog: `docs/analise/agente-local.md`
 - Agente arquiteto no código (prompts, fluxo ao vivo e pós-reunião): `docs/agente-arquiteto.md`
 - Especificação do MVP (Spec Kit): `specs/001-agente-reunioes-mvp/` (spec, plan, research, data-model, contracts, quickstart, tasks)
+- Minhas pendências e tarefas (Spec Kit): `specs/002-pendencias-tarefas/` (tarefas pessoais por `owner_id`; aprovar pendência vira tarefa; implementada em `apps/backend/src/tasks/`)
 - Estado atual do código: monorepo `apps/{backend,frontend,worker-gpu,host-agent}` + `packages/contracts` (Node 24 + TS, React, Python 3.12); visão geral em `docs/ARCHITECTURE.md`
 - Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
 - Fluxo de trabalho: Spec Kit (`/speckit-*`), commits em português

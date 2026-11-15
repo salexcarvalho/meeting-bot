@@ -197,6 +197,19 @@ En la página de la reunión, el dueño hace clic en **Compartilhar** ("Comparti
 - **Sair desta reunião** ("Salir de esta reunión") quita tu propio acceso. El administrador no lee contenido ajeno, y desactivar al dueño no quita el acceso de quien recibió.
 - Compartir, cambiar, revocar y salir quedan en `audit_log` solo con ids (nunca título ni contenido).
 
+### Mis tareas (pendientes)
+
+Menú **Minhas pendências** (`tasks.read`/`tasks.manage`; el rol Lector no las tiene). La tarea es **personal**: solo quien la creó la ve y la modifica. Ni el administrador ni el superadministrador leen tareas ajenas.
+
+- **Aprobar crea una tarea:** aprobar un **pendiente** (`pendencia`) de la reunión crea tu tarea, sin duplicar (aprobar de nuevo, reabrir y aprobar o regenerar el acta mantiene una sola). Solo se crea sola si el responsable eres tú ("eu", tu usuario o tu nombre) o está vacío, y entonces aparece como **Responsable no confirmado**. Un pendiente de otra persona no se vuelve tarea solo: el aviso dice de quién es.
+- **Virar tarefa:** en cualquier ítem aprobado (riesgo, requisito, decisión...) el botón crea la tarea, con título, plazo y prioridad editables. Un ítem propuesto o rechazado no se vuelve tarea. Si ya existe una tarea parecida en la reunión, el diálogo avisa y permite crearla igual.
+- **Plazo:** solo entra como fecha cuando el texto es inequívoco (`30/11`, `hasta 5/12`, `hoy`, `mañana`); "viernes" o "la semana que viene" quedan como **plazo dicho** junto al campo, para que decidas.
+- **Pantalla:** contadores clicables (abiertas, atrasadas, vencen hoy, sin responsable confirmado) y filtros por estado, proyecto, plazo, responsable, prioridad, reunión y búsqueda; el filtro queda en la URL (`?status=...&prazo=overdue`). El estado cambia directo en la lista. "Hoy" y "atrasada" valen en la zona horaria del usuario.
+- **Tarea manual:** **Nova tarefa** (también dentro de la reunión) con proyecto, plazo, prioridad y responsable; editar, eliminar y ver el historial (antes y después, quién y cuándo).
+- **Reunión compartida:** quien recibió la reunión crea sus propias tareas de los ítems que ve. Si se revoca el acceso, la tarea continúa, sin el enlace a la reunión, al ítem y al audio (queda lo copiado mientras había acceso). Eliminar la reunión no elimina las tareas.
+- **Pantalla Hoy:** tarjeta con atrasadas, vencen hoy, abiertas y pendientes propuestos por revisar.
+- Nada sale de la máquina y no se llama a ninguna IA. La migración es aditiva (`tasks`, `task_history`) y no crea tareas de reuniones antiguas; usa **Virar tarefa**.
+
 ### Carga y Modo Agente
 
 En **Reuniões** ("Reuniones"):

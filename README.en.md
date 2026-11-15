@@ -197,6 +197,19 @@ On the meeting page, the owner clicks **Compartilhar** ("Share"), searches for a
 - **Sair desta reunião** ("Leave this meeting") removes your own access. Admins do not read other people's content, and deactivating the owner does not remove recipients' access.
 - Sharing, changing, revoking and leaving are recorded in `audit_log` with ids only (never title or content).
 
+### My tasks (pending items)
+
+**Minhas pendências** menu (`tasks.read`/`tasks.manage`; the Viewer role does not have them). A task is **personal**: only the person who owns it sees or changes it. Administrators and super administrators cannot read someone else's task either.
+
+- **Approving creates a task:** approving a meeting **pending item** (`pendencia`) creates your task, without duplicates (approving again, reopening and approving, or regenerating the minutes keeps a single one). It is only created automatically when the owner is you ("eu", your username or your name) or empty, and then it shows as **Unconfirmed owner**. A pending item that belongs to someone else does not become a task by itself: the notice says whose it is.
+- **Turn into task:** on any approved item (risk, requirement, decision...) the button creates the task, with editable title, due date and priority. Proposed or rejected items cannot become tasks. If a similar task already exists in the meeting, the dialog warns and lets you create it anyway.
+- **Due date:** it is only filled in when the text is unambiguous (`30/11`, `until 12/5`, `today`, `tomorrow`); "Friday" or "next week" stay as the **spoken due date** next to the field, so you decide.
+- **Screen:** clickable counters (open, overdue, due today, unconfirmed owner) and filters by status, project, due date, owner, priority, meeting and search; the filter lives in the URL (`?status=...&prazo=overdue`). Status changes inline. "Today" and "overdue" use the user's timezone.
+- **Manual task:** **Nova tarefa** (also inside a meeting) with project, due date, priority and owner; edit, delete and see the history (before and after, who and when).
+- **Shared meeting:** whoever received the meeting creates their own tasks from the items they can see. If access is revoked, the task stays, without the link to the meeting, item and audio (what was copied while access existed remains). Deleting the meeting does not delete the tasks.
+- **Today screen:** card with overdue, due today, open and proposed pending items to review.
+- Nothing leaves the machine and no AI is called. The migration is additive (`tasks`, `task_history`) and does not create tasks from old meetings; use **Virar tarefa**.
+
 ### Upload and Agent Mode
 
 In **Reuniões** ("Meetings"):
