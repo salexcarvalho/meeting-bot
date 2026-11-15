@@ -32,6 +32,7 @@ agente arquiteto, memória pesquisável.
 
 - Sem agenda no fim de semana (`WORKING_DAYS`, padrão seg–sex, fuso `APP_TIMEZONE`): séries não geram ocorrência em sábado/domingo (manual, `.ics`, Aurora); reunião avulsa nesses dias aparece na agenda, mas sem lembrete e sem o assistente entrar/gravar sozinho, salvo pedido do usuário por reunião (`auto_on_off_day`) ou "Enviar assistente agora"/"Gravar agora".
 - Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados nas reuniões com a chave "Itens" ligada (`meetings.extract_items`, padrão desligada; ligada por "Gerar itens" na reunião). Desligada: sem extração ao vivo e análise final só com resumo.
+- Retenção de registros (constituição 2.3.0): consumo de IA (`ai_usage_logs`, só metadados) 24 meses e auditoria 12 meses, podados diariamente (`USAGE_RETENTION_DAYS`/`AUDIT_RETENTION_DAYS`; 0 = guardar sempre); o áudio segue indefinido.
 - Servidor de teste (constituição 2.0.0): VPS com Dokploy, `docker-compose.vps.yml` + `.env.vps.example`; transcrição final pelo OpenRouter (sem GPU), ata/ADR pela assinatura do Claude no container `agent-cli` (`AGENTE_MODE=llm`), sem passe ao vivo e sem gravação pelo PC. Guia: `docs/vps-dokploy.md`.
 
 ## Ambiente
