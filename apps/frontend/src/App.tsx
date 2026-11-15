@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { api, onUnauthorized } from "./api";
 import { PasswordDialog } from "./components/PasswordDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { ShareNotifier } from "./components/ShareNotifier";
 import { ToastProvider } from "./components/Toast";
 import { live } from "./live";
 import { Configuracoes } from "./pages/Configuracoes";
@@ -73,6 +74,7 @@ export function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>
+          <ShareNotifier />
           <PasswordDialog open={passwordOpen} onClose={() => setPasswordOpen(false)} />
           </SessionRefreshContext.Provider>
         </SessionContext.Provider>

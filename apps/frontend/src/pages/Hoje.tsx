@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { CalendarDays, ChevronLeft, ChevronRight, Inbox, MonitorSmartphone, Plus, Upload } from "lucide-react";
 import type { AgendaResponse, MeetingSummary } from "@meeting-bot/contracts";
@@ -10,7 +10,8 @@ import { CardHead, EmptyState, PageHeader, SkeletonLines } from "../components/u
 import { formatLongDate, shiftDate, todayIso } from "../format";
 import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
-import { useCan } from "../session";
+import { mergeSummary } from "../shares";
+import { useCan, useSession } from "../session";
 
 function dayOf(m: MeetingSummary): string {
   const iso = m.scheduledStart ?? m.startedAt ?? m.createdAt;
@@ -23,12 +24,15 @@ function sortKey(m: MeetingSummary): number {
 
 export function Hoje() {
   const can = useCan();
+  const { user } = useSession();
   const [date, setDate] = useState(todayIso());
   const [agenda, setAgenda] = useState<AgendaResponse | null>(null);
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<MeetingSummary | null>(null);
   const { projects } = useProjects();
+  const agendaRef = useRef(agenda);
+  agendaRef.current = agenda;
 
   const load = useCallback(() => {
     api<AgendaResponse>(`/agenda?date=${date}`)
@@ -49,7 +53,13 @@ export function Hoje() {
   useEffect(() => live.onReconnect(load), [load]);
 
   const upsert = useCallback(
-    (m: MeetingSummary) => {
+    (summary: MeetingSummary) => {
+      // O resumo difundido não traz o que é por espectador (access, dono, "Nova"): vem do item que já temos.
+      const m = mergeSummary(agendaRef.current?.meetings.find((x) => x.id === summary.id), summary, user.username);
+      if (!m) {
+        load();
+        return;
+      }
       setAgenda((a) => {
         if (!a) return a;
         const others = a.meetings.filter((x) => x.id !== m.id);
@@ -63,12 +73,13 @@ export function Hoje() {
         return { ...a, meetings, recordingMeetingId: recording };
       });
     },
-    [],
+    [user.username, load],
   );
 
   useLive(
     (msg) => {
       if (msg.type === "meeting") upsert(msg.meeting);
+      if (msg.type === "meeting_access") load();
       if (msg.type === "host_agent") {
         setAgenda((a) => (a ? { ...a, hostAgent: { ...a.hostAgent, online: msg.online, lastSeenAt: msg.lastSeenAt } } : a));
       }
