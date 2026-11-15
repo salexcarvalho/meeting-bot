@@ -37,12 +37,54 @@
           "type": "null"
         }
       ]
+    },
+    "recurrence": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "freq": {
+              "type": "string",
+              "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+              ]
+            },
+            "interval": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            },
+            "until": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "freq",
+            "interval"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skipRecording": {
+      "default": false,
+      "type": "boolean"
     }
   },
   "required": [
     "title",
     "start",
-    "durationMinutes"
+    "durationMinutes",
+    "skipRecording"
   ],
   "additionalProperties": false
 }
