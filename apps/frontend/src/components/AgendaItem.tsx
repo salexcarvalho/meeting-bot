@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import type { MeetingSummary } from "@meeting-bot/contracts";
+import type { MeetingListItem, MeetingSummary } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
 import { formatTime, recurrenceLabel } from "../format";
+import { ShareBadge } from "./ShareBadge";
 import { StatusBadge } from "./StatusBadge";
 import { useToast } from "./Toast";
-import { useCan, useSession } from "../session";
+import { useCan } from "../session";
 
 const PLATFORM: Record<string, string> = { teams: "Teams", meet: "Meet", other: "Link", upload: "Upload", none: "" };
 
@@ -21,17 +22,16 @@ export function AgendaItem({
   onEdit,
   hostAgentOnline,
 }: {
-  meeting: MeetingSummary;
+  meeting: MeetingListItem;
   onChange: (m: MeetingSummary) => void;
-  onEdit: (m: MeetingSummary) => void;
+  onEdit: (m: MeetingListItem) => void;
   hostAgentOnline: boolean;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const can = useCan();
-  const { user } = useSession();
   // Na agenda, ações só nas próprias reuniões; compartilhadas se editam pela página da reunião.
-  const manage = can("meetings.manage") && meeting.createdBy === user.username;
+  const manage = can("meetings.manage") && meeting.access === "owner";
   const local = manage && (meeting.source === "ics" || meeting.source === "manual");
   const start = meeting.scheduledStart ?? meeting.startedAt ?? meeting.createdAt;
   const end = meeting.scheduledEnd ?? meeting.endedAt;
@@ -91,6 +91,7 @@ export function AgendaItem({
               {meeting.project.suggested ? " ?" : ""}
             </span>
           )}
+          <ShareBadge access={meeting.access} ownerName={meeting.ownerName} shareCount={meeting.shareCount} shareUnseen={meeting.shareUnseen} />
           {meeting.recurrence && (
             <span className="badge" title="Reunião recorrente">
               {recurrenceLabel(meeting.recurrence)}

@@ -9,8 +9,8 @@ import type {
 } from "@meeting-bot/contracts";
 import { visibleMeetingsSql } from "../authz";
 import { config } from "../config";
-import { emitMeetingChanged, getMeeting, meetingSelect, MeetingRow, pool, withTransaction } from "../db";
-import { toMeetingSummary } from "../meetings/summary";
+import { emitMeetingChanged, getMeeting, meetingSelectFor, MeetingRow, pool, withTransaction } from "../db";
+import { toMeetingListItem } from "../meetings/summary";
 import { hostAgentStatusFor } from "../recording/hostAgentState";
 import type { User } from "../types";
 import { detectMeetingUrl, parseIcs } from "./ics";
@@ -82,7 +82,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
 export async function getAgenda(date: string, user: User): Promise<AgendaResponse> {
   const { start, end } = dayRange(date, config.appTimezone);
   const { rows } = await pool.query(
-    `${meetingSelect}
+    `${meetingSelectFor(3)}
      WHERE COALESCE(m.scheduled_start, m.started_at, m.created_at) >= $1
        AND COALESCE(m.scheduled_start, m.started_at, m.created_at) < $2
        AND ${visibleMeetingsSql(user, "m", 3)}
@@ -99,7 +99,7 @@ export async function getAgenda(date: string, user: User): Promise<AgendaRespons
   return {
     date,
     timezone: config.appTimezone,
-    meetings: (rows as MeetingRow[]).map(toMeetingSummary),
+    meetings: (rows as MeetingRow[]).map((m) => toMeetingListItem(m, user.id)),
     hostAgent: await hostAgentStatusFor(user),
     recordingMeetingId: rec[0]?.id ?? null,
   };

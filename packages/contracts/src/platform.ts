@@ -276,3 +276,61 @@ export interface BotProgress {
   elapsedMs: number;
   displayName: string;
 }
+
+// ---------- Compartilhamento de reunião (specs/005-compartilhamento) ----------
+
+export const SHARE_ACCESS = ["read", "edit"] as const;
+export const ShareAccess = z.enum(SHARE_ACCESS);
+export type ShareAccess = z.infer<typeof ShareAccess>;
+
+/** `occurrence` = só esta reunião; `following` = esta e as próximas já na agenda da mesma série. */
+export const SHARE_SCOPES = ["occurrence", "following"] as const;
+export const ShareScope = z.enum(SHARE_SCOPES);
+export type ShareScope = z.infer<typeof ShareScope>;
+
+export const ShareInput = z.object({
+  userId: z.uuid(),
+  access: ShareAccess,
+  scope: ShareScope.default("occurrence"),
+});
+export type ShareInput = z.infer<typeof ShareInput>;
+
+export const ShareChangeInput = z.object({
+  access: ShareAccess,
+  scope: ShareScope.default("occurrence"),
+});
+export type ShareChangeInput = z.infer<typeof ShareChangeInput>;
+
+/** Visão do dono sobre um destinatário. */
+export interface ShareEntry {
+  userId: string;
+  username: string;
+  name: string;
+  access: ShareAccess;
+  /** "read" quando o usuário hoje não tem `meetings.manage` (o guard manda) */
+  effectiveAccess: ShareAccess;
+  active: boolean;
+  grantedAt: string;
+  updatedAt: string;
+  /** o destinatário já abriu a reunião */
+  seen: boolean;
+}
+
+export interface ShareListResponse {
+  shares: ShareEntry[];
+  /** ocorrências que o lote "esta e as próximas" atingiria (inclui esta); null se não é série */
+  series: { following: number } | null;
+}
+
+export interface ShareMutationResponse {
+  share: ShareEntry;
+  affected: number;
+}
+
+/** Resultado mínimo da busca de usuário (nunca e-mail, papéis ou estado de login). */
+export interface UserLookupItem {
+  id: string;
+  username: string;
+  name: string;
+  canEdit: boolean;
+}

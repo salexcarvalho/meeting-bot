@@ -184,6 +184,23 @@ export interface MeetingSummary {
   recurrence: RecurrenceRule | null;
 }
 
+/**
+ * Item de lista por espectador: `MeetingSummary` mais o que depende de quem pergunta.
+ * Estes campos NUNCA vão no evento difundido `meeting` (igual para todos).
+ */
+export interface MeetingListItem extends MeetingSummary {
+  access: "owner" | "edit" | "read";
+  /** nome do dono quando o espectador não é o dono */
+  ownerName: string | null;
+  /** quantas pessoas têm acesso; só para o dono */
+  shareCount: number | null;
+  /** compartilhada com o espectador e ainda não aberta ("Nova") */
+  shareUnseen: boolean;
+}
+
+export const MEETING_LIST_SCOPES = ["all", "mine", "shared", "shared_by_me"] as const;
+export type MeetingListScope = (typeof MEETING_LIST_SCOPES)[number];
+
 export interface Segment {
   id: number;
   channel: Channel;
@@ -330,6 +347,8 @@ export interface MeetingDetail {
   asrProvider: string | null;
   /** acesso de quem pediu: dono, compartilhada com edição ou só leitura */
   access: "owner" | "edit" | "read";
+  /** nome do dono quando a reunião foi compartilhada com quem pediu; null para o dono */
+  ownerName: string | null;
   /** quem gerou a análise da ata: "local:<modelo>", "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
   analysisProvider: string | null;
 }
@@ -378,7 +397,7 @@ export interface AsrOptions {
 export interface AgendaResponse {
   date: string;
   timezone: string;
-  meetings: MeetingSummary[];
+  meetings: MeetingListItem[];
   hostAgent: HostAgentStatus;
   recordingMeetingId: string | null;
 }

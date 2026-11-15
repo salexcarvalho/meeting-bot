@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, LogOut, Pencil, RefreshCw, Share2, Sparkles, Square, Trash2 } from "lucide-react";
 import {
   IDLE_STATUSES,
   type Adr,
@@ -13,7 +13,7 @@ import {
   type RecordingEvent,
   type Segment,
 } from "@meeting-bot/contracts";
-import { api, ApiError, errorMessage } from "../api";
+import { api, ApiError, errorMessage, ignoreError } from "../api";
 import { AdrList } from "../components/AdrList";
 import { AtaView } from "../components/AtaView";
 import { AudioPlayers, type AudioPlayersHandle } from "../components/AudioPlayers";
@@ -23,6 +23,8 @@ import { ConfirmDialog, Dialog } from "../components/Dialog";
 import { LivePanel, type ProcessingState } from "../components/LivePanel";
 import { MeetingForm } from "../components/MeetingForm";
 import { Markdown } from "../components/Markdown";
+import { ShareBadge } from "../components/ShareBadge";
+import { ShareDialog } from "../components/ShareDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { Transcript } from "../components/Transcript";
@@ -118,7 +120,8 @@ export function Reuniao() {
   const [recording, setRecording] = useState<RecordingEvent | null>(null);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
   const [gpu, setGpu] = useState<GpuStats | null>(null);
-  const [confirm, setConfirm] = useState<null | "delete" | "reprocess" | "stop">(null);
+  const [confirm, setConfirm] = useState<null | "delete" | "reprocess" | "stop" | "leave">(null);
+  const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const { asr } = useSession();
@@ -158,6 +161,11 @@ export function Reuniao() {
     load();
   }, [load]);
   useEffect(() => live.subscribe({ topic: "meeting", meetingId: id }), [id]);
+  // Reunião compartilhada comigo: abrir marca como vista (some o selo "Nova"). Nada a fazer para o dono.
+  const receivedShare = detail !== null && detail.access !== "owner";
+  useEffect(() => {
+    if (receivedShare) api(`/shared-with-me/${id}/seen`, { method: "POST" }).catch(ignoreError);
+  }, [id, receivedShare]);
   useEffect(() => live.onReconnect(load), [load]);
 
   const setMeeting = useCallback((meeting: MeetingSummary) => {
@@ -174,6 +182,15 @@ export function Reuniao() {
       switch (msg.type) {
         case "meeting":
           if (msg.meeting.id === id) setMeeting(msg.meeting);
+          break;
+        case "meeting_access":
+          if (msg.meetingId !== id) break;
+          if (msg.change === "changed" && msg.access) {
+            const access = msg.access;
+            setDetail((d) => (d ? { ...d, access } : d));
+          } else if (msg.change === "revoked" || msg.change === "deleted") {
+            navigate("/reunioes");
+          }
           break;
         case "segments":
           if (msg.meetingId !== id) break;
@@ -236,7 +253,7 @@ export function Reuniao() {
           break;
       }
     },
-    [id, load, setMeeting, toast],
+    [id, load, setMeeting, toast, navigate],
   );
 
   async function action(path: string, body: unknown, message: string | (() => string | null), method = "POST") {
@@ -390,9 +407,7 @@ export function Reuniao() {
               {m.project && <span className="badge">{m.project.name}{m.project.suggested ? " (sugerido)" : ""}</span>}
               {m.organizer && <span>org.: {m.organizer}</span>}
               {m.createdBy && <span>por {m.createdBy}</span>}
-              {detail.access !== "owner" && (
-                <span className="badge info">{detail.access === "read" ? "Compartilhada · somente leitura" : "Compartilhada · edição"}</span>
-              )}
+              {detail.access !== "owner" && <ShareBadge access={detail.access} ownerName={detail.ownerName} />}
               {m.botDisplayName && <span title="Nome do assistente na reunião">assistente: {m.botDisplayName}</span>}
             </div>
             {m.attendees.length > 0 && (
@@ -450,6 +465,16 @@ export function Reuniao() {
             {ownerActions && (
               <button type="button" onClick={() => setEditing(true)}>
                 <Pencil aria-hidden="true" /> Editar
+              </button>
+            )}
+            {ownerActions && (
+              <button type="button" onClick={() => setSharing(true)}>
+                <Share2 aria-hidden="true" /> Compartilhar
+              </button>
+            )}
+            {detail.access !== "owner" && (
+              <button type="button" onClick={() => setConfirm("leave")}>
+                <LogOut aria-hidden="true" /> Sair desta reunião
               </button>
             )}
             {canDelete && idle && (
@@ -715,6 +740,18 @@ export function Reuniao() {
             );
           }
         }}
+      />
+      <ShareDialog open={sharing} onClose={() => setSharing(false)} meetingId={m.id} title={m.title} />
+      <ConfirmDialog
+        open={confirm === "leave"}
+        title="Sair desta reunião?"
+        message={`Você deixa de ver “${m.title}”. Só o dono pode compartilhar de novo.`}
+        confirmLabel="Sair"
+        danger
+        onClose={() => setConfirm(null)}
+        onConfirm={() =>
+          void action(`/shared-with-me/${m.id}`, undefined, "Você saiu da reunião.", "DELETE").then((ok) => ok && navigate("/reunioes"))
+        }
       />
       <ConfirmDialog
         open={confirm === "delete"}

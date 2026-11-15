@@ -44,7 +44,7 @@ Adr = {
 
 | Método | Rota | Corpo / query | Resposta |
 |---|---|---|---|
-| GET | `/agenda?date=YYYY-MM-DD` | data no fuso `APP_TIMEZONE`; padrão = hoje | `{date, timezone, meetings: MeetingSummary[], hostAgent: {online, lastSeenAt, capture}, recordingMeetingId}` |
+| GET | `/agenda?date=YYYY-MM-DD` | data no fuso `APP_TIMEZONE`; padrão = hoje | `{date, timezone, meetings: MeetingListItem[], hostAgent: {online, lastSeenAt, capture}, recordingMeetingId}` |
 | POST | `/calendar/import` | multipart `files` (1–10 arquivos `.ics`, ≤ 2 MB cada) | `{created, updated, cancelled, unchanged, ignored, errors: [{file, message}]}` |
 | POST | `/meetings/scheduled` | `{title, start (ISO), durationMinutes (5–720), url?, projectId?}` | `201 MeetingSummary`; `400` |
 | PATCH | `/meetings/:id` | `{title?, start?, durationMinutes?, url?, projectId?\|null}` | `MeetingSummary`; `409` se já gravou |
@@ -65,10 +65,10 @@ Regras do import (FR-001/FR-002):
 
 | Método | Rota | Corpo / query | Resposta |
 |---|---|---|---|
-| GET | `/meetings?limit=50&before=ISO&projectId=` | — | `{meetings: MeetingSummary[]}` |
+| GET | `/meetings?limit=50&before=ISO&projectId=&scope=all\|mine\|shared\|shared_by_me` | — | `{meetings: MeetingListItem[]}` (`MeetingSummary` + `access`, `ownerName`, `shareCount`, `shareUnseen` do espectador); `scope` inválido = `400`. Compartilhamento: `specs/005-compartilhamento/contracts/rest-api.md` |
 | POST | `/meetings` | `{title, url}` (Modo Agente, existente) | `201 MeetingSummary`; `429` (limite de bots) |
 | POST | `/meetings/upload` | multipart `audio` + `title` (existente) | `201 MeetingSummary` |
-| GET | `/meetings/:id` | — | `{meeting: MeetingSummary, segments: Segment[], speakers: {label, displayName, isUser}[], audio: {channel, format, durationSeconds}[], liveSummary, liveSummaryAt, hasScreenshot, legacyAta}` |
+| GET | `/meetings/:id` | — | `{meeting: MeetingSummary, segments: Segment[], speakers: {label, displayName, isUser}[], audio: {channel, format, durationSeconds}[], liveSummary, liveSummaryAt, hasScreenshot, legacyAta, access, ownerName}` |
 | DELETE | `/meetings/:id` | — | `204`; `409` se estiver gravando ou processando |
 | GET | `/meetings/:id/audio?channel=mic\|remote\|mixed` | — | stream `audio/ogg` (range suportado) |
 | GET | `/meetings/:id/screenshot` | — | `image/png` (Modo Agente) |

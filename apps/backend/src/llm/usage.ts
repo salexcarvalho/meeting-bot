@@ -60,13 +60,13 @@ const NUMBERS = `
   (a.detail->>'durationMs')::bigint AS duration_ms`;
 
 /**
- * Só entram chamadas de reuniões que o usuário enxerga. As sem reunião (testes, uploads avulsos)
- * ficam para quem lê todas as reuniões: são da instância, não de alguém.
+ * O custo é do dono da reunião: só entram chamadas de reuniões que o próprio usuário criou, nunca as que
+ * foram compartilhadas com ele (specs/005, FR-015). As sem reunião (testes, uploads avulsos) ficam para
+ * quem lê todas as reuniões: são da instância, não de alguém.
  */
-function visibilitySql(user: User): string {
-  const visible = visibleMeetingsSql(user, "m", 3);
-  if (can(user, "meetings.read_all")) return `(m.id IS NULL OR ${visible})`;
-  return `(m.id IS NOT NULL AND ${visible})`;
+export function visibilitySql(user: User): string {
+  if (can(user, "meetings.read_all")) return `(m.id IS NULL OR ${visibleMeetingsSql(user, "m", 3)})`;
+  return `(m.id IS NOT NULL AND m.created_by = $3)`;
 }
 
 const BASE = `

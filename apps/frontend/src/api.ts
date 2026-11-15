@@ -43,6 +43,9 @@ export async function api<T = unknown>(
   return body as T;
 }
 
+/** Falha que não precisa de aviso (ex.: marcar como visto): descarta sem função vazia. */
+export const ignoreError = (): undefined => undefined;
+
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }

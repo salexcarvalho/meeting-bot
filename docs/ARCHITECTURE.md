@@ -100,7 +100,11 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - `router.param` (`meetingParamGuard`/`childParamGuard`) confere o acesso antes de qualquer rota com `:id`/`:itemId`;
   - sem acesso, a resposta é 404; só leitura tentando escrever recebe 403;
   - listas, agenda e projetos usam `visibleMeetingsSql`;
-  - o WebSocket só entrega eventos a quem tem acesso.
+  - o WebSocket só entrega eventos a quem tem acesso;
+  - gestão de compartilhamento (`shares/`): `GET|POST /meetings/:id/shares`, `PUT|DELETE /meetings/:id/shares/:userId`, `GET /users/lookup`, `POST|DELETE /shared-with-me/:meetingId[/seen]`. As rotas de gestão estão em `OWNER_ONLY_ANY_METHOD` (`authz/ownerOnly.ts`): dono em qualquer método, inclusive `GET`, e cada função de `shares/service.ts` confere `created_by` de novo (404 sem acesso, 403 para destinatário, também para admin sem relação);
+  - revogação imediata: `LiveHub.revokeAccess` invalida a audiência, remove a assinatura do usuário e só então envia o evento direcionado `meeting_access` (sem esperar o `sweep` de 30 s); excluir a reunião avisa os destinatários (`deleted`);
+  - os campos por espectador (`access`, `ownerName`, `shareCount`, `shareUnseen`) existem só em `MeetingListItem` (`GET /meetings`, `/agenda`); o resumo difundido `meeting` continua igual para todos;
+  - a busca de usuário devolve só `id`, `username`, `name`, `canEdit` (prefixo, mínimo 3 letras, até 8, 30 por minuto por usuário); a lista de acessos é só do dono; auditoria `meeting_share_*` só com ids.
 - **Host-agent:**
   - grava só as reuniões do dono (`AGENT_OWNER`; vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo — o dono nunca passa sozinho para outra pessoa);
   - o heartbeat e o "não gravar" do agente são limitados a esse dono.
@@ -109,7 +113,7 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - o tipo é conferido pelos bytes iniciais (sem SVG);
   - nomes seguem um padrão fixo (sem path traversal) e a gravação usa modo 0600.
 - **Consumo de LLM:** `GET /llm/usage?month=AAAA-MM` agrega o próprio `audit_log` (`llm/usage.ts`),
-  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração.
+  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração. O custo é do dono: só entram reuniões criadas pelo próprio usuário, nunca as compartilhadas com ele.
 - **Ações administrativas:** criar, editar, trocar papel, ativar, redefinir senha e redefinir configurações; todas vão para `audit_log`.
 - host-agent autenticado por `AGENT_TOKEN` (Bearer, comparação em tempo constante, limite de
   falhas auditado).

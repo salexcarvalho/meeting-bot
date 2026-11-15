@@ -185,6 +185,18 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   (Claude Code or Codex), depending on what's enabled. What was generated externally shows up flagged
   ("OpenRouter", "Claude", or "Codex" on the item, the ADR, and the meeting minutes).
 
+### Sharing a meeting
+
+On the meeting page, the owner clicks **Compartilhar** ("Share"), searches for a person by name or username (3 letters minimum) and picks **Leitura** (read) or **Edição** (edit):
+
+- **Read:** the person sees the meeting (link, participants, transcript, audio, items and minutes).
+- **Edit:** also edits items, ADRs and speaker names. Recording, stopping, reprocessing, rescheduling, changing the link, "do not record", "no-agenda day", cancelling, generating minutes/ADRs, turning items on and deleting stay owner-only. Users who cannot manage meetings (VIEWER) only receive read access.
+- The owner sees **Quem tem acesso** ("Who has access"), changes the level and removes people. It applies immediately, even to someone with the meeting open (the live transcript stops arriving). Only the owner sees the list; a recipient sees their own level and the owner's name.
+- For a recurring meeting, the dialog offers **this occurrence only** or **this and the following ones already on the agenda**. Past occurrences are left out and occurrences created later do not inherit access.
+- Under **Reuniões**, the filters **Todas** (all), **Minhas** (mine), **Compartilhadas comigo** (shared with me) and **Compartilhadas por mim** (shared by me) (`?escopo=`); a badge with the level and owner, a **Nova** ("New") mark until opened, and an on-screen notice. Nothing leaves the machine (no e-mail).
+- **Sair desta reunião** ("Leave this meeting") removes your own access. Admins do not read other people's content, and deactivating the owner does not remove recipients' access.
+- Sharing, changing, revoking and leaving are recorded in `audit_log` with ids only (never title or content).
+
 ### Upload and Agent Mode
 
 In **Reuniões** ("Meetings"):
@@ -226,7 +238,7 @@ Each user has their own settings:
 - **Documentação** ("Documentation"): level of detail and formats.
 - **Consumo de IA** ("AI usage"): tokens and cost for the month per provider, model, and meeting, plus the latest calls.
   It comes from `audit_log`, is read-only, and doesn't block generation. The subscription doesn't charge per call: only
-  tokens. Each person sees the usage for the meetings they can see.
+  tokens. Each person sees only the usage of the meetings they created: the cost is the owner's, and a shared meeting does not count.
 
 ## Main Configuration (`.env`)
 
@@ -404,7 +416,6 @@ scripts/fixture-ics.sh 20      # test invite starting in 20 min
   generated using only the description and the meeting summary.
 - **One host-agent per machine**, tied to a single user (`AGENT_OWNER`). Other users use the
   upload or the guest assistant.
-- **Sharing a meeting** doesn't have a screen yet (the `meeting_shares` structure already exists in the backend).
 - **The guest assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
   or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame. On Teams, the
   agent account replaces the guest with the account's name.

@@ -7,3 +7,5 @@ import "./items/routes";
 import "./agent/module";
 import "./ata/routes";
 import "./users/routes";
+import "./users/lookup";
+import "./shares/routes";
