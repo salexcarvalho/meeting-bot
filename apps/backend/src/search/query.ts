@@ -151,12 +151,18 @@ async function semanticCandidates(user: User, vector: number[], kinds: SearchKin
     await client.query(`SET LOCAL hnsw.iterative_scan = relaxed_order`);
     await client.query(`SET LOCAL hnsw.ef_search = ${HNSW_EF_SEARCH}`);
     await client.query(`SET LOCAL hnsw.max_scan_tuples = ${HNSW_MAX_SCAN_TUPLES}`);
+    // relaxed_order devolve fora de ordem por pouco; o CTE materializado reordena de forma estrita
+    // (`+ 0` é exigido no Postgres 17+, README do pgvector).
     const { rows } = await client.query(
-      `SELECT ${CANDIDATE_COLUMNS}, 1 - (c.embedding <=> ${vec}::vector) AS similarity
-         ${FROM_SQL}
-        WHERE c.embedding IS NOT NULL AND c.embed_model = ${model} AND ${where}
-        ORDER BY c.embedding <=> ${vec}::vector
-        LIMIT ${CANDIDATES}`,
+      `WITH relaxed AS MATERIALIZED (
+         SELECT ${CANDIDATE_COLUMNS}, c.embedding <=> ${vec}::vector AS distance
+           ${FROM_SQL}
+          WHERE c.embedding IS NOT NULL AND c.embed_model = ${model} AND ${where}
+          ORDER BY c.embedding <=> ${vec}::vector
+          LIMIT ${CANDIDATES}
+       )
+       SELECT id, meeting_id, kind, source_id, seq, 1 - distance AS similarity
+         FROM relaxed ORDER BY distance + 0, id`,
       p.values,
     );
     return rows.map(toCandidate);
