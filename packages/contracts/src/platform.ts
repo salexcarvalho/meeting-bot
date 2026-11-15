@@ -31,6 +31,8 @@ export const PERMISSIONS = {
   "projects.manage": "Renomear e excluir projetos do catálogo",
   "providers.manage": "Gerenciar provedores e modelos de IA",
   "audit.read": "Ver auditoria",
+  "tasks.read": "Ver as próprias tarefas",
+  "tasks.manage": "Criar, editar e excluir as próprias tarefas",
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 export const PERMISSION_KEYS = Object.keys(PERMISSIONS) as Permission[];
