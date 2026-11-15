@@ -1,5 +1,4 @@
 import type { AdminUsageReportValue } from "@meeting-bot/contracts";
-import { config } from "../config";
 import { asrSplit, byDay, byModel, byProvider, byPurpose, grouped, totals, type UsageScope } from "./aggregate";
 import type { UsagePeriod } from "./period";
 import { retentionInfo } from "./queries";
@@ -9,7 +8,7 @@ import { retentionInfo } from "./queries";
 // (AdminUsageReportValue) não tem campo de reunião. Admin não lê conteúdo alheio.
 
 export function instanceScope(period: UsagePeriod): UsageScope {
-  return { where: "l.at >= $1 AND l.at < $2", params: [period.from, period.to, config.appTimezone], tzParam: 3 };
+  return { where: "l.at >= $1 AND l.at < $2", params: [period.from, period.to] };
 }
 
 /** Sem usuário e sem reunião de origem = instância; reunião sem dono = usuário removido. */

@@ -7,16 +7,19 @@ import {
   type UsageProviderValue,
   type UsageTotalsValue,
 } from "@meeting-bot/contracts";
+import { config } from "../config";
 import { pool } from "../db";
 
 // Agregações sobre ai_usage_logs (alias `l`), sempre feitas no banco. A função de totais é única:
 // painel do usuário e do admin usam o mesmo cálculo, então a soma dos grupos fecha com o total.
 
-/** Filtro já com os parâmetros posicionais; `tzParam` é o índice do fuso (APP_TIMEZONE). */
+/**
+ * Filtro já com os parâmetros posicionais. Todo parâmetro enviado precisa aparecer no SQL (o Postgres
+ * recusa a consulta com parâmetro sem uso): por isso o fuso só entra na consulta por dia.
+ */
 export interface UsageScope {
   where: string;
   params: unknown[];
-  tzParam: number;
 }
 
 export const TOTALS_COLUMNS = `
@@ -59,6 +62,8 @@ export type KeyLabel = (key: string, row: Row) => string;
 interface GroupSpec {
   /** expressão SQL da chave do grupo */
   key: string;
+  /** parâmetros usados só pela chave (ex.: o fuso), que viram os próximos $n */
+  extraParams?: unknown[];
   /** JOIN extra (ex.: users) */
   join?: string;
   /** colunas extras exibidas só para montar o rótulo (nunca dado de reunião) */
@@ -74,7 +79,7 @@ export async function grouped(scope: UsageScope, spec: GroupSpec): Promise<Usage
       WHERE ${scope.where}
       GROUP BY ${spec.extra ? "1, 2" : "1"}
       ORDER BY ${spec.order}`,
-    scope.params,
+    [...scope.params, ...(spec.extraParams ?? [])],
   );
   return rows.map((row) => {
     const key = String(row.key);
@@ -97,7 +102,8 @@ export const byModel = (scope: UsageScope) =>
 /** Dia no fuso da aplicação (AAAA-MM-DD); o rótulo é DD/MM. */
 export const byDay = (scope: UsageScope) =>
   grouped(scope, {
-    key: `to_char((l.at AT TIME ZONE $${scope.tzParam})::date, 'YYYY-MM-DD')`,
+    key: `to_char((l.at AT TIME ZONE $${scope.params.length + 1}::text)::date, 'YYYY-MM-DD')`,
+    extraParams: [config.appTimezone],
     order: "1",
     label: (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`,
   });

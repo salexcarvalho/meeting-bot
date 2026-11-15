@@ -18,8 +18,7 @@ const TOP_MEETINGS_LIMIT = 20;
 export function userScope(userId: string, period: UsagePeriod): UsageScope {
   return {
     where: "l.user_id = $1 AND l.at >= $2 AND l.at < $3",
-    params: [userId, period.from, period.to, config.appTimezone],
-    tzParam: 4,
+    params: [userId, period.from, period.to],
   };
 }
 
