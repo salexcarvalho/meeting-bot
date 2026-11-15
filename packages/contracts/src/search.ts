@@ -38,13 +38,24 @@ function listParam<T extends z.ZodType>(item: T, max: number) {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?$/;
 
+/** O dia civil (AAAA-MM-DD) existe de verdade e cabe no tipo `date` do Postgres (2026-02-30 e 0000-01-01 não). */
+function civilDayExists(value: string): boolean {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  if (year < 1900 || year > 2999) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 const dateParam = z
   .string()
   .refine((v) => DATE_ONLY.test(v) || DATE_TIME.test(v), "use AAAA-MM-DD")
-  .refine((v) => !Number.isNaN(Date.parse(v)), "data inválida");
+  .refine((v) => !Number.isNaN(Date.parse(v)) && civilDayExists(v), "data inválida");
+
+/** O Postgres recusa o caractere NUL em texto: a entrada com ele é inválida (400), nunca um erro 500. */
+const noNul = (v: string) => !v.includes("\u0000");
 
 export const SearchQuery = z.object({
-  q: z.string().trim().min(1, "informe o que procurar").max(SEARCH_QUERY_MAX),
+  q: z.string().trim().min(1, "informe o que procurar").max(SEARCH_QUERY_MAX).refine(noNul, "texto inválido"),
   mode: SearchMode.default("hybrid"),
   kind: listParam(SearchKind, SEARCH_KINDS.length),
   projectId: z.uuid().optional(),
@@ -119,7 +130,7 @@ export type SearchResponseValue = z.infer<typeof SearchResponse>;
 
 export const ChatHistoryMessage = z.object({
   role: z.enum(["user", "assistant"]),
-  content: z.string().max(CHAT_MESSAGE_MAX),
+  content: z.string().max(CHAT_MESSAGE_MAX).refine(noNul, "texto inválido"),
 });
 
 export const ChatScope = z
@@ -135,7 +146,7 @@ export type ChatScopeValue = z.infer<typeof ChatScope>;
 /** Estrito: `llm`, `provider` e qualquer outro campo desconhecido são recusados (o chat é sempre local, Q1-A). */
 export const ChatRequest = z
   .object({
-    question: z.string().trim().min(1).max(CHAT_QUESTION_MAX),
+    question: z.string().trim().min(1).max(CHAT_QUESTION_MAX).refine(noNul, "texto inválido"),
     history: z.array(ChatHistoryMessage).max(CHAT_HISTORY_MAX).optional(),
     scope: ChatScope.optional(),
   })
