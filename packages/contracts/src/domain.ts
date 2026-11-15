@@ -163,6 +163,10 @@ export interface MeetingSummary {
   endedAt: string | null;
   project: ProjectRef | null;
   skipRecording: boolean;
+  /** cai em dia sem agenda (WORKING_DAYS, no fuso da agenda): sem lembrete nem entrada automática, salvo `autoOnOffDay` */
+  offDay: boolean;
+  /** o usuário pediu lembrete e gravação automática mesmo em dia sem agenda */
+  autoOnOffDay: boolean;
   /** gera decisões, pendências, riscos etc. nesta reunião (padrão: desligado) */
   itemsEnabled: boolean;
   organizer: string | null;
@@ -305,6 +309,8 @@ export interface AgentMeeting {
   url: string | null;
   platform: Platform;
   skipRecording: boolean;
+  /** dia sem agenda e sem pedido do usuário: o host-agent não faz lembrete desta reunião */
+  noAlerts: boolean;
   status: MeetingStatus;
 }
 
@@ -445,8 +451,11 @@ export interface AgentCalendarImportResult extends ImportResult {
   removed: number;
   /** presente quando a remoção por sumiço foi pulada (lista vazia sem confirmEmpty) */
   removalSkipped?: "empty_without_confirm";
-  /** eventos enviados que não foram aplicados (até 20); seus uids nunca causam remoção */
-  ignoredEvents: { uid: string; reason: "outside_date" }[];
+  /**
+   * eventos enviados que não foram aplicados (até 20); seus uids nunca causam remoção.
+   * outside_date = fora do dia do envio; non_working_day = ocorrência de série em dia sem agenda (WORKING_DAYS)
+   */
+  ignoredEvents: { uid: string; reason: "outside_date" | "non_working_day" }[];
 }
 
 // ---------- consumo de LLM (só leitura, vem do audit_log) ----------

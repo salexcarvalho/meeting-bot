@@ -196,6 +196,8 @@ export interface MeetingRow {
   project_name: string | null;
   project_suggested: boolean;
   skip_recording: boolean;
+  /** o usuário pediu lembrete e entrada automática mesmo em dia não útil */
+  auto_on_off_day: boolean;
   /** origem da importação automática da agenda (ex.: aurora-outlook); null = cadastro manual ou .ics */
   import_source: string | null;
   /** quando a reunião sumiu da lista da origem e foi cancelada por isso (null = não foi) */

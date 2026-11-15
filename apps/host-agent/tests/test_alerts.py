@@ -94,3 +94,39 @@ def test_prunes_old_entries(tmp_path):
     s.mark(s.due(T0 - timedelta(minutes=15), [meeting()])[0])
     s.prune(T0 + timedelta(days=3))
     assert s.fired == {}
+
+
+def _api(**kw):
+    base = {
+        "id": "m-sabado",
+        "title": "Reunião de sábado",
+        "start": "2026-11-14T13:00:00Z",
+        "end": "2026-11-14T14:00:00Z",
+        "url": None,
+        "status": "scheduled",
+    }
+    base.update(kw)
+    return base
+
+
+def test_off_day_meeting_without_user_request_gets_no_alert(tmp_path):
+    # Fim de semana (WORKING_DAYS no backend): o backend marca noAlerts e o host-agent não avisa.
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1])
+    quiet = Meeting.from_api(_api(noAlerts=True))
+    assert quiet.no_alerts is True
+    assert s.due(quiet.start - timedelta(minutes=15), [quiet]) == []
+    assert s.due(quiet.start - timedelta(minutes=1), [quiet]) == []
+
+
+def test_off_day_meeting_with_user_request_alerts_normally(tmp_path):
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1])
+    wanted = Meeting.from_api(_api(noAlerts=False))
+    assert [a.minutes for a in s.due(wanted.start - timedelta(minutes=15), [wanted])] == [15]
+
+
+def test_missing_no_alerts_field_keeps_alerting(tmp_path):
+    # Cache antigo ou backend anterior: sem o campo, o comportamento não muda.
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1])
+    old = Meeting.from_api(_api())
+    assert old.no_alerts is False
+    assert s.due(old.start - timedelta(minutes=15), [old])

@@ -44,6 +44,8 @@ const env = {
   ALLOW_EXTERNAL_LLM: "true",
   // sem Chromium de bot no E2E: o assistente não entra sozinho
   AUTO_ASSISTANT: "false",
+  // as reuniões do E2E nascem em torno de "agora": todo dia vale, senão o resultado dependeria do dia da semana
+  WORKING_DAYS: "1,2,3,4,5,6,7",
   LLM_GENERATION_PROVIDER: "local",
   OPENROUTER_API_KEY: `e2e-${randomUUID()}`,
   OPENROUTER_URL: "https://127.0.0.1:9/api/v1",

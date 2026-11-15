@@ -14,6 +14,7 @@ import { toMeetingSummary } from "../meetings/summary";
 import { hostAgentStatusFor } from "../recording/hostAgentState";
 import type { User } from "../types";
 import { detectMeetingUrl, parseIcs } from "./ics";
+import { isAgendaWorkingDay } from "./offDay";
 import { dayRange, EDITABLE_STATUSES, localMidnight, suggestProject, todayIn } from "./rules";
 import { applyOccurrence } from "./upsert";
 
@@ -57,7 +58,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
   for (const file of files) {
     let parsed;
     try {
-      parsed = parseIcs(file.text, range);
+      parsed = parseIcs(file.text, range, isAgendaWorkingDay);
     } catch (err) {
       result.errors.push({ file: file.name, message: (err as Error).message });
       continue;
@@ -139,7 +140,14 @@ export function addInterval(d: Date, freq: RecurrenceRule["freq"], interval: num
 
 // Recorrência já nasce materializada em uma linha por ocorrência (mesmo padrão do import .ics),
 // então lembrete e entrada automática do bot funcionam de graça em cada uma.
-export function generateOccurrenceStarts(start: Date, rule: RecurrenceRule, horizonEnd: Date): Date[] {
+// Ocorrência que cai em dia não útil (WORKING_DAYS, no fuso da agenda) não é gerada: a série não se
+// espalha pelo fim de semana. Reunião avulsa em dia não útil continua valendo (createScheduled).
+export function generateOccurrenceStarts(
+  start: Date,
+  rule: RecurrenceRule,
+  horizonEnd: Date,
+  isWorking: (d: Date) => boolean = isAgendaWorkingDay,
+): Date[] {
   const until = rule.until ? new Date(rule.until) : null;
   if (until && (Number.isNaN(until.getTime()) || until.getTime() <= start.getTime())) {
     throw new CalendarError("Data final da recorrência precisa ser depois do início.");
@@ -148,9 +156,10 @@ export function generateOccurrenceStarts(start: Date, rule: RecurrenceRule, hori
   const starts: Date[] = [];
   let cursor = start;
   while (cursor.getTime() <= cap && starts.length < RECURRENCE_MAX_OCCURRENCES) {
-    starts.push(cursor);
+    if (isWorking(cursor)) starts.push(cursor);
     cursor = addInterval(cursor, rule.freq, rule.interval);
   }
+  if (!starts.length) throw new CalendarError("A recorrência só cairia em dias sem agenda (fim de semana).");
   return starts;
 }
 
@@ -275,6 +284,19 @@ export async function setSkip(id: string, skip: boolean): Promise<MeetingRow> {
   const ended = (meeting.scheduled_end?.getTime() ?? 0) <= Date.now();
   const status = skip ? "skipped" : ended ? "missed" : "scheduled";
   await pool.query(`UPDATE meetings SET skip_recording = $2, status = $3 WHERE id = $1`, [id, skip, status]);
+  emitMeetingChanged(id);
+  return (await getMeeting(id))!;
+}
+
+// Reunião em dia não útil não tem lembrete nem entrada automática; aqui o usuário pede que tenha.
+// Só o dono pede isso (defesa em profundidade: a rota também é owner-only).
+export async function setAutoOnOffDay(id: string, enabled: boolean, userId: string): Promise<MeetingRow> {
+  const meeting = await getMeeting(id);
+  if (meeting?.created_by !== userId) throw new CalendarError("Reunião não encontrada.", 404);
+  if (!["scheduled", "skipped"].includes(meeting.status)) {
+    throw new CalendarError("Não é possível mudar o lembrete desta reunião agora.", 409);
+  }
+  await pool.query(`UPDATE meetings SET auto_on_off_day = $2 WHERE id = $1`, [id, enabled]);
   emitMeetingChanged(id);
   return (await getMeeting(id))!;
 }

@@ -9,6 +9,12 @@ import { useCan, useSession } from "../session";
 
 const PLATFORM: Record<string, string> = { teams: "Teams", meet: "Meet", other: "Link", upload: "Upload", none: "" };
 
+// Dia sem agenda (fim de semana): sem lembrete nem gravação automática, a menos que o usuário peça.
+function autoHint(meeting: MeetingSummary): string {
+  if (meeting.offDay && !meeting.autoOnOffDay) return "dia sem agenda: sem lembrete nem gravação automática";
+  return meeting.url ? "assistente entra no horário" : "sem link: não grava sozinho";
+}
+
 export function AgendaItem({
   meeting,
   onChange,
@@ -34,6 +40,7 @@ export function AgendaItem({
   const canRecord = local && !meeting.url && ["scheduled", "skipped", "missed"].includes(meeting.status);
   const canSendAssistant =
     local && Boolean(meeting.url) && !meeting.botActive && ["scheduled", "skipped", "missed", "error"].includes(meeting.status);
+  const canOffDay = local && meeting.offDay && (meeting.status === "scheduled" || meeting.status === "skipped");
   const canStop = manage && (meeting.status === "recording" || (meeting.botActive && meeting.status !== "stopping"));
   const canJoin = Boolean(meeting.url) && ["scheduled", "skipped", "recording", "missed"].includes(meeting.status);
   const canEdit = local && ["scheduled", "skipped", "missed", "cancelled"].includes(meeting.status);
@@ -91,9 +98,7 @@ export function AgendaItem({
           )}
           {PLATFORM[meeting.platform] && <span className="muted">{PLATFORM[meeting.platform]}</span>}
           {meeting.skipRecording && meeting.status !== "skipped" && <span className="muted">sem gravação</span>}
-          {meeting.status === "scheduled" && !meeting.skipRecording && (
-            <span className="muted">{meeting.url ? "assistente entra no horário" : "sem link: não grava sozinho"}</span>
-          )}
+          {meeting.status === "scheduled" && !meeting.skipRecording && <span className="muted">{autoHint(meeting)}</span>}
           {meeting.organizer && <span className="muted">org.: {meeting.organizer}</span>}
           {meeting.attendees.length > 0 && <span className="muted">{meeting.attendees.length} participante(s)</span>}
         </div>
@@ -139,6 +144,16 @@ export function AgendaItem({
             onClick={() => act(`/meetings/${meeting.id}/skip`, { skip: meeting.status !== "skipped" })}
           >
             {meeting.status === "skipped" ? "Gravar no horário" : "Não gravar"}
+          </button>
+        )}
+        {canOffDay && (
+          <button
+            type="button"
+            className="small"
+            disabled={busy}
+            onClick={() => act(`/meetings/${meeting.id}/auto-off-day`, { enabled: !meeting.autoOnOffDay })}
+          >
+            {meeting.autoOnOffDay ? "Voltar ao padrão" : "Avisar e gravar neste dia"}
           </button>
         )}
         {canEdit && (

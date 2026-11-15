@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import type { ChannelLiveState, RecordingEvent } from "@meeting-bot/contracts";
 import { hostAgentOwner } from "./owner";
 import { tickAutoAssistant } from "../bot/autoJoin";
+import { autoSuppressed } from "../calendar/offDay";
 import { config } from "../config";
 import { emitMeetingChanged, pool, withTransaction } from "../db";
 import { hub } from "../live/hub";
@@ -62,10 +63,11 @@ export function conflictMeetingIds(): string[] {
 }
 
 const SELECT_COLUMNS = `id, status, scheduled_start, scheduled_end, skip_recording, started_at, ended_at,
-  stop_requested, last_speech_at, created_by`;
+  stop_requested, last_speech_at, created_by, auto_on_off_day`;
 
 // Reunião de outro usuário nunca é gravada nesta máquina (vira "não gravada" depois do horário).
 // Com AUTO_LOCAL_RECORDING=false o PC não começa a gravar sozinho: quem grava é o assistente.
+// Dia sem agenda (WORKING_DAYS) sem pedido do usuário também não grava sozinho.
 function toSched(r: Record<string, any>, ownerId: string | null): SchedMeeting {
   const rt = peekRuntime(r.id);
   const dbSpeech: Date | null = r.last_speech_at;
@@ -75,7 +77,12 @@ function toSched(r: Record<string, any>, ownerId: string | null): SchedMeeting {
     status: r.status,
     scheduledStart: r.scheduled_start,
     scheduledEnd: r.scheduled_end,
-    skipRecording: r.skip_recording || !config.autoLocalRecording || !ownerId || r.created_by !== ownerId,
+    skipRecording:
+      r.skip_recording ||
+      !config.autoLocalRecording ||
+      !ownerId ||
+      r.created_by !== ownerId ||
+      autoSuppressed(r.scheduled_start, r.auto_on_off_day),
     startedAt: r.started_at,
     stopRequested: r.stop_requested,
     lastSpeechAt: dbSpeech && memSpeech ? (dbSpeech > memSpeech ? dbSpeech : memSpeech) : (dbSpeech ?? memSpeech),

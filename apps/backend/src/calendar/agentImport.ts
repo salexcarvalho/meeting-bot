@@ -9,6 +9,7 @@ import { config } from "../config";
 import { emitMeetingChanged, withTransaction } from "../db";
 import { detectMeetingUrl, parseIcs, type Occurrence } from "./ics";
 import { pairReschedules } from "./reschedule";
+import { isAgendaWorkingDay } from "./offDay";
 import { dayRange } from "./rules";
 import { CalendarError, listProjectMatchers } from "./service";
 import { applyOccurrence, type ApplyContext } from "./upsert";
@@ -73,8 +74,12 @@ function insideDay(o: Occurrence, range: DayRange): boolean {
   return o.start >= range.start && o.start < range.end;
 }
 
-function listIgnored(result: AgentCalendarImportResult, uid: string): void {
-  if (result.ignoredEvents.length < MAX_IGNORED_LISTED) result.ignoredEvents.push({ uid, reason: "outside_date" });
+function listIgnored(
+  result: AgentCalendarImportResult,
+  uid: string,
+  reason: AgentCalendarImportResult["ignoredEvents"][number]["reason"] = "outside_date",
+): void {
+  if (result.ignoredEvents.length < MAX_IGNORED_LISTED) result.ignoredEvents.push({ uid, reason });
 }
 
 function occurrencesFromEvents(events: AgentCalendarEvent[], range: DayRange, result: AgentCalendarImportResult): Parsed {
@@ -82,7 +87,12 @@ function occurrencesFromEvents(events: AgentCalendarEvent[], range: DayRange, re
   const ignoredUids = new Set<string>();
   for (const event of events) {
     const o = eventToOccurrence(event);
-    if (insideDay(o, range)) {
+    if (insideDay(o, range) && event.recurring && !isAgendaWorkingDay(o.start)) {
+      // Série não se espalha pelo fim de semana: nem cria nem cancela o que já existe com esse uid.
+      result.ignored++;
+      listIgnored(result, o.uid, "non_working_day");
+      ignoredUids.add(o.uid);
+    } else if (insideDay(o, range)) {
       occurrences.push(o);
     } else {
       // Fuso errado ou dia trocado: segue com os demais e não cancela o que já existe com esse uid.
@@ -97,7 +107,7 @@ function occurrencesFromEvents(events: AgentCalendarEvent[], range: DayRange, re
 function occurrencesFromIcs(text: string, range: DayRange, result: AgentCalendarImportResult): Parsed {
   let parsed;
   try {
-    parsed = parseIcs(text, { from: range.start, to: range.end });
+    parsed = parseIcs(text, { from: range.start, to: range.end }, isAgendaWorkingDay);
   } catch {
     // Mensagem fixa: o texto do erro do parser pode ecoar trechos do arquivo.
     throw new CalendarError(INVALID_ICS_MESSAGE);
@@ -107,6 +117,10 @@ function occurrencesFromIcs(text: string, range: DayRange, result: AgentCalendar
   const ignoredUids = new Set(parsed.occurrences.filter((o) => !occurrences.includes(o)).map((o) => o.uid));
   result.ignored += parsed.ignored + parsed.occurrences.length - occurrences.length;
   ignoredUids.forEach((uid) => listIgnored(result, uid));
+  parsed.offDayUids.forEach((uid) => {
+    ignoredUids.add(uid);
+    listIgnored(result, uid, "non_working_day");
+  });
   result.partialSeries = parsed.partialSeries.slice(0, 10);
   return { occurrences, ignoredUids };
 }

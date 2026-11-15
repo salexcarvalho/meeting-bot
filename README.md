@@ -117,6 +117,9 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   envio não liga gravação extra: valem as regras de sempre. Detalhes em
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md).
 - **Nova reunião**: cadastro manual com título, início, duração, link e projeto.
+- **Sem agenda no fim de semana** (`WORKING_DAYS`, padrão segunda a sexta, no fuso da agenda): séries (recorrência
+  manual, `.ics` e Aurora) não geram ocorrência em sábado e domingo. Uma reunião avulsa nesses dias aparece na agenda,
+  mas sem lembrete e sem o assistente entrar sozinho; use **Avisar e gravar neste dia** nela (ou **Enviar assistente agora**).
 - O projeto é **sugerido** pelas palavras-chave do título. Confirme-o em **Editar**.
 - **Não gravar**: disponível na tela ou no alerta do desktop; o assistente não entra.
 - **Enviar assistente agora**: manda o assistente antes do horário ou de novo depois de uma falha.
@@ -226,6 +229,7 @@ Cada usuário tem as próprias configurações:
 | `AGENT_TOKEN` | — | Segredo compartilhado com o host-agent (≥ 32 caracteres) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Nome do canal do microfone |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso da agenda e da ata |
+| `WORKING_DAYS` | `1,2,3,4,5` | Dias com agenda (ISO, 1 = segunda … 7 = domingo). Fora deles não há lembrete nem gravação automática |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper no worker |
 | `HF_TOKEN` | vazio | Separação de falantes |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | LLM local |

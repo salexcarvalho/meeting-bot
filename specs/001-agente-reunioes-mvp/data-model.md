@@ -56,6 +56,7 @@ padrão "Sérgio").
 | **project_id** | UUID FK projects ON DELETE SET NULL | |
 | **project_suggested** | BOOLEAN NOT NULL DEFAULT false | true quando o projeto foi sugerido por palavra-chave e ainda não confirmado |
 | **skip_recording** | BOOLEAN NOT NULL DEFAULT false | "Não gravar" |
+| **auto_on_off_day** | BOOLEAN NOT NULL DEFAULT false | em dia fora de `WORKING_DAYS`, o usuário pediu lembrete e entrada/gravação automática ("Avisar e gravar neste dia") |
 | **import_source** | TEXT | Origem de importação automática da agenda (`aurora-outlook`); NULL = manual ou `.ics` pela tela |
 | **import_removed_at** | TIMESTAMPTZ | Quando a reunião foi cancelada por sumir da lista da origem (NULL = não foi); permite reativar se reaparecer |
 | **stop_requested** | BOOLEAN NOT NULL DEFAULT false | botão Parar |

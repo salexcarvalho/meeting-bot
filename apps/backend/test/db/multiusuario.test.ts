@@ -189,6 +189,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
         ["GET", `/meetings/${anaMeeting}/audio`],
         ["PATCH", `/meetings/${anaMeeting}`, { title: "hack" }],
         ["POST", `/meetings/${anaMeeting}/skip`, { skip: true }],
+        ["POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true }],
         ["DELETE", `/meetings/${anaMeeting}`],
         ["GET", `/items/${itemId}/history`],
         ["PATCH", `/items/${itemId}`, { description: "alterado por outra pessoa" }],
@@ -210,6 +211,10 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       }
       // nem o super administrador lê conteúdo alheio por padrão (Q2)
       expect((await call("mu-super", "GET", `/meetings/${anaMeeting}`)).status).toBe(404);
+      for (const who of ["mu-admin", "mu-super"]) {
+        const res = await call(who, "POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true });
+        expect(res.status, `${who} auto-off-day`).toBe(404);
+      }
       expect((await call("mu-ana", "GET", `/meetings/${anaMeeting}`)).status).toBe(200);
       const resumo = await call("mu-ana", "GET", `/meetings/${anaMeeting}/resumo`);
       expect(resumo.status).toBe(200);
@@ -228,6 +233,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       const list = await call("mu-leitor", "GET", "/meetings?limit=200");
       expect(list.json.meetings.map((m: { id: string }) => m.id)).toContain(anaMeeting);
       expect((await call("mu-leitor", "PATCH", `/meetings/${anaMeeting}`, { title: "hack" })).status).toBe(403);
+      expect((await call("mu-leitor", "POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true })).status).toBe(403);
       expect((await call("mu-leitor", "POST", `/items/${itemId}/approve`)).status).toBe(403);
     });
 
@@ -239,6 +245,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       for (const [method, url, body] of [
         ["PATCH", `/meetings/${anaMeeting}`, { title: "Ajustado pela Bia" }],
         ["POST", `/meetings/${anaMeeting}/skip`, { skip: true }],
+        ["POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true }],
         ["POST", `/meetings/${anaMeeting}/record`],
         ["POST", `/meetings/${anaMeeting}/end`],
         ["POST", `/meetings/${anaMeeting}/reprocess`, { step: "all" }],

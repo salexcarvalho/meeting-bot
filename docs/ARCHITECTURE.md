@@ -44,6 +44,9 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
    - `.ics`: o node-ical expande recorrências.
    - O upsert usa `(UID, RECURRENCE-ID)` e `SEQUENCE`.
    - Cadastro manual também entra na agenda.
+   - Dia fora de `WORKING_DAYS` (padrão sáb/dom, fuso `APP_TIMEZONE`): série não gera ocorrência (recorrência manual
+     e sua extensão, RRULE do `.ics`, `recurring: true` da Aurora). Reunião avulsa fica na agenda, mas sem lembrete
+     (`AgentMeeting.noAlerts`) e sem entrada/gravação automática, salvo `meetings.auto_on_off_day` (`calendar/offDay.ts`).
    - O projeto é sugerido por palavra-chave.
 2. **Gravação**
    - No horário, o scheduler põe o **assistente** (`bot/autoJoin.ts`) em toda reunião da agenda com link
