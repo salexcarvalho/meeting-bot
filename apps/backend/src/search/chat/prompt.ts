@@ -26,7 +26,13 @@ export function estimateTokens(text: string): number {
 
 /** Neutraliza o que imitaria a delimitação do prompt. */
 export function sanitize(text: string): string {
-  return text.replace(/</g, "‹").replace(/>/g, "›").replace(/\s+\n/g, "\n").trim();
+  return text
+    .replace(/</g, "‹")
+    .replace(/>/g, "›")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
 }
 
 export interface PromptSource {
@@ -47,7 +53,8 @@ export function kindLabel(source: PromptSource): string {
     case "transcript": {
       const start = hit.target.start;
       const end = hit.target.end;
-      const range = start === null ? "" : ` ${clock(start)}${end === null ? "" : `–${clock(end)}`}`;
+      const endLabel = end === null ? "" : `–${clock(end)}`;
+      const range = start === null ? "" : ` ${clock(start)}${endLabel}`;
       return `transcrição${range}`;
     }
     case "item":

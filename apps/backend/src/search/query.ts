@@ -256,6 +256,13 @@ function snippetOf(row: Record<string, unknown>) {
   return hasMatch(parts) ? parts : plainSnippet(String(row.content));
 }
 
+function reviewStatusOf(kind: SearchKindValue, row: Record<string, unknown>): SearchHitValue["reviewStatus"] {
+  let status: unknown = null;
+  if (kind === "item") status = row.item_status;
+  else if (kind === "adr") status = row.adr_status;
+  return (status as SearchHitValue["reviewStatus"]) ?? null;
+}
+
 function toHit(row: Record<string, unknown>, matchedBy: MatchSource[]): SearchHitValue {
   const kind = row.kind as SearchKindValue;
   const speakers = (row.speakers as string[] | null) ?? [];
@@ -271,7 +278,7 @@ function toHit(row: Record<string, unknown>, matchedBy: MatchSource[]): SearchHi
     snippet: snippetOf(row),
     speaker: kind === "transcript" ? (speakers[0] ?? null) : null,
     matchedBy,
-    reviewStatus: ((kind === "item" ? row.item_status : kind === "adr" ? row.adr_status : null) as SearchHitValue["reviewStatus"]) ?? null,
+    reviewStatus: reviewStatusOf(kind, row),
     target: targetOf(row),
   };
 }

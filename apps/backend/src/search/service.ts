@@ -65,10 +65,12 @@ export async function searchStatus(user: User): Promise<SearchStatusValue> {
   ]);
   const t = totals.rows[0];
   const chat = chatEnabled();
+  let chatReason: "ollama_indisponivel" | "desligado" | null = "desligado";
+  if (chat) chatReason = semantic.available ? null : "ollama_indisponivel";
   return {
     enabled: config.search.enabled,
     semantic: { available: semantic.available, model: getEmbedder().model, dim: getEmbedder().dim, reason: semantic.reason },
-    chat: { available: chat && semantic.available, reason: chat ? (semantic.available ? null : "ollama_indisponivel") : "desligado" },
+    chat: { available: chat && semantic.available, reason: chatReason },
     paused: live ? "reuniao_ao_vivo" : null,
     totals: { meetings: t.meetings, indexed: t.indexed, textReady: t.text_ready, pending: t.pending, failed: t.failed, chunks: t.chunks },
     failures: failures.rows.map((r) => ({ meetingId: r.meeting_id, title: r.title, error: r.error, attempts: r.attempts })),

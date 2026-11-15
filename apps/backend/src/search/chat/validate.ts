@@ -57,12 +57,31 @@ function merge(citations: ChatCitationValue[]): ChatCitationValue[] {
   return [...byRef.values()].sort((a, b) => a.ref - b.ref);
 }
 
+const PUNCTUATION = new Set([".", ",", ";", ":", "!", "?"]);
+
+/** Colapsa espaços repetidos e tira o espaço antes de pontuação (varredura linear, sem regex). */
+function tidyLine(line: string): string {
+  let out = "";
+  let pendingSpace = false;
+  for (const ch of line) {
+    if (ch === " " || ch === "\t") {
+      pendingSpace = out.length > 0 || pendingSpace;
+      continue;
+    }
+    if (pendingSpace && !PUNCTUATION.has(ch)) out += " ";
+    pendingSpace = false;
+    out += ch;
+  }
+  return out;
+}
+
 /** Remove marcadores [n] sem citação válida; marcadores repetidos são mantidos. */
 export function cleanMarkers(answer: string, valid: Set<number>): string {
   return answer
     .replace(MARKER, (whole, n: string) => (valid.has(Number(n)) ? whole : ""))
-    .replace(/[ \t]+([.,;:!?])/g, "$1")
-    .replace(/[ \t]{2,}/g, " ")
+    .split("\n")
+    .map(tidyLine)
+    .join("\n")
     .trim();
 }
 

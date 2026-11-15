@@ -60,7 +60,8 @@ function attendeeNames(raw: unknown): string[] {
   return raw
     .map((a) => {
       const item = a as { name?: unknown; email?: unknown };
-      return typeof item.name === "string" && item.name ? item.name : typeof item.email === "string" ? item.email : "";
+      if (typeof item.name === "string" && item.name) return item.name;
+      return typeof item.email === "string" ? item.email : "";
     })
     .filter(Boolean);
 }

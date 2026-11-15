@@ -62,7 +62,8 @@ export function targetPath(target: SearchTargetValue): string {
   ];
   for (const [key, value] of entries) if (value) params.set(key, value);
   const query = params.toString();
-  return `/reunioes/${target.meetingId}${query ? `?${query}` : ""}`;
+  const suffix = query ? `?${query}` : "";
+  return `/reunioes/${target.meetingId}${suffix}`;
 }
 
 export interface KeyedSnippetPart extends SnippetPartValue {

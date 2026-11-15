@@ -45,6 +45,7 @@ export function SearchResult({ group }: { group: MeetingGroup }) {
   const [expanded, setExpanded] = useState(false);
   const { meeting, hits } = group;
   const extra = hits.length - HITS_PER_MEETING;
+  const noun = extra === 1 ? "trecho" : "trechos";
   const visible = expanded ? hits : hits.slice(0, HITS_PER_MEETING);
   return (
     <article className="search-group card">
@@ -64,7 +65,7 @@ export function SearchResult({ group }: { group: MeetingGroup }) {
       </ul>
       {extra > 0 && (
         <button type="button" className="link small" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
-          {expanded ? "Ver menos" : `Ver mais ${extra} ${extra === 1 ? "trecho" : "trechos"} desta reunião`}
+          {expanded ? "Ver menos" : `Ver mais ${extra} ${noun} desta reunião`}
         </button>
       )}
     </article>

@@ -3,9 +3,13 @@
 // Uso: npx tsx scripts/search-load.ts   (a partir de apps/backend; não toca o banco da aplicação)
 // Variáveis: LOAD_CHUNKS (padrão 100000), LOAD_MEETINGS (padrão 2000), LOAD_QUERIES (padrão 60).
 import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pg from "pg";
 import { ensurePostgresImage, PG_TEST_IMAGE } from "./pg-image.mjs";
 
+const DOCKER_BIN = process.env.DOCKER_BIN || "/usr/bin/docker";
 const NAME = `meeting-bot-loaddb-${process.pid}`;
 const CHUNKS = Number(process.env.LOAD_CHUNKS || 100_000);
 const MEETINGS = Number(process.env.LOAD_MEETINGS || 2_000);
@@ -13,7 +17,7 @@ const QUERIES = Number(process.env.LOAD_QUERIES || 60);
 const SELECTIVE_SHARE = 0.05;
 
 const docker = (args: string[], opts: Record<string, unknown> = {}): string =>
-  execFileSync("docker", ["--context", process.env.DOCKER_CONTEXT || "default", ...args], { encoding: "utf8", ...opts }) as string;
+  execFileSync(DOCKER_BIN, ["--context", process.env.DOCKER_CONTEXT || "default", ...args], { encoding: "utf8", ...opts }) as string;
 
 function stop(): void {
   try {
@@ -57,7 +61,7 @@ async function main(): Promise<void> {
     await waitFor(url);
     process.env.DATABASE_URL = url;
     process.env.AGENT_TOKEN = "carga-".repeat(8);
-    process.env.DATA_DIR = "/tmp/agente-reunioes-carga";
+    process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "agente-carga-"));
     process.env.LOCAL_ONLY = "true";
 
     const { pool } = await import("../src/db");
