@@ -33,8 +33,10 @@ services:
     stop_grace_period: 40s
     restart: unless-stopped
 
+  # postgres:16-alpine + pgvector (docker/postgres/Dockerfile): mesma major e mesma libc, o pgdata existente abre sem migração de dados.
   postgres:
-    image: postgres:16-alpine
+    build: ./docker/postgres
+    image: meeting-bot-postgres:16-pgvector
     environment:
       POSTGRES_DB: meetingbot
       POSTGRES_USER: meetingbot

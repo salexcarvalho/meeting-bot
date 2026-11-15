@@ -2,6 +2,7 @@
 // Uso: npm run test:db [-- arquivos de teste]
 import { spawnSync, execFileSync } from "node:child_process";
 import pg from "pg";
+import { ensurePostgresImage, PG_TEST_IMAGE } from "./pg-image.mjs";
 
 // Nome próprio por execução: duas execuções ao mesmo tempo (worktrees, agentes) não derrubam o banco uma da outra.
 const NAME = `meeting-bot-testdb-${process.pid}`;
@@ -47,12 +48,13 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 let code = 1;
 try {
+  ensurePostgresImage(docker);
   docker([
     "run", "--rm", "-d", "--name", NAME,
     "-e", "POSTGRES_PASSWORD=teste", "-e", "POSTGRES_USER=teste", "-e", "POSTGRES_DB=meetingbot_test",
     "-p", publish,
     "--tmpfs", "/var/lib/postgresql/data",
-    "postgres:16-alpine",
+    PG_TEST_IMAGE,
   ]);
   const port = docker(["port", NAME, "5432/tcp"]).trim().split("\n")[0].split(":").pop();
   const url = `postgres://teste:teste@127.0.0.1:${port}/meetingbot_test`;

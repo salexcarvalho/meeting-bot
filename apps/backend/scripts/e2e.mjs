@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ensurePostgresImage, PG_TEST_IMAGE } from "./pg-image.mjs";
 
 const NAME = "meeting-bot-e2edb";
 const DB_PORT = process.env.E2E_DB_PORT || "55434";
@@ -59,10 +60,11 @@ console.log("[e2e] buildando o frontend…");
 execFileSync("npm", ["run", "build", "-w", "@meeting-bot/frontend"], { cwd: path.resolve(root, "../.."), stdio: "inherit" });
 
 stopDb();
+ensurePostgresImage(docker);
 docker([
   "run", "--rm", "-d", "--name", NAME,
   "-e", "POSTGRES_PASSWORD=teste", "-e", "POSTGRES_USER=teste", "-e", "POSTGRES_DB=agente_e2e",
-  "-p", `127.0.0.1:${DB_PORT}:5432`, "--tmpfs", "/var/lib/postgresql/data", "postgres:16-alpine",
+  "-p", `127.0.0.1:${DB_PORT}:5432`, "--tmpfs", "/var/lib/postgresql/data", PG_TEST_IMAGE,
 ]);
 
 let server = null;
