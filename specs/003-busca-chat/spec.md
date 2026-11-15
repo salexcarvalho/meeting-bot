@@ -361,33 +361,33 @@ pendentes"; religar e ver o estado ir a "indexada"; clicar em Reindexar e ver o 
 - Busca entre usuários, busca global de administrador, exportação de resultados.
 - LLM externo no chat (ver Q1).
 
-## Pontos para esclarecer *(máx. 5)*
+## Pontos esclarecidos *(máx. 5)*
 
-Cada ponto tem uma recomendação adotada como padrão no plano; a decisão final é do usuário.
+Decisão do dono em 2026-11-15: **a opção recomendada (A) vale para os cinco pontos**. Cada ponto abaixo mantém as alternativas e a decisão registrada.
 
-1. **[NEEDS CLARIFICATION: Q1] O chat pode usar o LLM externo opcional (OpenRouter / assinatura Claude/Codex)?**
+1. **[Q1 — decidido: A] O chat pode usar o LLM externo opcional (OpenRouter / assinatura Claude/Codex)?**
    A exceção da Constituição 1.4.0 cobre "ata, resumo, análise, ADR e demais documentos pós-reunião", não
    perguntas livres sobre todo o acervo (que enviam trechos de várias reuniões).
    - **A (recomendada):** só local. Mantém LOCAL_ONLY sem emenda; qualidade limitada ao `qwen3.5:4b`.
    - B: opt-in por pergunta, igual à ata (exige emenda MINOR à Constituição e aviso na UI).
    - C: opt-in só para o dono do host-agent via assinatura. Menos exposição, mas ainda exige emenda.
-2. **[NEEDS CLARIFICATION: Q2] O histórico do chat deve ser guardado no servidor?**
+2. **[Q2 — decidido: A] O histórico do chat deve ser guardado no servidor?**
    - **A (recomendada):** efêmero (memória do navegador; o cliente reenvia as últimas trocas). Sem risco de
      o histórico reter conteúdo de reunião cujo compartilhamento foi revogado; sem tabela nova.
    - B: persistido por usuário (conversas retomáveis), com revalidação de citações a cada leitura e redação de
      respostas que citem reunião não mais legível.
-3. **[NEEDS CLARIFICATION: Q3] Como a busca deve se comportar no servidor de teste (VPS, sem GPU e sem Ollama)?**
+3. **[Q3 — decidido: A] Como a busca deve se comportar no servidor de teste (VPS, sem GPU e sem Ollama)?**
    - **A (recomendada):** só busca de texto; semântica e chat desligados com aviso (a constituição exige
      embedding local, e o VPS não tem onde rodá-lo).
    - B: subir um Ollama só de CPU no VPS (`bge-m3` + LLM pequeno): habilita tudo, custa RAM/CPU do VPS e
      adiciona um serviço ao `docker-compose.vps.yml`.
    - C: embedding externo no VPS: exigiria nova exceção constitucional; não recomendado.
-4. **[NEEDS CLARIFICATION: Q4] Itens "propostos" pela IA (ainda não aprovados) devem servir de fonte no chat?**
+4. **[Q4 — decidido: A] Itens "propostos" pela IA (ainda não aprovados) devem servir de fonte no chat?**
    - **A (recomendada):** sim, nos resultados da busca (marcados) e no chat com rótulo "proposto pela IA",
      priorizando a transcrição como evidência; rejeitados nunca.
    - B: só aprovados nas respostas do chat (a busca continua mostrando propostos marcados).
    - C: itens fora do chat; só transcrição e narrativa.
-5. **[NEEDS CLARIFICATION: Q5] O chat pode rodar durante uma reunião ao vivo?**
+5. **[Q5 — decidido: A] O chat pode rodar durante uma reunião ao vivo?**
    - **A (recomendada):** sim, entra na fila atrás da análise ao vivo, com `num_ctx` 4096, aviso de demora e
      contexto menor; a gravação nunca é afetada.
    - B: bloqueado enquanto houver gravação/chamada (busca continua liberada).

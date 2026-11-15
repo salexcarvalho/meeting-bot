@@ -178,7 +178,7 @@ teste do MVP**.
 | LLM local | **Ollama em container com GPU** (`ollama/ollama:0.32.14`, sem sudo, faz parte do compose), JSON Schema em `format`. Modelo: **qwen3.5:4b** (ver medições na §14) | O qwen3:8b foi mais lento e pior na extração, com metade das camadas na CPU |
 | LLMProvider | Interface única `extract()`, `consolidate()`, `analyze()`, `chat()`. Adaptadores: `ollama` (padrão), `claude`, `openai` | `LOCAL_ONLY=true` bloqueia provedores externos por código e registra auditoria |
 | Embeddings / busca | bge-m3 via Ollama (CPU) + pgvector 0.8 (HNSW) + `tsvector('portuguese')` com fusão RRF; reranker bge-reranker-v2-m3 na V1 | Sem banco vetorial separado: um único Postgres |
-| Banco | `pgvector/pgvector:pg17` | Relacional + vetorial + busca textual juntos |
+| Banco | `postgres:16-alpine` + pgvector 0.8.7 compilado (`docker/postgres`) | Relacional + vetorial + busca textual juntos; a mesma major e a mesma libc do banco existente evitam dump/restore e `REINDEX` (a análise inicial citava `pgvector/pgvector:pg17`) |
 | Filas / eventos | Redis 7 (BullMQ + pub/sub para a UI ao vivo) | — |
 | Frontend | React + Vite + TS, WebSocket para transcrição e insights ao vivo | É a sua stack |
 | Modo Agente | `meeting-bot` atual (Playwright + PulseAudio interno) | Opcional, sempre com admissão manual |
@@ -301,7 +301,7 @@ agente-reunioes/                  (monorepo; meeting-bot vira apps/meeting-bot)
 
 - Classificação automática do projeto, com correção manual.
 - Memória por projeto, sistema e equipe.
-- Busca semântica (pgvector + texto) e chat com citações.
+- Busca semântica (pgvector + texto) e chat com citações. **Entregue em specs/003-busca-chat** (medições na §15).
 - Sugestão de ADR (rascunho → aprovação → exportação).
 - Painel de uso da GPU.
 - Importação da transcrição oficial do Teams via Graph, se o tenant permitir.
