@@ -111,7 +111,7 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   **Hoje** ("Today") screen. Re-importing updates the meeting without duplicating it; a cancellation marks it as canceled.
 - **Agenda from Aurora (Outlook)**: the external assistant sends the day's agenda to
   `POST /api/agent/calendar/import` (`AGENT_TOKEN`, on behalf of `AGENT_OWNER`). Same `uid` + start
-  updates instead of duplicating (a single event is the same as one from an `.ics`); a future same-day meeting
+  updates instead of duplicating (a single event is the same as one from an `.ics`; a series occurrence rescheduled within the day keeps the meeting and its choices); a future same-day meeting
   missing from the list is canceled (it comes back if it reappears), but an empty list only clears the day with
   `confirmEmpty: true` and an event outside the day is skipped without failing the upload. Other days, manual/`.ics` meetings and the user's choices (do not record, generate items) are
   untouched, and the upload enables no extra recording: the usual rules apply. Details in

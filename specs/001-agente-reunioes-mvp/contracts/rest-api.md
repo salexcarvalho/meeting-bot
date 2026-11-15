@@ -180,6 +180,15 @@ Regras:
   reunião em outro dia, o envio o trata como ocorrência de série (chave = início) em vez de falhar, mas a
   marca evita duplicar contra um `.ics` que traga a série. Reenviar o mesmo envio não duplica; mudou
   título/horário/link, atualiza a mesma reunião.
+- **Remarcação no mesmo dia:** evento único movido de horário já é a mesma linha (chave vazia). Para ocorrência de
+  série (`recurring: true`), a chave nova (novo início) não casa com a linha existente; então, no mesmo envio
+  (mesma origem, mesmo dia, mesmo `uid`), a linha futura `scheduled`/`skipped` da origem que não casa com nenhum
+  evento enviado é pareada com um evento enviado do mesmo `uid` que não tem linha, por ordem de início, e ganha a
+  chave nova: início, fim e dados são atualizados e as escolhas do usuário (Não gravar, Gerar itens, projeto,
+  descrição) ficam. Sem par (mais eventos que linhas), o evento vira reunião nova; linha sem par segue a regra
+  de "Sumiu da lista". Mover para outro dia não é remarcação (o evento sai de `date`).
+- **Concorrência:** envios simultâneos do mesmo dono, origem e dia são serializados por `pg_advisory_xact_lock`
+  (chave `agent-calendar:<dono>:<origem>:<data>`); ambos respondem `200`, sem duplicar nem violar o índice único.
 - **Sequência do convite:** a Aurora não envia `SEQUENCE`. Numa reunião vinda de `.ics` com sequência maior que 0,
   o envio atualiza ou cancela normalmente, e nunca rebaixa a sequência gravada. A importação manual de `.ics`
   segue com as regras de sempre.

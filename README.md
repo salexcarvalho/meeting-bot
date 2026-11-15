@@ -111,7 +111,7 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   **Hoje**. Reimportar atualiza a reunião sem duplicar; um cancelamento a marca como cancelada.
 - **Agenda pela Aurora (Outlook)**: o assistente externo envia a agenda do dia para
   `POST /api/agent/calendar/import` (token `AGENT_TOKEN`, no nome do `AGENT_OWNER`). Mesmo `uid` + início
-  atualiza em vez de duplicar (evento único é o mesmo de um `.ics`); reunião futura do mesmo dia que sumiu da
+  atualiza em vez de duplicar (evento único é o mesmo de um `.ics`; ocorrência de série remarcada no dia mantém a reunião e as escolhas); reunião futura do mesmo dia que sumiu da
   lista é cancelada (volta se reaparecer), mas lista vazia só limpa o dia com `confirmEmpty: true` e evento
   fora do dia é ignorado sem derrubar o envio. Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
   envio não liga gravação extra: valem as regras de sempre. Detalhes em
