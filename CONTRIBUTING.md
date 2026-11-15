@@ -54,7 +54,7 @@ escreva em inglês e ajustamos no merge.
 ```bash
 npm run typecheck
 npm test
-npm run test:db -w @meeting-bot/backend        # Postgres descartável (Docker); porta: TEST_DB_PORT
+npm run test:db -w @meeting-bot/backend        # Postgres descartável (Docker); porta sorteada (TEST_DB_PORT fixa uma); execuções simultâneas não colidem
 npm run test:e2e -w @meeting-bot/backend       # obrigatório se mexeu em tela
 (cd apps/host-agent && uv run pytest)
 (cd apps/worker-gpu && uv run pytest)          # se mexeu no worker
@@ -127,7 +127,7 @@ English and we will adjust it on merge.
 ```bash
 npm run typecheck
 npm test
-npm run test:db -w @meeting-bot/backend        # throwaway Postgres (Docker); port: TEST_DB_PORT
+npm run test:db -w @meeting-bot/backend        # throwaway Postgres (Docker); random port (TEST_DB_PORT pins one); concurrent runs do not collide
 npm run test:e2e -w @meeting-bot/backend       # required if you changed the UI
 (cd apps/host-agent && uv run pytest)
 (cd apps/worker-gpu && uv run pytest)          # if you changed the worker
@@ -201,7 +201,7 @@ escríbelo en inglés y lo ajustamos en el merge.
 ```bash
 npm run typecheck
 npm test
-npm run test:db -w @meeting-bot/backend        # Postgres desechable (Docker); puerto: TEST_DB_PORT
+npm run test:db -w @meeting-bot/backend        # Postgres desechable (Docker); puerto aleatorio (TEST_DB_PORT fija uno); ejecuciones simultáneas no chocan
 npm run test:e2e -w @meeting-bot/backend       # obligatorio si cambiaste pantallas
 (cd apps/host-agent && uv run pytest)
 (cd apps/worker-gpu && uv run pytest)          # si cambiaste el worker
