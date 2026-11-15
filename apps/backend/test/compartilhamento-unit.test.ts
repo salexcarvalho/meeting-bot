@@ -52,10 +52,13 @@ describe("guard do compartilhamento (padrão de rota, não URL digitada)", () =>
     }
   });
 
-  it("transcripts.delete vale só para excluir a reunião, não para DELETE de rotas filhas", () => {
+  it("transcripts.delete vale para todo DELETE, menos a gestão de compartilhamento", () => {
     const transcript = new Set(["/meetings/:id", "/meetings/:id/audio"]);
     expect(extraPermissionsFor("DELETE", "/meetings/:id", transcript)).toEqual(["transcripts.delete"]);
     expect(extraPermissionsFor("DELETE", "/meetings/:id/shares/:userId", transcript)).toEqual([]);
+    // falha fechada: DELETE de qualquer outra rota filha continua exigindo transcripts.delete
+    expect(extraPermissionsFor("DELETE", "/meetings/:id/audio", transcript)).toEqual(["transcripts.delete"]);
+    expect(extraPermissionsFor("DELETE", "/meetings/:id/futura", transcript)).toEqual(["transcripts.delete"]);
     expect(extraPermissionsFor("GET", "/meetings/:id/audio", transcript)).toEqual(["transcripts.read"]);
     expect(extraPermissionsFor("GET", "/meetings/:id/shares", transcript)).toEqual([]);
   });

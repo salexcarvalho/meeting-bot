@@ -134,9 +134,10 @@ features.authedRouters.push((router) => {
       const meetingId = String(req.params.id);
       const target = String(req.params.userId);
       try {
+        // O nome de quem revoga é buscado antes: depois do commit nada assíncrono pode separar o banco do corte do WebSocket.
+        const by = (await getSelf(req.user!.id))?.name ?? null;
         const revoked = await revokeShare(req.user!.id, meetingId, target, scope.data);
         // Ordem do revoke (pesquisa D11): banco confirmado, audiência invalidada, assinatura removida, aviso.
-        const by = (await getSelf(req.user!.id))?.name ?? null;
         const [first] = revoked.meetingIds;
         for (const id of revoked.meetingIds) {
           const msg: MeetingAccessEvent = {

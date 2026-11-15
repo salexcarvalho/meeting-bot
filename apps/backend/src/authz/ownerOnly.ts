@@ -29,9 +29,13 @@ export function isOwnerOnlyRoute(method: string, pattern: string): boolean {
   return method !== "GET" && OWNER_ONLY_ROUTES.has(pattern);
 }
 
-/** Permissões extras por rota. `transcripts.delete` é só da exclusão da reunião, não de rotas filhas com DELETE. */
+/**
+ * Permissões extras por rota. Todo DELETE exige `transcripts.delete`, menos a gestão de compartilhamento
+ * (revogar acesso não apaga conteúdo e é só do dono). Falha fechada: uma rota filha com DELETE criada depois
+ * continua exigindo a permissão até ser listada de propósito.
+ */
 export function extraPermissionsFor(method: string, pattern: string, transcriptRoutes: ReadonlySet<string>): Permission[] {
-  if (method === "DELETE" && pattern === "/meetings/:id") return ["transcripts.delete"];
+  if (method === "DELETE" && !OWNER_ONLY_ANY_METHOD.has(pattern)) return ["transcripts.delete"];
   if (method === "GET" && transcriptRoutes.has(pattern)) return ["transcripts.read"];
   return [];
 }
