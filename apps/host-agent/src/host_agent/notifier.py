@@ -12,6 +12,7 @@ log = logging.getLogger("host_agent.notifier")
 
 APP_NAME = "Agente de Reuniões"
 ICON = "x-office-calendar"
+INFO_TIMEOUT = 10
 
 
 def _has(cmd: str) -> bool:
@@ -68,7 +69,13 @@ class Notifier:
             "notify-send", "--app-name", APP_NAME, "--icon", ICON, "--urgency", urgency, title, body,
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
-        await proc.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), INFO_TIMEOUT)
+        except asyncio.TimeoutError:
+            # notify-send preso (daemon de notificações travado) não pode prender quem chamou.
+            log.warning("notify-send não respondeu em %s s; encerrado", INFO_TIMEOUT)
+            proc.kill()
+            await proc.wait()
 
     async def notify(self, alert: Alert) -> str | None:
         """Notificação persistente com ações. Retorna 'entrar', 'nao_gravar' ou None."""
