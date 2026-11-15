@@ -6,6 +6,8 @@ import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
 import { automaticProvider, generationLabel, unloadLlm } from "./llm";
 import { hub } from "./live/hub";
 import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, replaceWithFinal } from "./repo/transcripts";
+import { classifyError } from "./usage/errorCode";
+import { recordUsage } from "./usage/recorder";
 
 /** all = transcrição final + análise; analysis = só a análise (ata); adrs = só os ADRs */
 export type ProcessStep = "all" | "analysis" | "adrs";
@@ -129,6 +131,41 @@ async function providerFor(meetingId: string, requested: LlmChoice | undefined):
   return chosen;
 }
 
+/** Passe final no Whisper local: uma linha de uso por passe (minutos de áudio e tempo de parede). */
+async function runLocalFinalPass(
+  meetingId: string,
+  files: JobFile[],
+  run: () => Promise<JobChannelResult[]>,
+): Promise<JobChannelResult[]> {
+  const started = Date.now();
+  const record = (success: boolean, error: unknown, seconds: number) =>
+    recordUsage({
+      category: "asr",
+      purpose: "asr_final",
+      provider: "whisper",
+      model: null,
+      meetingId,
+      inputTokens: null,
+      outputTokens: null,
+      audioSeconds: seconds,
+      costUsd: null,
+      durationMs: Date.now() - started,
+      computeMs: null,
+      attempts: 1,
+      success,
+      errorCode: success ? null : classifyError(error),
+      label: `${files.length} canal(is)`,
+    });
+  try {
+    const results = await run();
+    record(true, null, results.reduce((sum, r) => sum + r.duration, 0));
+    return results;
+  } catch (err) {
+    record(false, err, 0);
+    throw err;
+  }
+}
+
 /** O provedor é escolhido depois da transcrição: a espera pela assinatura não segura o passe final. */
 async function processMeeting(
   meetingId: string,
@@ -164,11 +201,13 @@ async function processMeeting(
     } else {
       // A diarização precisa da VRAM que o LLM ocupa.
       await unloadLlm().catch(() => {});
-      results = await runTranscriptionJob(
-        files,
-        { language: config.transcriptionLanguage, prompt: await promptFor(meetingId) },
-        (workerStep, progress) =>
-          report(meetingId, workerStep === "diarizando" ? "diarizando" : "transcrevendo", progress),
+      results = await runLocalFinalPass(meetingId, files, async () =>
+        runTranscriptionJob(
+          files,
+          { language: config.transcriptionLanguage, prompt: await promptFor(meetingId) },
+          (workerStep, progress) =>
+            report(meetingId, workerStep === "diarizando" ? "diarizando" : "transcrevendo", progress),
+        ),
       );
     }
 
