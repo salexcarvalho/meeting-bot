@@ -309,6 +309,8 @@ cartão mostra 2 / 1 / 3 e os links filtram a lista correspondente.
 
 ## Questões em aberto
 
+> **Registro (2026-11-15):** a implementação adotou a **opção recomendada** de cada questão (Q1 = A, Q2 = B, Q3 = A, Q4 = A), conforme a instrução de aceitar as recomendações. Os marcadores `[NEEDS CLARIFICATION]` abaixo ficam como histórico; se o dono escolher outra opção, ajustar só as tarefas marcadas `[Qn]` (ver `data-model.md`, "Impacto das alternativas").
+
 Cada marcador abaixo muda escopo ou modelo. O plano e as tarefas seguem a **recomendação como base de trabalho**,
 isolando o que depende da resposta (tarefas marcadas `[Q1]`…`[Q4]`); nenhuma resposta foi assumida como decidida.
 

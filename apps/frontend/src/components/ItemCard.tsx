@@ -1,13 +1,17 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import {
   ITEM_TYPE_LABELS,
+  TASK_STATUS_LABELS,
   ITEM_TYPES,
   RISK_CATEGORIES,
   RISK_CATEGORY_LABELS,
   type Channel,
   type Item,
+  type ItemReviewTask,
   type ItemType,
   type RiskCategory,
+  type Task,
 } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
 import { formatClock } from "../format";
@@ -24,9 +28,18 @@ export function ItemCard({
   onEvidence,
   onGenerateAdr,
   readOnly = false,
+  task = null,
+  onMakeTask,
+  onTaskResult,
 }: {
   item: Item;
   readOnly?: boolean;
+  /** tarefa do usuário criada a partir deste item */
+  task?: Task | null;
+  /** presente quando quem vê pode criar tarefa (tasks.manage): abre o diálogo "Virar tarefa" */
+  onMakeTask?: (item: Item) => void;
+  /** resultado da aprovação: tarefa criada ou o motivo de não ter criado */
+  onTaskResult?: (result: ItemReviewTask) => void;
   onChange: (item: Item) => void;
   onEvidence?: (segmentId: number | null, channel: Channel, start: number) => void;
   /** presente quando quem vê pode gerar ADR desta decisão */
@@ -41,8 +54,9 @@ export function ItemCard({
   async function call(path: string, method: string, json?: unknown) {
     setBusy(true);
     try {
-      const updated = await api<Item>(path, { method, json });
+      const { task: created, taskNotice, ...updated } = await api<Item & Partial<ItemReviewTask>>(path, { method, json });
       onChange(updated);
+      if (created !== undefined || taskNotice) onTaskResult?.({ task: created ?? null, taskNotice });
       return true;
     } catch (err) {
       toast(errorMessage(err), "error");
@@ -164,6 +178,14 @@ export function ItemCard({
             )}
             {onGenerateAdr && item.type === "decisao_arquitetural" && item.reviewStatus !== "rejeitado" && (
               <button type="button" className="small" onClick={() => onGenerateAdr(item)}>Gerar ADR</button>
+            )}
+            {item.reviewStatus === "aprovado" && onMakeTask && !task && (
+              <button type="button" className="small" onClick={() => onMakeTask(item)}>Virar tarefa</button>
+            )}
+            {task && (
+              <Link className="badge ok task-chip" to={`/pendencias?tarefa=${task.id}`}>
+                Tarefa criada · {TASK_STATUS_LABELS[task.status]}
+              </Link>
             )}
             <button type="button" className="small link" onClick={() => setHistoryOpen(true)}>Histórico</button>
           </div>

@@ -6,6 +6,7 @@ import { api, errorMessage } from "../api";
 import { AgendaItem } from "../components/AgendaItem";
 import { ImportIcs } from "../components/ImportIcs";
 import { MeetingForm } from "../components/MeetingForm";
+import { TasksSummaryCard } from "../components/tasks/TasksSummaryCard";
 import { CardHead, EmptyState, PageHeader, SkeletonLines } from "../components/ui";
 import { formatLongDate, shiftDate, todayIso } from "../format";
 import { useLive, useProjects } from "../hooks";
@@ -169,6 +170,7 @@ export function Hoje() {
           )}
         </section>
         <aside className="stack" style={{ gap: 24 }}>
+          {can("tasks.read") && <TasksSummaryCard />}
           {can("meetings.manage") && <section className="card">
             <CardHead title="Importar convites" icon={Upload} />
             <ImportIcs onImported={load} />

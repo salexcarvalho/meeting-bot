@@ -10,6 +10,7 @@ import { Configuracoes } from "./pages/Configuracoes";
 import { Hoje } from "./pages/Hoje";
 import { Usuarios } from "./pages/admin/Usuarios";
 import { Login } from "./pages/Login";
+import { Pendencias } from "./pages/Pendencias";
 import { Projetos } from "./pages/Projetos";
 import { Reuniao } from "./pages/Reuniao";
 import { Reunioes } from "./pages/Reunioes";
@@ -66,6 +67,7 @@ export function App() {
           >
             <Routes>
               <Route path="/" element={<Hoje />} />
+              <Route path="/pendencias" element={can("tasks.read") ? <Pendencias /> : <Navigate to="/" replace />} />
               <Route path="/reunioes" element={<Reunioes />} />
               <Route path="/reunioes/:id" element={<Reuniao />} />
               <Route path="/projetos" element={<Projetos />} />

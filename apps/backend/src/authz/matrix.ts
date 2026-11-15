@@ -13,6 +13,8 @@ const OWN_CONTENT: Permission[] = [
   "agents.read",
   "agents.manage",
   "settings.manage",
+  "tasks.read",
+  "tasks.manage",
 ];
 
 const USER_ADMIN: Permission[] = ["users.read", "users.create", "users.update", "users.deactivate", "users.reset"];

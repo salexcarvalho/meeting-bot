@@ -33,6 +33,17 @@ describe("matriz de papéis", () => {
     expect(PERMISSION_KEYS.filter((p) => !sup.has(p))).toEqual(["meetings.read_all"]);
   });
 
+  it("tarefas: usuário, admin e super admin têm tasks.*; leitor não", () => {
+    for (const role of ["USER", "ADMIN", "SUPER_ADMIN"] as const) {
+      const perms = permissionsFor([role]);
+      expect(perms.has("tasks.read")).toBe(true);
+      expect(perms.has("tasks.manage")).toBe(true);
+    }
+    const viewer = permissionsFor(["VIEWER"]);
+    expect(viewer.has("tasks.read")).toBe(false);
+    expect(viewer.has("tasks.manage")).toBe(false);
+  });
+
   it("seed idempotente cobre todas as permissões e escapa aspas", () => {
     const sql = rbacSeedStatements().join("\n");
     for (const p of PERMISSION_KEYS) expect(sql).toContain(`'${p}'`);

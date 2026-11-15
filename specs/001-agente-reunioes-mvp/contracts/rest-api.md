@@ -85,7 +85,7 @@ Regras do import (FR-001/FR-002):
 | Método | Rota | Corpo | Resposta |
 |---|---|---|---|
 | PATCH | `/items/:id` | `{type?, description?, owner?\|null, due?\|null, attributes?}` | `Item` (histórico `edited` só com os campos alterados) |
-| POST | `/items/:id/approve` | — | `Item` |
+| POST | `/items/:id/approve` | — | `Item` (com `tasks.manage`: `Item & { task, taskNotice? }`, ver Tarefas pessoais) |
 | POST | `/items/:id/reject` | — | `Item` |
 | POST | `/items/:id/reopen` | — | `Item` |
 | GET | `/items/:id/history` | — | `{history: [{action, before, after, actor: {id, username}\|null, createdAt}]}` |
@@ -94,6 +94,13 @@ Regras do import (FR-001/FR-002):
 | POST | `/adrs/:id/reject` | — | `Adr` (o número, se houver, é mantido) |
 
 Toda alteração publica o evento `items` ou `adrs` no WebSocket da reunião.
+
+## Tarefas pessoais (specs/002-pendencias-tarefas)
+
+Contrato completo em `specs/002-pendencias-tarefas/contracts/rest-api.md`. Resumo: `GET /tasks` (filtros, `counts`), `POST /tasks`, `GET|PATCH|DELETE /tasks/:id`,
+`POST /tasks/:id/status`, `GET /tasks/:id/history`, `GET /tasks/summary`, `POST /tasks/from-item` e `GET /meetings/:id/tasks`.
+Exigem `tasks.read` (GET) ou `tasks.manage` (demais); toda rota filtra por `owner_id`, e tarefa alheia (inclusive para ADMIN) é `404`.
+`POST /items/:id/approve` passa a devolver `Item & { task: TaskRef | null, taskNotice? }` para quem tem `tasks.manage`.
 
 ## Projetos
 

@@ -22,7 +22,8 @@ export type AuditKind =
   | "meeting_share_granted"
   | "meeting_share_changed"
   | "meeting_share_revoked"
-  | "meeting_share_left";
+  | "meeting_share_left"
+  | "task_created_from_item";
 
 // Nunca registrar conteúdo de reunião aqui — só metadados.
 export function audit(kind: AuditKind, detail: Record<string, unknown>, userId: string | null = null): void {

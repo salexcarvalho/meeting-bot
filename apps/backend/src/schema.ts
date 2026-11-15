@@ -335,6 +335,49 @@ const statements = [
   // Dia não útil (WORKING_DAYS): a reunião não tem lembrete nem entrada automática, a menos que o
   // usuário peça. true = o usuário pediu para tratá-la como a de um dia útil.
   `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS auto_on_off_day BOOLEAN NOT NULL DEFAULT false`,
+  // Minhas pendências e tarefas (specs/002-pendencias-tarefas): tarefas pessoais (owner_id), só aditivo.
+  // A tarefa sobrevive à reunião e ao item de origem (SET NULL) e guarda o instantâneo da origem.
+  `CREATE TABLE IF NOT EXISTS tasks (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     title TEXT NOT NULL,
+     description TEXT NOT NULL DEFAULT '',
+     status TEXT NOT NULL DEFAULT 'a_fazer'
+       CHECK (status IN ('a_fazer', 'em_andamento', 'bloqueada', 'concluida', 'cancelada')),
+     priority TEXT NOT NULL DEFAULT 'media' CHECK (priority IN ('baixa', 'media', 'alta', 'urgente')),
+     due_date DATE,
+     due_hint TEXT,
+     assignee_kind TEXT NOT NULL DEFAULT 'self' CHECK (assignee_kind IN ('self', 'other', 'none')),
+     assignee_name TEXT,
+     project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+     meeting_id UUID REFERENCES meetings(id) ON DELETE SET NULL,
+     source_item_id UUID REFERENCES meeting_items(id) ON DELETE SET NULL,
+     source_snapshot JSONB,
+     origin TEXT NOT NULL CHECK (origin IN ('item_auto', 'item_manual', 'manual')),
+     external_ref JSONB,
+     completed_at TIMESTAMPTZ,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     CHECK (assignee_kind <> 'other' OR assignee_name IS NOT NULL),
+     CHECK (assignee_kind <> 'self' OR assignee_name IS NULL),
+     CHECK (status <> 'concluida' OR completed_at IS NOT NULL)
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_item_owner
+     ON tasks (source_item_id, owner_id) WHERE source_item_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_status_due ON tasks (owner_id, status, due_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_project ON tasks (owner_id, project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_meeting ON tasks (owner_id, meeting_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_updated ON tasks (owner_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS task_history (
+     id BIGSERIAL PRIMARY KEY,
+     task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     action TEXT NOT NULL CHECK (action IN ('created', 'edited', 'status_changed')),
+     before JSONB,
+     after JSONB,
+     actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history (task_id, id)`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {

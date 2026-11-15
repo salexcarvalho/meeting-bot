@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, LogOut, Pencil, RefreshCw, Share2, Sparkles, Square, Trash2 } from "lucide-react";
 import {
@@ -7,11 +7,13 @@ import {
   type Channel,
   type GpuStats,
   type Item,
+  type ItemReviewTask,
   type LlmChoice,
   type MeetingDetail,
   type MeetingSummary,
   type RecordingEvent,
   type Segment,
+  type Task,
 } from "@meeting-bot/contracts";
 import { api, ApiError, errorMessage, ignoreError } from "../api";
 import { AdrList } from "../components/AdrList";
@@ -19,6 +21,9 @@ import { AtaView } from "../components/AtaView";
 import { AudioPlayers, type AudioPlayersHandle } from "../components/AudioPlayers";
 import { ItemsBoard, type ItemFocus } from "../components/ItemsBoard";
 import { Speakers } from "../components/Speakers";
+import { MeetingTasks } from "../components/tasks/MeetingTasks";
+import { TaskDialog } from "../components/tasks/TaskDialog";
+import { TaskFromItemDialog } from "../components/tasks/TaskFromItemDialog";
 import { ConfirmDialog, Dialog } from "../components/Dialog";
 import { LivePanel, type ProcessingState } from "../components/LivePanel";
 import { MeetingForm } from "../components/MeetingForm";
@@ -37,6 +42,7 @@ import {
   type GenerateRequest,
 } from "../components/GenerateDialog";
 import { sendBot } from "../bot";
+import { fetchMeetingTasks } from "../tasks";
 import { SkeletonLines } from "../components/ui";
 import { formatDateTime, formatTime, minutesBetween } from "../format";
 import { useLive, useProjects } from "../hooks";
@@ -135,12 +141,30 @@ export function Reuniao() {
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [adrs, setAdrs] = useState<Adr[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskItem, setTaskItem] = useState<Item | null>(null);
+  const [newTask, setNewTask] = useState(false);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [ataVersion, setAtaVersion] = useState(0);
   const { projects } = useProjects();
   const players = useRef<AudioPlayersHandle>(null);
 
+  const canTasks = can("tasks.read");
+  const canMakeTask = can("tasks.manage");
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const tasksByItem = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const t of tasks) if (t.sourceItem) map.set(t.sourceItem.id, t);
+    return map;
+  }, [tasks]);
+
+  const loadTasks = useCallback(() => {
+    if (canTasks) fetchMeetingTasks(id).then(setTasks).catch(ignoreError);
+  }, [id, canTasks]);
+
   const load = useCallback(() => {
+    loadTasks();
     api<{ items: Item[] }>(`/meetings/${id}/items`).then((r) => setItems(r.items)).catch(() => {});
     api<{ adrs: Adr[] }>(`/meetings/${id}/adrs`).then((r) => setAdrs(r.adrs)).catch(() => {});
     setAtaVersion((v) => v + 1);
@@ -150,12 +174,13 @@ export function Reuniao() {
         setError("");
       })
       .catch((err) => setError(err instanceof ApiError && err.status === 404 ? "Reunião não encontrada." : errorMessage(err)));
-  }, [id]);
+  }, [id, loadTasks]);
 
   useEffect(() => {
     setDetail(null);
     setItems([]);
     setAdrs([]);
+    setTasks([]);
     setRecording(null);
     setProcessing(null);
     load();
@@ -371,6 +396,20 @@ export function Reuniao() {
     setAtaVersion((v) => v + 1);
   }
 
+  // Aprovar uma pendência pode criar a tarefa (ou explicar por que não criou): avisa e recarrega o mapa item → tarefa.
+  function onTaskResult(result: ItemReviewTask) {
+    const known = result.task ? tasksRef.current.some((t) => t.id === result.task!.id) : false;
+    loadTasks();
+    if (result.task) {
+      const action = { label: "Abrir", to: `/pendencias?tarefa=${result.task.id}` };
+      toast(known ? "Esta pendência já tem tarefa em Minhas pendências" : "Tarefa criada em Minhas pendências", "info", action);
+    } else if (result.taskNotice?.kind === "possible_duplicate") {
+      toast("Já existe uma tarefa parecida", "info", { label: "Ver", to: `/pendencias?tarefa=${result.taskNotice.taskId}` });
+    } else if (result.taskNotice?.kind === "assignee_other") {
+      toast(`Esta pendência é de ${result.taskNotice.name}; use Virar tarefa para acompanhá-la`);
+    }
+  }
+
   function upsertAdr(adr: Adr) {
     setAdrs((list) => list.map((a) => (a.id === adr.id ? adr : a)));
     setAtaVersion((v) => v + 1);
@@ -561,6 +600,9 @@ export function Reuniao() {
                 onChange={upsertItem}
                 onEvidence={showEvidence}
                 onGenerateAdr={onGenerateAdr}
+                tasksByItem={tasksByItem}
+                onMakeTask={canMakeTask ? setTaskItem : undefined}
+                onTaskResult={onTaskResult}
               />
             </div>
           ) : (
@@ -581,15 +623,21 @@ export function Reuniao() {
       )}
 
       {tab === "itens" && (
-        <ItemsBoard
-          meetingId={m.id}
-          items={items}
-          readOnly={!writable}
-          onChange={upsertItem}
-          onEvidence={showEvidence}
-          onGenerateAdr={onGenerateAdr}
-          focus={itemFocus}
-        />
+        <>
+          <ItemsBoard
+            meetingId={m.id}
+            items={items}
+            readOnly={!writable}
+            onChange={upsertItem}
+            onEvidence={showEvidence}
+            onGenerateAdr={onGenerateAdr}
+            focus={itemFocus}
+            tasksByItem={tasksByItem}
+            onMakeTask={canMakeTask ? setTaskItem : undefined}
+            onTaskResult={onTaskResult}
+          />
+          {canTasks && <MeetingTasks tasks={tasks} canManage={canMakeTask} onNew={() => setNewTask(true)} />}
+        </>
       )}
 
       {tab === "ata" && (
@@ -645,6 +693,27 @@ export function Reuniao() {
         </section>
       )}
 
+      <TaskFromItemDialog
+        item={taskItem}
+        onClose={() => setTaskItem(null)}
+        onCreated={(task, created) => {
+          loadTasks();
+          toast(created ? "Tarefa criada em Minhas pendências" : "Esta pendência já tinha tarefa", "info", {
+            label: "Abrir",
+            to: `/pendencias?tarefa=${task.id}`,
+          });
+        }}
+      />
+      <TaskDialog
+        open={newTask}
+        task={null}
+        meetingId={m.id}
+        projects={projects}
+        meetings={[{ id: m.id, title: m.title }]}
+        onClose={() => setNewTask(false)}
+        onSaved={loadTasks}
+        onDeleted={loadTasks}
+      />
       <MeetingForm open={editing} meeting={m} projects={projects} onClose={() => setEditing(false)} onSaved={setMeeting} />
       <ConfirmDialog
         open={confirm === "stop"}

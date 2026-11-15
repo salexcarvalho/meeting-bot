@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Channel, Item, ItemType, ReviewStatus } from "@meeting-bot/contracts";
+import type { Channel, Item, ItemReviewTask, ItemType, ReviewStatus, Task } from "@meeting-bot/contracts";
 import { ItemCard } from "./ItemCard";
 import { NewItemForm } from "./NewItemForm";
 
@@ -25,7 +25,14 @@ export function ItemsBoard({
   onGenerateAdr,
   focus = null,
   readOnly = false,
+  tasksByItem,
+  onMakeTask,
+  onTaskResult,
 }: {
+  /** tarefas do usuário nesta reunião, por id do item de origem */
+  tasksByItem?: Map<string, Task>;
+  onMakeTask?: (item: Item) => void;
+  onTaskResult?: (result: ItemReviewTask) => void;
   meetingId: string;
   focus?: ItemFocus | null;
   readOnly?: boolean;
@@ -102,6 +109,9 @@ export function ItemsBoard({
                     onChange={onChange}
                     onEvidence={onEvidence}
                     onGenerateAdr={onGenerateAdr}
+                    task={tasksByItem?.get(item.id) ?? null}
+                    onMakeTask={onMakeTask}
+                    onTaskResult={onTaskResult}
                   />
                 ))
               )}

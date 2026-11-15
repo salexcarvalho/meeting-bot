@@ -196,6 +196,19 @@ Na página da reunião, o dono clica em **Compartilhar**, busca a pessoa pelo no
 - **Sair desta reunião** remove o próprio acesso. Administrador não lê conteúdo alheio, e desativar o dono não tira o acesso de quem recebeu.
 - Compartilhar, alterar, revogar e sair ficam no `audit_log` só com ids (nunca título ou conteúdo).
 
+### Minhas pendências e tarefas
+
+Menu **Minhas pendências** (permissão `tasks.read`/`tasks.manage`; o papel Leitor não a tem). A tarefa é **pessoal**: só quem a criou a vê e altera. Administrador e super administrador também não leem tarefa alheia.
+
+- **Aprovar vira tarefa:** aprovar uma **pendência** da reunião cria a sua tarefa, sem duplicar (aprovar de novo, reabrir e aprovar ou gerar a ata de novo mantém uma só). Só nasce sozinha se o responsável for você ("eu", seu usuário ou seu nome) ou estiver vazio, e então aparece como **Responsável não confirmado**. Pendência de outra pessoa não vira tarefa sozinha: o aviso diz de quem é.
+- **Virar tarefa:** em qualquer item aprovado (risco, requisito, decisão…) o botão cria a tarefa, com título, prazo e prioridade editáveis. Item proposto ou rejeitado não vira tarefa. Se já existe uma tarefa parecida na reunião, o diálogo avisa e deixa criar mesmo assim.
+- **Prazo:** só entra como data quando o texto é inequívoco (`30/11`, `até 5/12`, `hoje`, `amanhã`); "sexta" ou "semana que vem" ficam como **prazo dito** ao lado do campo, para você decidir.
+- **Tela:** contadores clicáveis (abertas, atrasadas, vencem hoje, sem responsável confirmado) e filtros por status, projeto, prazo, responsável, prioridade, reunião e busca; o filtro fica na URL (`?status=…&prazo=overdue`). O status muda direto na lista. "Hoje" e "atrasada" valem no fuso do usuário.
+- **Tarefa manual:** **Nova tarefa** (também na reunião) com projeto, prazo, prioridade e responsável; editar, excluir e ver o histórico (antes e depois, quem e quando).
+- **Reunião compartilhada:** quem recebeu a reunião cria as próprias tarefas dos itens que vê. Se o acesso for revogado, a tarefa continua, sem o link da reunião, do item e do áudio (fica o que foi copiado enquanto havia acesso). Excluir a reunião não apaga as tarefas.
+- **Tela Hoje:** cartão com atrasadas, vencem hoje, abertas e pendências propostas a revisar.
+- Nada sai da máquina e nenhuma IA é chamada. A migração é aditiva (`tasks`, `task_history`) e não cria tarefas de reuniões antigas; use **Virar tarefa**.
+
 ### Upload e Modo Agente
 
 Em **Reuniões**:
