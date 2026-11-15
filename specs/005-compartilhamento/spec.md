@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-14
 
-**Status**: Draft
+**Status**: Clarified (2026-11-14)
 
 **Input**: "Tela de compartilhamento de reunião: o dono compartilha com outro usuário da plataforma (leitura ou edição), lista quem tem acesso, altera e revoga; 'Compartilhadas comigo' na lista de reuniões; indicação visual de reunião compartilhada e do nível. Manter: 'edit' mexe só no conteúdo; gravar, parar, reprocessar, reagendar, link, skip e auto-off-day só o dono; admin não lê conteúdo alheio; auditoria de grant/revoke; WebSocket filtra por público e share/revoke refletem ao vivo."
 
@@ -110,7 +110,7 @@ alterar o nível têm o mesmo seletor. Ocorrências passadas nunca entram no lot
    confirmar, e a resposta informa `affected`.
 2. **Given** ocorrências passadas, **Then** elas não são alteradas pelo lote (só pelo ato direto em cada uma).
 3. **Given** uma ocorrência criada depois pela extensão da série, **Then** ela **não** herda os acessos nesta
-   versão (ver [NEEDS CLARIFICATION #1]); o diálogo avisa.
+   versão (decisão Q1 = B); o diálogo avisa.
 
 ---
 
@@ -146,7 +146,7 @@ tentativa de contornar o guard com maiúsculas, barras duplas e codificação.
   `meeting_access` com `access: null`) e a rota devolve 404.
 - Reunião em andamento (`recording`, `in_call`): compartilhar é permitido; o destinatário assina o ao vivo (lê, e
   com edição corrige itens), mas não controla a gravação.
-- Dono desativado depois de compartilhar: ver [NEEDS CLARIFICATION #5].
+- Dono desativado depois de compartilhar: os destinatários mantêm o acesso como está (decisão Q5 = A).
 - Busca com menos de 3 caracteres ou com curingas (`%`, `_`): recusada ou escapada; sem enumeração por varredura.
 - Reunião com `skipRecording`, `cancelled`, `missed` ou `error`: compartilhar continua permitido.
 - Destinatário com a reunião aberta quando o nível cai de Edição para Leitura com formulário preenchido: o envio
@@ -171,7 +171,7 @@ tentativa de contornar o guard com maiúsculas, barras duplas e codificação.
 - **FR-005**: A busca de usuário MUST ser restrita a quem tem `meetings.manage`, exigir ao menos 3 caracteres,
   casar por prefixo de usuário ou de nome, devolver no máximo 8 ativos (sem o próprio) e só `id`, `username`,
   `name` e `canEdit`; MUST ter limite de taxa por usuário; MUST NOT devolver e-mail, papéis, estado de login nem
-  a lista completa (ver [NEEDS CLARIFICATION #2]).
+  a lista completa (decisão Q2 = A).
 - **FR-006**: A lista de acessos (dono) MUST mostrar nome, usuário, nível, `grantedAt`, se já abriu (`seen`) e se o
   usuário está ativo.
 - **FR-007**: Conceder, alterar e revogar MUST gravar auditoria (`meeting_share_granted`, `_changed`, `_revoked`,
@@ -200,7 +200,7 @@ tentativa de contornar o guard com maiúsculas, barras duplas e codificação.
   `docs/ARCHITECTURE.md` e `docs/analise/plataforma-multiusuario.md` §13 (item "tela de compartilhamento").
 - **FR-018**: Operações de lote (`following`) MUST ser atômicas (uma transação) e idempotentes.
 - **FR-019**: A notificação ao destinatário MUST ser dentro do app (toast ao vivo e selo "Nova" persistente até
-  abrir); nenhuma mensagem sai da máquina (Princípio I). Ver [NEEDS CLARIFICATION #3].
+  abrir); nenhuma mensagem sai da máquina (Princípio I). Decisão Q3 = A.
 
 ### Key Entities
 
@@ -236,29 +236,19 @@ tentativa de contornar o guard com maiúsculas, barras duplas e codificação.
 - `MeetingSummary.url` e participantes continuam visíveis a quem tem acesso (não muda nesta feature).
 - Host-agent, alertas e gravação continuam ligados ao dono (`created_by`); destinatário nunca dispara gravação.
 
-## Clarifications Needed
+## Clarifications — Session 2026-11-14
 
-1. **[NEEDS CLARIFICATION #1] Série recorrente.**
-   - A) Só a ocorrência.
-   - B) Ocorrência **ou** "esta e as próximas já na agenda" (lote único, sem herança para ocorrências criadas
-     depois). **Recomendada**: cobre o caso da daily sem criar regra viva escondida.
-   - C) Série "viva": tabela de compartilhamento por série que a extensão e a importação copiam para as novas
-     ocorrências (maior alcance, mais risco de expor sem o dono perceber).
-2. **[NEEDS CLARIFICATION #2] Quem encontra quem (diretório).**
-   - A) Quem tem `meetings.manage` busca por prefixo (pelo menos 3 caracteres, máx. 8, só ativos, campos mínimos,
-     limite de taxa). **Recomendada**.
-   - B) Só usuário exato (sem enumeração, mas exige saber o login).
-   - C) Lista completa para qualquer logado (rejeitada: vaza o diretório e inclui VIEWER).
-3. **[NEEDS CLARIFICATION #3] Notificação ao destinatário.**
-   - A) Só no app: toast ao vivo, selo "Nova" e contador no filtro. **Recomendada** (nada sai da máquina).
-   - B) A mais notificação do desktop pelo host-agent, só quando o destinatário for o `AGENT_OWNER`.
-   - C) E-mail (exige SMTP e abre egress; conflita com o Princípio I sem emenda).
-4. **[NEEDS CLARIFICATION #4] Quem enxerga a lista de acessos.**
-   - A) Só o dono vê todos os destinatários; o destinatário vê "compartilhada por X" e o próprio nível.
-     **Recomendada** (privacidade entre destinatários).
-   - B) Todos com acesso veem a lista completa (transparência, mas expõe quem mais foi convidado).
-5. **[NEEDS CLARIFICATION #5] Dono desativado.**
-   - A) Os destinatários mantêm o acesso como está (a reunião continua legível). **Recomendada**: desativar não
-     deve destruir o trabalho dos outros e é reversível.
-   - B) Os acessos ficam suspensos enquanto o dono estiver desativado.
-   - C) Exigir que um admin transfira a propriedade antes (fora do escopo e fere "admin não lê conteúdo").
+Respostas do usuário às cinco perguntas abertas (todas na opção recomendada):
+
+- **Q1 Série recorrente → B.** O dono escolhe "só esta ocorrência" (padrão) ou "esta e as próximas já na agenda"
+  (lote único, atômico). Ocorrências criadas depois (extensão da série, importação `.ics`) **não** herdam acessos;
+  o diálogo avisa. Série "viva" (opção C) fica fora do escopo.
+- **Q2 Diretório → A.** Quem tem `meetings.manage` busca por prefixo (mínimo 3 caracteres, máximo 8, só ativos,
+  sem o próprio), recebe só `id`, `username`, `name` e `canEdit`, com limite de taxa por usuário.
+- **Q3 Notificação → A.** Só dentro do app: toast ao vivo (`meeting_access`) e marca "Nova" persistente até abrir.
+  Sem e-mail e sem notificação do desktop.
+- **Q4 Lista de acessos → A.** Só o dono vê todos os destinatários; o destinatário vê o próprio nível e o nome do dono.
+- **Q5 Dono desativado → A.** Os destinatários mantêm o acesso como está; desativar é reversível e não destrói o
+  trabalho dos outros. Nenhuma transferência de propriedade por admin.
+
+Alternativas descartadas (B/C de cada pergunta) estão registradas em `research.md` (D3, D5, D6, D7).

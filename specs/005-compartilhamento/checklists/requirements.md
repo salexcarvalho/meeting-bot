@@ -9,5 +9,5 @@
 - [x] Casos de borda levantados (série, desativado, ao vivo, revogação, exclusão)
 - [x] Escopo delimitado (sem projeto, grupo, link público, transferência ou e-mail)
 - [x] Premissas e dependências registradas
-- [ ] 5 pontos [NEEDS CLARIFICATION] respondidos pelo usuário antes de `/speckit-implement`
+- [x] 5 pontos de clarificação respondidos pelo usuário antes de `/speckit-implement`
 - [x] Regras existentes preservadas: ações só do dono, admin sem leitura alheia, WS por público, auditoria

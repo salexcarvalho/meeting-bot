@@ -6,12 +6,12 @@ description: "Tarefas do compartilhamento de reunião"
 
 **Input**: `specs/005-compartilhamento/` (spec.md, plan.md, research.md, data-model.md, contracts/, quickstart.md)
 
-**Prerequisites**: as 5 perguntas `[NEEDS CLARIFICATION]` da spec respondidas (as recomendações já estão no plano).
+**Prerequisites**: as 5 perguntas da spec respondidas (Clarifications — Session 2026-11-14, todas na opção recomendada).
 
 **Tests**: a Constituição (princípio VII) exige teste quando viável; em cada história, os testes vêm antes da
 implementação e devem falhar primeiro.
 
-**Organization**: por história (US1 a US5 da spec). Fase de especificação: nada abaixo foi implementado.
+**Organization**: por história (US1 a US5 da spec). Marque `[X]` conforme concluir.
 
 ## Format: `[ID] [P?] [Story] Descrição com caminho`
 

@@ -64,7 +64,7 @@ Todas as afirmações abaixo foram conferidas no código de `origin/develop`.
   (`express-rate-limit`, já usado no login). Sem avatar nesta versão (o endpoint de avatar é só do próprio usuário
   ou do admin); a UI usa iniciais.
 - **Por que**: com 3 ou 4 contas na instância, prefixo é suficiente e evita pedir o login exato; o piso de 3
-  caracteres e o limite de taxa tornam a enumeração cara. Ver [NEEDS CLARIFICATION #2] na spec.
+  caracteres e o limite de taxa tornam a enumeração cara. Decisão Q2 = A na spec.
 - **Alternativas**: login exato (menos descobrível); lista completa (vaza o diretório e inclui VIEWER).
 
 ### D4. `edit` exige `meetings.manage` no destino
