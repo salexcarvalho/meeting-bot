@@ -291,6 +291,19 @@ const statements = [
      PRIMARY KEY (meeting_id, user_id)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_meeting_shares_user ON meeting_shares (user_id)`,
+  // Compartilhamento (specs/005): seen_at nulo = destinatário ainda não abriu ("Nova"). O backfill roda só na
+  // primeira vez (coluna ainda inexistente), para os acessos que já existiam não aparecerem como novos.
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'meeting_shares' AND column_name = 'seen_at') THEN
+       ALTER TABLE meeting_shares
+         ADD COLUMN seen_at TIMESTAMPTZ,
+         ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+       UPDATE meeting_shares SET seen_at = created_at, updated_at = created_at;
+     END IF;
+   END $$`,
+  `CREATE INDEX IF NOT EXISTS idx_meeting_shares_unseen ON meeting_shares (user_id) WHERE seen_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_meetings_owner ON meetings (created_by, scheduled_start)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log (user_id, at DESC)`,
 

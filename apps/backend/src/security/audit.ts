@@ -18,7 +18,11 @@ export type AuditKind =
   | "admin_user_settings_reset"
   | "teams_account_connected"
   | "teams_account_removed"
-  | "teams_account_expired";
+  | "teams_account_expired"
+  | "meeting_share_granted"
+  | "meeting_share_changed"
+  | "meeting_share_revoked"
+  | "meeting_share_left";
 
 // Nunca registrar conteúdo de reunião aqui — só metadados.
 export function audit(kind: AuditKind, detail: Record<string, unknown>, userId: string | null = null): void {
