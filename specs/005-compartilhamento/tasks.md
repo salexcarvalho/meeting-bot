@@ -150,7 +150,7 @@ implementação e devem falhar primeiro.
 
 ## Phase 8: Polish e entrega
 
-- [ ] T045 E2E Playwright (`apps/backend/e2e/`, desktop e celular): Ana compartilha, Bia vê e abre, Ana revoga e a tela da Bia reage ao vivo. **Escrito e verde (desktop e celular), mas fora do repositório**: o hook `e2e-location-guard` do plugin Montreal bloqueia gravar E2E em `apps/backend/e2e/`; o cenário foi acrescentado a uma cópia de `plataforma.spec.ts` e fica à espera da decisão do dono de onde versioná-lo
+- [x] T045 E2E Playwright (`apps/backend/e2e/`, desktop e celular): Ana compartilha, Bia vê e abre, Ana revoga e a tela da Bia reage ao vivo. Cenário em `apps/backend/e2e/plataforma.spec.ts`, verde em desktop e celular.
 - [X] T046 [P] Documentação: `README.md`, `README.en.md`, `README.es.md` (recurso e permissões), `CHANGELOG.md`, `docs/ARCHITECTURE.md` (seção de isolamento), `docs/analise/plataforma-multiusuario.md` §13 (tela de compartilhamento feita; revogação ao vivo)
 - [X] T047 [P] Checklist do Sonar nos arquivos alterados: complexidade cognitiva até 15, sem regex com backtracking sobre entrada, sem `console.log`, sem catch vazio, sem literal repetido 3 vezes ou mais, `Object.hasOwn`, sem segredo ou IP fixo
 - [X] T048 Rodar `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend`, build e `npm run test:e2e -w @meeting-bot/backend`; validar `quickstart.md` no navegador (desktop e celular)
