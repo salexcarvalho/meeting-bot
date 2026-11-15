@@ -9,3 +9,4 @@ import "./ata/routes";
 import "./users/routes";
 import "./users/lookup";
 import "./shares/routes";
+import "./tasks/routes";
