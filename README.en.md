@@ -249,9 +249,21 @@ Each user has their own settings:
 - **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, spoken name recording, and the agent's Teams account.
 - **Reuniões:** identity in the room.
 - **Documentação** ("Documentation"): level of detail and formats.
-- **Consumo de IA** ("AI usage"): tokens and cost for the month per provider, model, and meeting, plus the latest calls.
-  It comes from `audit_log`, is read-only, and doesn't block generation. The subscription doesn't charge per call: only
-  tokens. Each person sees only the usage of the meetings they created: the cost is the owner's, and a shared meeting does not count.
+- **Consumo de IA** ("AI usage"): every LLM call (local model, OpenRouter, subscription) and every transcription (local
+  Whisper or external Deepgram) is recorded with purpose, provider, model, tokens, audio minutes, time and result
+  (failures too, with a short code only). The panel shows the month or a free range (up to 24 months): totals, by
+  purpose, provider, model and day, local x external ASR minutes, the meetings that consumed the most and the latest
+  calls, with a failures filter. The cost is what the provider reported (never estimated): the subscription and the
+  local model show "sem custo por chamada" (no cost per call). It is read-only and doesn't block generation. Each person
+  sees only the usage of the meetings they created: the cost is the owner's, and a shared meeting does not count.
+- **Segurança** ("Security"): the events that concern you (sign-ins and refused attempts, with the IP only on refusals,
+  password change, Teams account, administrator actions on your account and anything sent off the machine on your
+  behalf), without meeting content.
+- **Administration > Uso de IA** (`ai_usage.read`) shows usage aggregated by user, provider, model, purpose and day,
+  with no meeting title or id; **Administration > Auditoria** (`audit.read`) shows system events, always through an
+  allow-list of fields.
+- **Retention:** AI usage is kept for 24 months (`USAGE_RETENTION_DAYS=730`) and the audit log for 12 months
+  (`AUDIT_RETENTION_DAYS=365`), pruned daily; `0` keeps everything. Audio stays indefinite.
 
 ## Main Configuration (`.env`)
 

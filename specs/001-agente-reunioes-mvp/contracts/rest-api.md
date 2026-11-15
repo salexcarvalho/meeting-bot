@@ -111,6 +111,25 @@ Exigem `tasks.read` (GET) ou `tasks.manage` (demais); toda rota filtra por `owne
 | PATCH | `/projects/:id` | `{name?, keywords?}` | projeto |
 | DELETE | `/projects/:id` | — | `204`; as reuniões ficam sem projeto |
 
+## Uso e custo de IA e auditoria visível (specs/004-uso-custo)
+
+Só leitura. Contratos completos em `specs/004-uso-custo/contracts/`. Período: `month=AAAA-MM` ou `from`/`to` (ISO,
+janela máxima de 24 meses, nunca os dois); sem nada = mês corrente no fuso `APP_TIMEZONE`.
+
+| Método | Rota | Resposta |
+|---|---|---|
+| GET | `/usage/me` | `{period, totals, byPurpose[], byProvider[], byModel[], byDay[], asr: {local, external}, topMeetings[], retention}`; só linhas com `user_id` = sessão (reunião compartilhada não entra) |
+| GET | `/usage/me/calls` | `{items[], nextCursor}`; filtros `status` (all, ok, error), `purpose`, `provider`, `cursor`, `limit` 1–100 |
+| GET | `/admin/usage` | `ai_usage.read`; mesmos agregados com `byUser[]` e **sem nenhum campo de reunião**; `403` sem a permissão |
+| GET | `/audit/me` | `{items[], nextCursor}` eventos em que o usuário é ator ou alvo, projetados (lista permitida de campos); IP só em `auth_login_failed` |
+| GET | `/admin/audit` | `audit.read`; eventos do sistema projetados; filtros `kind`, `userId`, `from`, `to`, `cursor`, `limit`; `403` sem a permissão |
+| GET | `/audit/kinds` | `{items: [{kind, label}]}` para os filtros, conforme o papel |
+
+Erros: `400` (período, filtro ou cursor inválidos), `401`, `403`. O custo é o informado pelo provedor (`null` =
+"sem custo por chamada"). `GET /llm/usage` foi removido. Novos eventos de auditoria: `auth_login`,
+`auth_login_failed`, `auth_logout`, `auth_password_changed`, `retention_pruned`; `external_llm`/`external_asr`
+passam a gravar o `user_id` do dono.
+
 ## Sistema
 
 | Método | Rota | Resposta |
