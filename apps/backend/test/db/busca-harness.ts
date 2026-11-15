@@ -50,6 +50,11 @@ export async function startSearchHarness(specs: UserSpec[]): Promise<SearchHarne
     return worked;
   }
 
+  // meetings de outros arquivos que ficaram "ao vivo" travariam os embeddings destes testes
+  await h.pool.query(`UPDATE meetings SET status = 'error' WHERE status = ANY($1::text[])`, [["recording", "stopping", "joining", "waiting_admission", "in_call"]]);
+  await drain();
+  embedder.resetCounters();
+
   const originalStop = h.stop;
   return {
     ...h,

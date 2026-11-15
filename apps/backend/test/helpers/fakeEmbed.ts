@@ -63,16 +63,37 @@ export function fakeVector(text: string, dim = FAKE_DIM): number[] {
 }
 
 export class FakeEmbedder implements Embedder {
-  readonly model = FAKE_MODEL;
+  model = FAKE_MODEL;
   readonly dim = FAKE_DIM;
   documentCalls: string[][] = [];
   queryCalls: string[] = [];
+  /** saúde (`health`): falso = Ollama fora; o worker nem tenta embedar */
   available = true;
-  failNext = false;
+  /** a chamada de documentos falha mesmo com a saúde verdadeira (erro no meio do trabalho) */
+  failAlways = false;
+  private failAt: number | null = null;
+  private calls = 0;
+
+  /** a N-ésima chamada de documentos a partir de agora (1 = a próxima) falha uma vez; null cancela */
+  set failOnCall(n: number | null) {
+    this.failAt = n === null ? null : this.calls + n;
+  }
+
+  resetCounters(): void {
+    this.documentCalls = [];
+    this.queryCalls = [];
+    this.calls = 0;
+    this.failAt = null;
+  }
+
+  get embeddedTexts(): number {
+    return this.documentCalls.reduce((n, batch) => n + batch.length, 0);
+  }
 
   async embedDocuments(texts: string[]): Promise<EmbedResult> {
-    if (this.failNext || !this.available) {
-      this.failNext = false;
+    this.calls++;
+    if (this.failAlways || !this.available || this.failAt === this.calls) {
+      if (this.failAt === this.calls) this.failAt = null;
       throw new Error("Ollama indisponível (fake)");
     }
     this.documentCalls.push(texts);
