@@ -14,6 +14,7 @@ import { planAiItems, type DedupCandidate } from "../agent/dedup";
 import type { EvidenceInput, ValidItem } from "../agent/evidence";
 import { pool, withTransaction } from "../db";
 import { hub } from "../live/hub";
+import { markDirtyLater } from "../search/dirty";
 
 // Itens da reunião: criação pela IA (US3), revisão humana (US5) e ADRs.
 
@@ -127,6 +128,13 @@ async function insertEvidence(db: Db, itemId: string, evidence: EvidenceInput[])
 
 function publishItems(meetingId: string, items: Item[]): void {
   if (items.length) hub.publishToMeeting(meetingId, { type: "items", meetingId, items });
+  // todo item criado, editado, revisado ou mesclado reindexa a reunião para a busca (specs/003)
+  markDirtyLater(meetingId);
+}
+
+function publishItemsRemoved(meetingId: string, ids: string[]): void {
+  hub.publishToMeeting(meetingId, { type: "items_removed", meetingId, ids });
+  markDirtyLater(meetingId);
 }
 
 // ---------- criação pela IA ----------
@@ -228,7 +236,7 @@ export async function mergeInto(meetingId: string, keepId: string, removeIds: st
     }
   });
   if (removed.length) {
-    hub.publishToMeeting(meetingId, { type: "items_removed", meetingId, ids: removed });
+    publishItemsRemoved(meetingId, removed);
     if (!keptRejected) publishItems(meetingId, await getItemsByIds([keepId]));
   }
   return removed;
@@ -251,7 +259,7 @@ export async function clearUnreviewedAiItems(meetingId: string): Promise<string[
     [meetingId],
   );
   const ids = rows.map((r) => r.id as string);
-  if (ids.length) hub.publishToMeeting(meetingId, { type: "items_removed", meetingId, ids });
+  if (ids.length) publishItemsRemoved(meetingId, ids);
   return ids;
 }
 
@@ -422,6 +430,7 @@ export async function getAdr(id: string): Promise<Adr | null> {
 
 function publishAdr(adr: Adr): void {
   hub.publishToMeeting(adr.meetingId, { type: "adrs", meetingId: adr.meetingId, adrs: [adr] });
+  markDirtyLater(adr.meetingId);
 }
 
 /** Por que um ADR não pode ser (re)gerado pela IA; null = pode. */

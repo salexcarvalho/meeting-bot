@@ -34,6 +34,7 @@ import {
   todayIn,
   updateScheduled,
 } from "./service";
+import { markDirtyLater } from "../search/dirty";
 
 function handleError(res: Response, err: unknown): void {
   if (err instanceof CalendarError) {
@@ -124,7 +125,9 @@ features.authedRouters.push((router) => {
       const patch = parseBody(ScheduledMeetingPatch, req, res);
       if (!patch) return;
       try {
-        res.json(toMeetingSummary(await updateScheduled(String(req.params.id), patch)));
+        const updated = await updateScheduled(String(req.params.id), patch);
+        markDirtyLater(updated.id);
+        res.json(toMeetingSummary(updated));
       } catch (err) {
         handleError(res, err);
       }
