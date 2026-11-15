@@ -109,7 +109,7 @@ export async function taskSummary(ctx: TaskCtx): Promise<TaskSummaryResponse> {
     `SELECT count(*)::int AS n
        FROM meeting_items i JOIN meetings m ON m.id = i.meeting_id
       WHERE i.type = 'pendencia' AND i.review_status = 'proposto' AND m.extract_items
-        AND ${visibleMeetingsSql(ctx.user, "m", 1)}`,
+        AND $1::uuid IS NOT NULL AND ${visibleMeetingsSql(ctx.user, "m", 1)}`,
     [ctx.user.id],
   );
   const counts = await taskCounts(ctx);

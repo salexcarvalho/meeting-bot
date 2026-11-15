@@ -16,7 +16,7 @@ const BASE_SELECT = /^\s*SELECT t\.id, t\.title[\s\S]*FROM tasks t LEFT JOIN pro
 const HISTORY_INSERT = /^\s*INSERT INTO task_history \(task_id, action, before, after, actor_id\) VALUES/;
 
 function sqlLiterals(source: string): string[] {
-  return [...source.matchAll(/`([^`]*)`/g)].map((m) => m[1]).filter((text) => TOUCHES_TASKS.test(text));
+  return [...source.matchAll(/`([^`]*)`/g)].map((m) => m[1]).filter((text) => TOUCHES_TASKS.test(text) || text.includes("${TASK_SELECT}"));
 }
 
 describe("escopo por dono nas consultas de tarefas", () => {
