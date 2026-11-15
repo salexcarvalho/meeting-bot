@@ -15,7 +15,7 @@ Tipos (definidos em zod em `packages/contracts`):
 MeetingSummary = {
   id, title, platform, url|null, status, statusLabel, source,
   scheduledStart|null, scheduledEnd|null, startedAt|null, endedAt|null,
-  project: {id, name, suggested}|null, skipRecording, organizer|null,
+  project: {id, name, suggested}|null, skipRecording, offDay, autoOnOffDay, organizer|null,
   attendees: {name, email|null}[], errorMessage|null, botActive, createdAt
 }
 Segment = { id, channel, pass, speaker, speakerName, text, start, end }
@@ -49,6 +49,7 @@ Adr = {
 | POST | `/meetings/scheduled` | `{title, start (ISO), durationMinutes (5–720), url?, projectId?}` | `201 MeetingSummary`; `400` |
 | PATCH | `/meetings/:id` | `{title?, start?, durationMinutes?, url?, projectId?\|null}` | `MeetingSummary`; `409` se já gravou |
 | POST | `/meetings/:id/skip` | `{skip: boolean}` | `MeetingSummary`; `409` se já está gravando |
+| POST | `/meetings/:id/auto-off-day` | `{enabled: boolean}` | `MeetingSummary`; liga/desliga o lembrete e a entrada automática numa reunião em dia fora de `WORKING_DAYS` (`autoOnOffDay`); `409` se não está `scheduled`/`skipped` |
 | POST | `/meetings/:id/record` | — | `MeetingSummary` (`recording`); `409` com `{error, conflictMeetingId}` se houver outra gravação; `503` se o host-agent estiver offline |
 | POST | `/meetings/:id/end` | — | `202`; para gravação local (`stop_requested`) ou bot |
 
@@ -120,7 +121,8 @@ Toda alteração publica o evento `items` ou `adrs` no WebSocket da reunião.
 | WS | `/agent/audio` | ver [ws-audio.md](ws-audio.md) | — |
 
 ```ts
-AgentMeeting = { id, title, start, end, url|null, platform, skipRecording, status }
+AgentMeeting = { id, title, start, end, url|null, platform, skipRecording, noAlerts, status }
+// noAlerts: dia fora de WORKING_DAYS (fuso APP_TIMEZONE) sem pedido do usuário; o host-agent não faz lembrete.
 // Reuniões com scheduled_start entre agora-5min e agora+24h,
 // status scheduled|skipped|recording, sem cancelled.
 ```
@@ -159,7 +161,7 @@ AgentCalendarImportInput = {
 }
 AgentCalendarImportResult = {
   source, date, created, updated, cancelled, removed, unchanged, ignored, partialSeries, errors,
-  ignoredEvents: { uid, reason: "outside_date" }[],        // até 20
+  ignoredEvents: { uid, reason: "outside_date" | "non_working_day" }[],        // até 20
   removalSkipped?: "empty_without_confirm",                 // só quando a remoção foi pulada
 }
 ```
@@ -196,6 +198,10 @@ Regras:
   trocado) não derruba o envio: é contado em `ignored`, listado em `ignoredEvents` (`outside_date`) e os demais
   seguem. O `uid` ignorado conta como presente: nunca causa a remoção de reunião existente com o mesmo `uid`.
   Nada de outro dia é tocado.
+- **Dia sem agenda (`WORKING_DAYS`):** ocorrência de série (`recurring: true`, ou RRULE do `.ics` enviado) que cai em
+  dia fora de `WORKING_DAYS` (padrão sábado e domingo, no fuso `APP_TIMEZONE`) não gera reunião: conta em `ignored`,
+  entra em `ignoredEvents` com `non_working_day` e, como `outside_date`, seu `uid` nunca causa a remoção de reunião
+  existente. Evento único em dia não útil entra normalmente, mas sem lembrete nem entrada/gravação automática.
 - **Sumiu da lista:** reunião do mesmo `import_source`, do mesmo dia, ainda `scheduled`/`skipped` e com início
   no futuro que não veio no envio vira `cancelled` (com `import_removed_at`). Se voltar à lista, é reativada.
   Reunião manual, de `.ics`, passada, `missed`, em andamento, gravada, em processamento ou cancelada pelo usuário

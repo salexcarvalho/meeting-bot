@@ -117,6 +117,10 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   untouched, and the upload enables no extra recording: the usual rules apply. Details in
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md) (Portuguese).
 - **Nova reunião** ("New meeting"): manual registration with title, start time, duration, link, and project.
+- **No agenda on weekends** (`WORKING_DAYS`, default Monday to Friday, in the agenda timezone): series (manual
+  recurrence, `.ics` and Aurora) generate no occurrence on Saturday and Sunday. A single meeting on those days shows
+  up in the agenda, but with no reminder and no assistant joining on its own; use **Avisar e gravar neste dia**
+  ("Remind and record on this day") on it (or **Enviar assistente agora**).
 - The project is **suggested** based on keywords in the title. Confirm it under **Editar** ("Edit").
 - **Não gravar** ("Don't record"): available on the screen or in the desktop alert; the assistant doesn't join.
 - **Enviar assistente agora** ("Send assistant now"): sends the assistant before the scheduled time, or again after a failure.
@@ -231,6 +235,7 @@ Each user has their own settings:
 | `AGENT_TOKEN` | — | Secret shared with the host-agent (≥ 32 characters) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Microphone channel name |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Timezone for the agenda and the meeting minutes |
+| `WORKING_DAYS` | `1,2,3,4,5` | Days with an agenda (ISO, 1 = Monday … 7 = Sunday). Outside them there is no reminder or automatic recording |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper on the worker |
 | `HF_TOKEN` | empty | Speaker diarization |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | Local LLM |
