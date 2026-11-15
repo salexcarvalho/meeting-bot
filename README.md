@@ -116,6 +116,9 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   fora do dia é ignorado sem derrubar o envio. Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
   envio não liga gravação extra: valem as regras de sempre. Detalhes em
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md).
+  A mesma agenda do dia pode ser lida com `GET /api/agent/meetings?date=AAAA-MM-DD` (mesmo token; padrão hoje;
+  somente leitura, no escopo do `AGENT_OWNER`; devolve `icalUid`, horários, link, plataforma, "Não gravar", status e
+  `recurring`).
 - **Nova reunião**: cadastro manual com título, início, duração, link e projeto.
 - **Sem agenda no fim de semana** (`WORKING_DAYS`, padrão segunda a sexta, no fuso da agenda): séries (recorrência
   manual, `.ics` e Aurora) não geram ocorrência em sábado e domingo. Uma reunião avulsa nesses dias aparece na agenda,

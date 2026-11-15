@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { AdrPatch, AgentCalendarImportInput, ChatLlmOutput, HeartbeatInput, ItemPatch, LLM_SCHEMAS, NewItemInput, ProjectInput, ScheduledMeetingInput, ShareChangeInput, ShareInput, TaskFromItemInput, TaskInput, TaskPatch } from "@meeting-bot/contracts";
+import { AdrPatch, AgentCalendarImportInput, AgentMeetingsQuery, ChatLlmOutput, HeartbeatInput, ItemPatch, LLM_SCHEMAS, NewItemInput, ProjectInput, ScheduledMeetingInput, ShareChangeInput, ShareInput, TaskFromItemInput, TaskInput, TaskPatch } from "@meeting-bot/contracts";
 
 // Os JSON em packages/contracts/schemas são gerados por `npm run schemas -w @meeting-bot/contracts`.
 // Este teste falha se o zod mudou e os arquivos commitados não acompanharam.
@@ -17,6 +17,7 @@ const all: Record<string, z.ZodType> = {
   ProjectInput,
   HeartbeatInput,
   AgentCalendarImportInput,
+  AgentMeetingsQuery,
 };
 
 describe("schemas JSON do contrato", () => {

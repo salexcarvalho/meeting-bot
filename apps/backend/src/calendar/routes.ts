@@ -4,6 +4,7 @@ import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
   AgentCalendarImportInput,
+  AgentMeetingsQuery,
   HeartbeatInput,
   ScheduledMeetingInput,
   ScheduledMeetingPatch,
@@ -20,6 +21,7 @@ import { recordHeartbeat } from "../recording/hostAgentState";
 import { hostAgentOwner } from "../recording/owner";
 import { parseBody, wrap } from "../routes";
 import { audit } from "../security/audit";
+import { agentDayMeetings } from "./agentDay";
 import { importAgentCalendar } from "./agentImport";
 import { autoSuppressed } from "./offDay";
 import { startSeriesExtender, stopSeriesExtender } from "./seriesExtend";
@@ -235,6 +237,21 @@ features.agentRouters.push((app) => {
         recording: owner ? await desiredRecording(owner.id) : null,
       };
       res.json(body);
+    }),
+  );
+
+  // Leitura da agenda de um dia (padrão hoje, fuso da aplicação). Sem efeito colateral: não registra heartbeat.
+  router.get(
+    "/meetings",
+    wrap(async (req: Request, res: Response) => {
+      const query = AgentMeetingsQuery.safeParse(req.query);
+      if (!query.success) {
+        const first = query.error.issues[0];
+        return res.status(400).json({ error: first ? `${first.path.join(".") || "consulta"}: ${first.message}` : "Consulta inválida." });
+      }
+      const owner = await hostAgentOwner();
+      if (!owner) return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      res.json(await agentDayMeetings(owner.id, query.data.date));
     }),
   );
 

@@ -116,6 +116,9 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   `confirmEmpty: true` and an event outside the day is skipped without failing the upload. Other days, manual/`.ics` meetings and the user's choices (do not record, generate items) are
   untouched, and the upload enables no extra recording: the usual rules apply. Details in
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md) (Portuguese).
+  The same day's agenda can be read with `GET /api/agent/meetings?date=YYYY-MM-DD` (same token; defaults to
+  today; read-only, scoped to `AGENT_OWNER`; returns `icalUid`, times, link, platform, "do not record", status and
+  `recurring`).
 - **Nova reunião** ("New meeting"): manual registration with title, start time, duration, link, and project.
 - **No agenda on weekends** (`WORKING_DAYS`, default Monday to Friday, in the agenda timezone): series (manual
   recurrence, `.ics` and Aurora) generate no occurrence on Saturday and Sunday. A single meeting on those days shows
