@@ -99,6 +99,10 @@ describe.skipIf(!enabled)("painel de uso do admin (Postgres + HTTP)", async () =
     expect(before.json.byUser.some((g: Json) => g.label === "ua-saiu")).toBe(true);
     await h.pool.query(`DELETE FROM users WHERE id = $1`, [rows[0].id]);
     const after = await admin("ua-admin");
+    // sem reunião de origem, mas excluído: "Usuário removido" e não "Instância" (US4, cenário 4)
+    const removed = (g: Json[]) => g.find((x) => x.key === "removed")?.calls;
+    expect(removed(after.json.byUser)).toBe(removed(before.json.byUser) + 1);
+    expect(after.json.byUser.find((g: Json) => g.key === "instance").calls).toBe(before.json.byUser.find((g: Json) => g.key === "instance").calls);
     expect(after.json.totals.calls).toBe(before.json.totals.calls);
     expect(after.json.totals.inputTokens).toBe(before.json.totals.inputTokens);
     expect(after.json.byUser.some((g: Json) => g.label === "ua-saiu")).toBe(false);

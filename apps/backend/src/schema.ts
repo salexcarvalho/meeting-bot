@@ -413,6 +413,15 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_usage_at ON ai_usage_logs (at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_usage_meeting ON ai_usage_logs (meeting_id) WHERE meeting_id IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_audit_log ON ai_usage_logs (audit_log_id) WHERE audit_log_id IS NOT NULL`,
+  // Usuário excluído x "instância": a FK zera user_id nos dois casos, então marcamos as linhas antes de excluir.
+  `ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS owner_removed BOOLEAN NOT NULL DEFAULT false`,
+  `CREATE OR REPLACE FUNCTION mark_usage_owner_removed() RETURNS trigger AS $$
+   BEGIN
+     UPDATE ai_usage_logs SET owner_removed = true WHERE user_id = OLD.id;
+     RETURN OLD;
+   END $$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_usage_owner_removed ON users`,
+  `CREATE TRIGGER trg_usage_owner_removed BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION mark_usage_owner_removed()`,
   `CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log ((detail->>'target')) WHERE detail ? 'target'`,
 ];
 

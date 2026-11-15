@@ -11,9 +11,12 @@ export function instanceScope(period: UsagePeriod): UsageScope {
   return { where: "l.at >= $1 AND l.at < $2", params: [period.from, period.to] };
 }
 
-/** Sem usuário e sem reunião de origem = instância; reunião sem dono = usuário removido. */
+/**
+ * Usuário excluído (marcado pelo gatilho em `users`) ou reunião sem dono = usuário removido;
+ * sem usuário, sem marca e sem reunião de origem = instância.
+ */
 const USER_KEY = `CASE WHEN l.user_id IS NOT NULL THEN l.user_id::text
-                       WHEN l.meeting_id IS NOT NULL THEN 'removed'
+                       WHEN l.owner_removed OR l.meeting_id IS NOT NULL THEN 'removed'
                        ELSE 'instance' END`;
 
 function userLabel(key: string, row: Record<string, unknown>): string {
