@@ -3,7 +3,7 @@ import { z } from "zod";
 // Uso e custo de IA e auditoria visível (specs/004-uso-custo). Só metadados e números: nenhum
 // tipo daqui carrega texto de reunião. O custo é o informado pelo provedor, nunca calculado.
 
-export const USAGE_PURPOSES = ["ata", "adr", "itens", "resumo", "ao_vivo", "asr_final", "asr_ao_vivo", "outro"] as const;
+export const USAGE_PURPOSES = ["ata", "adr", "itens", "resumo", "ao_vivo", "asr_final", "asr_ao_vivo", "busca", "chat", "outro"] as const;
 export const UsagePurpose = z.enum(USAGE_PURPOSES);
 export type UsagePurposeValue = z.infer<typeof UsagePurpose>;
 
@@ -15,6 +15,8 @@ export const USAGE_PURPOSE_LABELS: Record<UsagePurposeValue, string> = {
   ao_vivo: "Análise ao vivo",
   asr_final: "Transcrição final",
   asr_ao_vivo: "Transcrição ao vivo",
+  busca: "Busca (embeddings)",
+  chat: "Chat sobre reuniões",
   outro: "Outros",
 };
 

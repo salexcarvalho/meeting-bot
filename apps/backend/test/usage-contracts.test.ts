@@ -49,7 +49,7 @@ describe("contratos de uso e auditoria (specs/004-uso-custo)", () => {
   });
 
   it("finalidades e provedores cobrem o que o registro grava", () => {
-    expect(USAGE_PURPOSES).toEqual(["ata", "adr", "itens", "resumo", "ao_vivo", "asr_final", "asr_ao_vivo", "outro"]);
+    expect(USAGE_PURPOSES).toEqual(["ata", "adr", "itens", "resumo", "ao_vivo", "asr_final", "asr_ao_vivo", "busca", "chat", "outro"]);
     expect(USAGE_PROVIDERS).toEqual(["ollama", "openrouter", "claude", "codex", "whisper", "deepgram"]);
   });
 
