@@ -41,7 +41,7 @@ async function visibleMeetings(user: User, ids: string[]): Promise<Map<string, V
   if (!ids.length || !can(user, "meetings.read")) return out;
   const { rows } = await pool.query(
     `SELECT m.id, m.title, m.scheduled_start FROM meetings m
-      WHERE m.id = ANY($1::uuid[]) AND $2::uuid IS NOT NULL AND ${visibleMeetingsSql(user, "m", 2)}`,
+      WHERE m.id = ANY($1::uuid[]) AND ${visibleMeetingsSql(user, "m", 2)}`,
     [ids, user.id],
   );
   for (const r of rows) out.set(r.id, { id: r.id, title: r.title, scheduledStart: r.scheduled_start?.toISOString() ?? null });
@@ -56,7 +56,7 @@ async function visibleItems(
   if (!ids.length || !can(user, "meetings.read")) return out;
   const { rows } = await pool.query(
     `SELECT i.id, i.type, i.review_status FROM meeting_items i JOIN meetings m ON m.id = i.meeting_id
-      WHERE i.id = ANY($1::uuid[]) AND $2::uuid IS NOT NULL AND ${visibleMeetingsSql(user, "m", 2)}`,
+      WHERE i.id = ANY($1::uuid[]) AND ${visibleMeetingsSql(user, "m", 2)}`,
     [ids, user.id],
   );
   for (const r of rows) out.set(r.id, { id: r.id, type: r.type, reviewStatus: r.review_status });
