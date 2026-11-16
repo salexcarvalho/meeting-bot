@@ -24,7 +24,8 @@ const MAX_IGNORED_LISTED = 20;
 export const INVALID_ICS_MESSAGE = "Arquivo .ics inválido.";
 
 // Só estas reuniões podem ser canceladas por sumir da lista, e só se ainda não começaram: nada passado,
-// em andamento, gravado, já cancelado ou perdido (missed) é tocado.
+// em andamento, gravado, já cancelado ou perdido (missed) é tocado. Cadastro manual vinculado ao envio nunca é
+// cancelado por sumiço (é do usuário).
 const REMOVABLE_STATUSES = ["scheduled", "skipped"];
 
 type DayRange = { start: Date; end: Date };
@@ -137,7 +138,7 @@ async function cancelMissing(
     `UPDATE meetings SET status = 'cancelled', import_removed_at = now()
      WHERE created_by = $1 AND import_source = $2
        AND scheduled_start >= $3 AND scheduled_start < $4 AND scheduled_start > now()
-       AND status = ANY($5) AND id <> ALL($6::uuid[]) AND ical_uid <> ALL($7::text[])
+       AND source <> 'manual' AND status = ANY($5) AND id <> ALL($6::uuid[]) AND ical_uid <> ALL($7::text[])
      RETURNING id`,
     [userId, source, range.start, range.end, REMOVABLE_STATUSES, [...seen], [...keepUids]],
   );
