@@ -56,6 +56,8 @@ describe.skipIf(!enabled)("leitura da agenda do dia pela Aurora (HTTP + Postgres
 
   afterAll(async () => {
     server.close();
+    // Banco compartilhado com os demais arquivos de agenda (mesma origem, outro dono): não deixa reuniões para trás.
+    await pool.query(`DELETE FROM meetings WHERE created_by = ANY($1::uuid[])`, [[owner, outro]]);
     await pool.end();
     vi.unstubAllEnvs();
   });
