@@ -9,8 +9,11 @@ import type { ApplyContext } from "./upsert";
 // início), que nunca bate com o dessas linhas: sem este passo a reunião existente seria duplicada.
 
 export const MATCH_TOLERANCE_MS = 5 * 60_000;
-// Reuniões ainda "vivas" para o usuário. Cancelada fica de fora: foi descartada por ele.
-const MATCHABLE_STATUSES = ["scheduled", "skipped", "missed"];
+// Só o cancelamento descarta a reunião para o reconhecimento: foi descartada pelo usuário. Qualquer outro status
+// (inclusive gravada, em andamento ou com erro) conta como "já existe" e impede a criação de uma duplicata.
+const DISCARDED_STATUS = "cancelled";
+// Status em que o cadastro manual ainda pode receber o vínculo (uid/origem do envio); nos demais a linha é intocável.
+const LINKABLE_STATUSES = ["scheduled", "skipped", "missed"];
 const MANUAL = "manual";
 const MATCHABLE_SOURCES = [MANUAL, "ics"];
 
@@ -40,16 +43,23 @@ export function isLinkedManual(row: MeetingRow, importSource: string | undefined
 async function findCandidate(client: PoolClient, o: Occurrence, ctx: ApplyContext): Promise<MeetingRow | null> {
   const { rows } = await client.query(
     `${meetingSelect}
-     WHERE m.created_by = $1 AND m.source = ANY($2) AND m.status = ANY($3)
+     WHERE m.created_by = $1 AND m.source = ANY($2) AND m.status <> $3
        AND m.import_source IS DISTINCT FROM $4
        AND m.scheduled_start >= $5 AND m.scheduled_start <= $6
      ORDER BY m.scheduled_start, m.id FOR UPDATE OF m`,
     [
-      ctx.userId, MATCHABLE_SOURCES, MATCHABLE_STATUSES, ctx.importSource,
+      ctx.userId, MATCHABLE_SOURCES, DISCARDED_STATUS, ctx.importSource,
       new Date(o.start.getTime() - MATCH_TOLERANCE_MS), new Date(o.start.getTime() + MATCH_TOLERANCE_MS),
     ],
   );
   return pickCandidate(rows as MeetingRow[], o);
+}
+
+/** Cadastro manual ainda sem vínculo e em status editável: único caso em que o envio grava uid/origem na linha. */
+export function canLink(row: MeetingRow): boolean {
+  return (
+    row.source === MANUAL && !row.ical_uid && !row.import_source && LINKABLE_STATUSES.includes(row.status)
+  );
 }
 
 /** Colunas que a importação pode mexer numa reunião vinculada: só o que está vazio e o horário, se foi remarcada. */
@@ -92,15 +102,16 @@ export async function applyLinked(
 }
 
 /**
- * Procura reunião do mesmo dono, de outra origem, com mesmo título e início (±5 min). Achando, não cria nada:
- * cadastro manual sem UID recebe o uid/origem do envio; reunião que já tem UID próprio (.ics) é só reconhecida.
+ * Procura reunião do mesmo dono, de outra origem, com mesmo título e início (±5 min), em qualquer status menos
+ * cancelada. Achando, não cria nada: cadastro manual sem UID e ainda editável recebe o uid/origem do envio; o resto
+ * (UID próprio do .ics, reunião já gravada ou em andamento) é só reconhecido, sem alterar a linha.
  * Devolve true quando o evento foi absorvido por uma reunião existente.
  */
 export async function adoptExisting(client: PoolClient, o: Occurrence, ctx: ApplyContext): Promise<boolean> {
   const candidate = await findCandidate(client, o, ctx);
   if (!candidate) return false;
   ctx.seen?.add(candidate.id);
-  if (candidate.ical_uid || candidate.source !== MANUAL || candidate.import_source) {
+  if (!canLink(candidate)) {
     ctx.result.unchanged++;
     return true;
   }

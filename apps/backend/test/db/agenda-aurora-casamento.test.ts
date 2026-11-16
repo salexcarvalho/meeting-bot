@@ -190,4 +190,74 @@ describe.skipIf(!enabled)("importação da agenda casa com cadastro existente (H
     const again = await send(day, [ev("h-m2", "Mentoria", day, 15)]);
     expect(again.json).toMatchObject({ created: 0, updated: 0, unchanged: 1 });
   });
+
+  const icsText = (uid: string, title: string, stamp: string) =>
+    ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//teste//PT", "BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20310301T120000Z",
+      `DTSTART:${stamp}`, `DTEND:${stamp.replace("T12", "T13")}`, `SUMMARY:${title}`, "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+  const setStatus = (id: string, status: string) => pool.query(`UPDATE meetings SET status = $2 WHERE id = $1`, [id, status]);
+
+  it(".ics já realizado (done) no mesmo horário é reconhecido: não cria duplicata nem altera a reunião", async () => {
+    const day = "2031-04-22";
+    const text = icsText("uid-done@teste", "Farmácia- Inception (Incrementos 4 , 5 e 6)", "20310422T130000Z");
+    expect((await importIcs([{ name: "f.ics", text }], owner)).created).toBe(1);
+    const [done] = await rows(day);
+    await setStatus(done.id, "done");
+    const snapshot = await one(done.id);
+
+    const body = [ev("hash-done", "Farmácia- Inception (Incrementos 4 , 5 e 6)", day, 10, 0)];
+    for (let pass = 0; pass < 2; pass++) {
+      const res = await send(day, body);
+      expect(res.json).toMatchObject({ created: 0, updated: 0, unchanged: 1, removed: 0 });
+    }
+    expect(await rows(day)).toHaveLength(1);
+    expect(await one(done.id)).toEqual(snapshot);
+  });
+
+  it("cadastro manual já realizado ou em andamento: não cria, não vincula e não muda status nem horário", async () => {
+    const day = "2031-04-23";
+    const statuses = ["done", "in_call", "recording", "transcribing", "generating_ata", "error"];
+    const ids: string[] = [];
+    for (const [i, status] of statuses.entries()) {
+      const m = await manual(`Reunião Terminal ${i}`, day, 8 + i);
+      await setStatus(m.id, status);
+      ids.push(m.id);
+    }
+    const before = await Promise.all(ids.map(one));
+    const body = statuses.map((_, i) => ev(`h-term-${i}`, `reunião terminal ${i}`, day, 8 + i, 2));
+
+    for (let pass = 0; pass < 2; pass++) {
+      const res = await send(day, body);
+      expect(res.json).toMatchObject({ created: 0, updated: 0, unchanged: statuses.length, removed: 0 });
+    }
+    expect(await rows(day)).toHaveLength(statuses.length);
+    expect(await Promise.all(ids.map(one))).toEqual(before);
+  });
+
+  it("reunião cancelada continua não sendo reconhecida: o envio cria a reunião", async () => {
+    const day = "2031-04-24";
+    const text = icsText("uid-canc@teste", "Revisão Cancelada", "20310424T130000Z");
+    await importIcs([{ name: "c.ics", text }], owner);
+    const [canc] = await rows(day);
+    await setStatus(canc.id, "cancelled");
+
+    const body = [ev("hash-canc", "Revisão Cancelada", day, 10, 0)];
+    expect((await send(day, body)).json).toMatchObject({ created: 1, updated: 0 });
+    expect(await rows(day)).toHaveLength(2);
+    expect((await one(canc.id)).status).toBe("cancelled");
+    expect((await send(day, body)).json).toMatchObject({ created: 0, unchanged: 1 });
+  });
+
+  it("remarcação e sumiço não mexem em reunião vinculada já realizada", async () => {
+    const day = "2031-04-25";
+    const m = await manual("Acompanhamento", day, 10);
+    await send(day, [ev("h-ac1", "Acompanhamento", day, 10)]);
+    expect((await one(m.id)).ical_uid).toBe("h-ac1");
+    await setStatus(m.id, "done");
+    const snapshot = await one(m.id);
+
+    // uid novo em outro horário (remarcação) e depois lista sem o evento
+    await send(day, [ev("h-ac2", "Acompanhamento", day, 15)]);
+    await send(day, [ev("h-outro", "Outra coisa", day, 17)]);
+    expect(await one(m.id)).toEqual(snapshot);
+  });
 });

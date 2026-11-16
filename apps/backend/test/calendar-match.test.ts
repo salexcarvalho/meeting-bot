@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventToOccurrence } from "../src/calendar/agentImport";
-import { isLinkedManual, linkedChanges, pickCandidate, sameTitle } from "../src/calendar/match";
+import { canLink, isLinkedManual, linkedChanges, pickCandidate, sameTitle } from "../src/calendar/match";
 import { pairByTitle, type LinkedRow } from "../src/calendar/reschedule";
 import type { MeetingRow } from "../src/db";
 
@@ -49,6 +49,20 @@ describe("isLinkedManual", () => {
     expect(isLinkedManual(row("A", 9, 0, { import_source: null }), "aurora-outlook")).toBe(false);
     expect(isLinkedManual(row("A", 9, 0, { source: "ics", import_source: "aurora-outlook" }), "aurora-outlook")).toBe(false);
     expect(isLinkedManual(row("A", 9, 0, { import_source: "x" }), undefined)).toBe(false);
+  });
+});
+
+describe("canLink", () => {
+  it("só vincula cadastro manual sem uid nem origem e em status editável", () => {
+    expect(canLink(row("A", 9, 0, { status: "scheduled" }))).toBe(true);
+    expect(canLink(row("A", 9, 0, { status: "skipped" }))).toBe(true);
+    expect(canLink(row("A", 9, 0, { status: "missed" }))).toBe(true);
+    for (const status of ["queued", "joining", "waiting_admission", "in_call", "recording", "stopping", "transcribing", "generating_ata", "done", "error"] as const) {
+      expect(canLink(row("A", 9, 0, { status }))).toBe(false);
+    }
+    expect(canLink(row("A", 9, 0, { status: "scheduled", ical_uid: "u" }))).toBe(false);
+    expect(canLink(row("A", 9, 0, { status: "scheduled", import_source: "aurora-outlook" }))).toBe(false);
+    expect(canLink(row("A", 9, 0, { status: "scheduled", source: "ics" }))).toBe(false);
   });
 });
 
