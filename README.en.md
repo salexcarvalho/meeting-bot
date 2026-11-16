@@ -113,7 +113,7 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   `POST /api/agent/calendar/import` (`AGENT_TOKEN`, on behalf of `AGENT_OWNER`). Same `uid` + start
   updates instead of duplicating (a single event is the same as one from an `.ics`; a series occurrence rescheduled within the day keeps the meeting and its choices); a future same-day meeting
   missing from the list is canceled (it comes back if it reappears), but an empty list only clears the day with
-  `confirmEmpty: true` and an event outside the day is skipped without failing the upload. Other days, manual/`.ics` meetings and the user's choices (do not record, generate items) are
+  `confirmEmpty: true` and an event outside the day is skipped without failing the upload. An event that already exists in the owner's agenda (manual entry or `.ics`, same title and start ±5 min) is linked instead of duplicated: the manual one gets the upload's `uid`, an `.ics` with its own UID is just recognized. Other days, manual/`.ics` meetings and the user's choices (do not record, generate items) are
   untouched, and the upload enables no extra recording: the usual rules apply. Details in
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md) (Portuguese).
   The same day's agenda can be read with `GET /api/agent/meetings?date=YYYY-MM-DD` (same token; defaults to

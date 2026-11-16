@@ -113,7 +113,7 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   `POST /api/agent/calendar/import` (token `AGENT_TOKEN`, no nome do `AGENT_OWNER`). Mesmo `uid` + início
   atualiza em vez de duplicar (evento único é o mesmo de um `.ics`; ocorrência de série remarcada no dia mantém a reunião e as escolhas); reunião futura do mesmo dia que sumiu da
   lista é cancelada (volta se reaparecer), mas lista vazia só limpa o dia com `confirmEmpty: true` e evento
-  fora do dia é ignorado sem derrubar o envio. Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
+  fora do dia é ignorado sem derrubar o envio. Evento que já existe na agenda do dono (cadastro manual ou `.ics`, mesmo título e início ±5 min) é vinculado em vez de duplicado: o manual ganha o `uid` do envio, o `.ics` com UID próprio só é reconhecido. Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
   envio não liga gravação extra: valem as regras de sempre. Detalhes em
   [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md).
   A mesma agenda do dia pode ser lida com `GET /api/agent/meetings?date=AAAA-MM-DD` (mesmo token; padrão hoje;
