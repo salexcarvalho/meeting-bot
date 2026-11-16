@@ -7,6 +7,8 @@ const TOKEN = "teste-".repeat(8);
 const SOURCE = "aurora-outlook";
 const DAY = "2031-03-10";
 const OTHER_DAY = "2031-03-11";
+// Janela de datas só deste arquivo (os outros usam 04-14 em diante); o banco de teste é compartilhado.
+const JANELA = { from: "2031-03-01T00:00:00-03:00", to: "2031-04-10T00:00:00-03:00" };
 // 02:30Z do dia 11 = 23:30 do dia 10 em São Paulo (UTC-3)
 const NOITE = { start: "2031-03-11T02:30:00Z", end: "2031-03-11T03:00:00Z" };
 const teamsLink = (n: string) => `https://teams.microsoft.com/l/meetup-join/19%3ameeting_${n}%40thread.v2/0`;
@@ -491,8 +493,25 @@ describe.skipIf(!enabled)("importação da agenda pela Aurora (HTTP + Postgres)"
   });
 
   it("nunca grava para outro usuário além do dono do agente", async () => {
-    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM meetings WHERE import_source = $1 AND created_by <> $2`, [SOURCE, owner]);
+    // O banco é compartilhado com os outros arquivos de agenda (mesma origem, outro dono) e a ordem de
+    // execução varia: só olha as reuniões da janela de datas deste arquivo (2031-03-01 a 2031-04-10, que nenhum
+    // outro usa), nunca a origem inteira.
+    const { rows } = await pool.query(
+      `SELECT count(*)::int AS n FROM meetings
+        WHERE import_source = $1 AND created_by <> $2
+          AND scheduled_start >= $3::timestamptz AND scheduled_start < $4::timestamptz`,
+      [SOURCE, owner, JANELA.from, JANELA.to],
+    );
     expect(rows[0].n).toBe(0);
+    // a conta comum criada aqui nunca recebe reunião da origem
+    const { rows: doOutro } = await pool.query(`SELECT count(*)::int AS n FROM meetings WHERE created_by = $1`, [outro]);
+    expect(doOutro[0].n).toBe(0);
+    // e a janela não é vazia: o teste enxerga as reuniões que este arquivo importou
+    const { rows: doDono } = await pool.query(
+      `SELECT count(*)::int AS n FROM meetings WHERE import_source = $1 AND created_by = $2 AND scheduled_start >= $3::timestamptz AND scheduled_start < $4::timestamptz`,
+      [SOURCE, owner, JANELA.from, JANELA.to],
+    );
+    expect(doDono[0].n).toBeGreaterThan(0);
     expect(outro).not.toBe(owner);
   });
 
