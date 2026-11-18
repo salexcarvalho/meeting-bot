@@ -106,6 +106,15 @@ docker compose exec backend npm run user:delete -- socio
 Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre eres tú
 (`USER_DISPLAY_NAME`). Después de la primera descarga, el modelo funciona sin conexión.
 
+**Nombre de los hablantes por la llamada** (activado por defecto; `BOT_SPEAKER_NAMES=false` lo desactiva): el asistente lee,
+en la pantalla de Teams (invitado o cuenta del agente) y de Meet, quién tiene activo el indicador de habla y guarda
+una línea de tiempo de quién habló. En el pase final, cada "Speaker N" recibe el nombre con mayor superposición de
+tiempo; sin evidencia suficiente, sigue como "Speaker N". Sin separación de hablantes (ASR externo sin hablantes),
+el fragmento recibe el nombre de quien más habló en él. No hay biometría de voz: solo lo que la pantalla del invitado
+ya muestra, sin red nueva, y los nombres y la línea de tiempo quedan en esta máquina y se borran con la reunión. Los
+nombres aplicados siguen como el resto del contenido hacia el LLM externo (solo con `ALLOW_EXTERNAL_LLM=true`); la
+línea de tiempo nunca se envía.
+
 ## Uso
 
 ### Hoy
@@ -145,6 +154,8 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
   - Entra en silencio y sin cámara; la reunión muestra las iniciales del nombre (el invitado no tiene foto).
   - Si la red se cae al abrir el enlace, reintenta (3 veces). Una reunión que falló solo por la red se reenvía sola, dentro del horario, hasta 3 veces con 1 min entre ellas.
   - La transcripción aparece en vivo en la página de la reunión, con el agente arquitecto y el resumen actual.
+  - Con la lectura de nombres activada, cada fragmento en vivo del asistente sale con el nombre de quien estaba hablando
+    en la pantalla; es una etiqueta temporal, que el pase final reemplaza y que nunca se convierte en hablante de la reunión.
   - Espera la admisión hasta el fin previsto y no sale por estar solo antes de ese momento.
   - Sale cuando la llamada termina, cuando queda solo en la llamada por 5 min (contando a las personas en
     la barra de Teams/Meet) después del fin previsto, cuando pasa del fin previsto con 3 min sin sonido,
@@ -177,6 +188,13 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
   - Las tarjetas quedan colapsadas, mostrando el comienzo de la decisión ("Expandir todos" abre todas).
   - El enlace de la decisión de origen abre la pestaña Itens ya en su tarjeta.
 - **Falantes** ("Hablantes"): cambia el nombre de "Speaker 1", etc., en la pestaña Transcrição ("Transcripción").
+  - Un nombre leído en la llamada viene marcado "da chamada" ("de la llamada"), con la confianza ("alta" o
+    "conferir" = revisar); lo que tú escribes pasa a "manual", siempre prevalece y nunca se sobrescribe, ni siquiera
+    con **Reprocessar** (vale por etiqueta: si la numeración de los "Speaker N" cambia en la nueva transcripción,
+    revisa los nombres).
+  - **Reaplicar nomes da chamada** ("Reaplicar nombres de la llamada") rehace el emparejamiento sin transcribir de nuevo.
+  - La reunión muestra el estado de la lectura (ok, parcial o no disponible); cuando no produjo nombres, los
+    hablantes siguen como "Speaker N".
 - **Reprocessar** ("Reprocesar"): rehace la transcripción final y el análisis.
 - **Itens activados/desactivados** (interruptor bajo el panel en vivo, solo el dueño): decisiones, pendientes,
   riesgos, requisitos y ADR solo se generan en las reuniones donde activas el interruptor. Viene
@@ -311,6 +329,9 @@ Cada usuario tiene su propia configuración:
 | `BOT_SILENCE_STOP_MINUTES` | 10 | Silencio que termina una reunión sin horario previsto |
 | `BOT_CAMERA` | `false` | Cámara virtual con el avatar del agente (imagen fija; se convierte en cuadro de video en la llamada) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Transcripción en vivo del audio grabado por el asistente |
+| `BOT_SPEAKER_NAMES` | `true` | Lee en la pantalla de la llamada quién está hablando y nombra los "Speaker N" (y los fragmentos en vivo) |
+| `BOT_SPEAKER_SKEW_MS` | 0 | Retraso fijo (ms) del indicador de habla respecto al audio; calibración (el pase final estima el retraso real por reunión) |
+| `BOT_SPEAKER_DIAGNOSTIC` | `false` | Guarda en `DATA_DIR/debug/speakers/<id-de-la-reunión>/` solo la estructura de los cuadros de la llamada (sin texto, nombres, audio ni video; hasta 120 archivos), para recalibrar los selectores |
 | `MAX_AVATAR_KB` / `MAX_VOICE_KB` / `MAX_VOICE_SECONDS` | 2048 / 4096 / 60 | Límites de los archivos de perfil |
 | `EGRESS_ALLOWLIST` | `ollama,worker-gpu,localhost,127.0.0.1` | Hosts a los que el backend puede acceder |
 
@@ -474,6 +495,13 @@ scripts/fixture-ics.sh 20      # invitación de prueba que empieza en 20 min
 
 - **Los selectores de Meet/Teams se rompen** cuando las plataformas cambian la pantalla (asistente y Modo
   Agente). Están en `apps/backend/src/bot/platforms.ts`.
+- **Los nombres de los hablantes dependen de la pantalla de la llamada.** Los selectores de Teams y Meet que leen el
+  indicador de habla siguen siendo hipótesis hasta la captura en una reunión real; si la lectura falla, los hablantes
+  siguen como "Speaker N" (la grabación y la transcripción no se ven afectadas). Solo aparecen nombres de quienes están
+  en el escenario de la llamada (el viewport del asistente es de 1280×720), y quienes hablan a la vez, en una reunión
+  muy grande o sin el asistente en la llamada quedan sin nombre o con "conferir" (revisar). Con el diagnóstico activado
+  (`BOT_SPEAKER_DIAGNOSTIC=true`), `node apps/backend/scripts/capture-speaker-dom.mjs <carpeta-de-la-reunión>` lista los
+  elementos cuyo estilo o atributos cambian entre capturas, candidatos a indicador de habla.
 - **Una grabación por computador a la vez** ("Gravar agora" o `AUTO_LOCAL_RECORDING=true`). En una
   reunión que empalma con otra, la segunda espera a que la primera se detenga (3 min sin habla después del horario)
   o a **Parar**; el host-agent avisa del conflicto. El asistente dentro de la llamada no tiene ese

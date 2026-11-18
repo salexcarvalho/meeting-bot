@@ -1,5 +1,25 @@
 <!--
 Sync Impact Report
+- Versão: 3.0.0 → 3.1.0 (MINOR: ampliação material do Princípio II; decisão do usuário em 2026-11-18,
+  spec 006-nome-dos-falantes, Decisão 2)
+- Princípio modificado: II. Respeito às Políticas da Organização — o assistente pode ler passivamente, na
+  tela da chamada, apenas o que a tela do convidado já mostra (nomes dos participantes e indicador de fala),
+  para nomear os falantes da transcrição. A leitura MUST NOT usar endpoints internos das plataformas, nem
+  interceptar tráfego de rede, nem simular ações do usuário para obter dado reservado a outros papéis, nem
+  pedir permissão extra além da que o convidado já tem. Nomes de terceiros são dado pessoal e seguem o
+  tratamento do resto do conteúdo da reunião: ficam só na máquina, são apagados com a reunião e vão ao
+  LLM externo apenas como parte do conteúdo, sob `ALLOW_EXTERNAL_LLM=true`; a linha do tempo bruta de quem
+  falou nunca sai da máquina. Sem biometria de voz.
+- Princípios inalterados: I (a leitura não adiciona rede nem envio; os nomes aplicados valem como o resto
+  do conteúdo para o LLM externo), III (nome da chamada é proposta, marcado e editável; o manual prevalece)
+  e IV (auditoria só com contadores).
+- Artefatos dependentes: apps/backend/src/bot/speakers/*, recording/{speakerTimeline,clockAnchor}.ts,
+  meetings/{speakerNames,applyCallNames}.ts, repo/speakerActivity.ts, schema.ts, .env.example,
+  .env.vps.example, README.md (3 idiomas), CLAUDE.md, CHANGELOG.md, docs/ARCHITECTURE.md,
+  docs/agente-arquiteto.md, specs/006-nome-dos-falantes/
+- Pendências adiadas: validação dos seletores do Teams e do Meet em reunião real (T001, T060–T062)
+
+Histórico anterior (2.3.0 → 3.0.0)
 - Versão: 2.3.0 → 3.0.0 (MAJOR: não existe mais LLM local; todo LLM passa a ser externo e opt-in;
   decisão do usuário em 2026-11-18, porque o LLM local (qwen) ocupava VRAM da GPU de 6 GB sem necessidade)
 - Princípio redefinido: I. Local-first e Privacidade — "Todo LLM MUST rodar localmente" sai; a exceção
@@ -255,8 +275,17 @@ organização permite enviar.
   (AES-256-GCM, chave derivada do `AGENT_TOKEN`), por usuário, MUST NOT aparecer em log nem no
   `audit_log` (só os eventos de conectar, remover e vencer), e pode ser removida a qualquer hora.
   Sessão vencida faz o bot cair para convidado e avisa o dono; nunca tenta refazer o login sozinho.
+- O assistente MAY ler passivamente, na tela da chamada, apenas o que a tela do convidado já mostra (nomes dos
+  participantes e o indicador de quem está falando) para nomear os falantes da transcrição. A leitura MUST NOT
+  usar endpoints internos da plataforma, interceptar tráfego de rede, simular ações do usuário para obter dado
+  reservado a outros papéis nem pedir permissão extra (por exemplo, ligar legendas ou abrir painéis restritos).
+  Os nomes de terceiros são dado pessoal e MUST ser tratados como o resto do conteúdo da reunião: guardados só
+  com a reunião e apagados com ela, sem log nem auditoria com nomes, e enviados ao LLM externo apenas como parte do
+  conteúdo, sob `ALLOW_EXTERNAL_LLM=true` (a linha do tempo bruta de quem falou MUST NOT sair da máquina). Sem
+  biometria de voz.
 
-Racional: o tenant bloqueia apps e acesso por e-mail; o usuário exigiu nunca burlar políticas.
+Racional: o tenant bloqueia apps e acesso por e-mail; o usuário exigiu nunca burlar políticas. A leitura passiva do
+que o convidado já vê não contorna nenhum controle: é a mesma informação que qualquer participante tem na tela.
 
 ### III. Humano no Controle
 
@@ -394,4 +423,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 3.0.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-11-18
+**Version**: 3.1.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-11-18

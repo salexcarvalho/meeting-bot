@@ -89,6 +89,10 @@ geração automática (`LLM_GENERATION_PROVIDER`).
 
    Nunca extrai frase a frase.
 3. **Janela:**
+   - o nome de cada falante vem do `speakerName` do segmento. Com a leitura dos nomes da chamada ligada
+     (`BOT_SPEAKER_NAMES`), o trecho ao vivo do assistente já traz o nome de quem falava (rótulo temporário
+     `live:Nome`, ver `docs/ARCHITECTURE.md`), então decisões, pendências e responsáveis saem com nomes reais em vez
+     de "Speaker N", e o resumo corrente passa a citá-los. Sem nome lido, o rótulo segue como antes;
    - até **2.500 tokens** estimados (3,5 caracteres por token);
    - mais **2 segmentos anteriores** marcados como `contexto`, que não podem ser citados;
    - `formatWindow` numera os trechos como `S1`, `S2`… e envolve tudo em `<transcricao>`.
@@ -115,6 +119,11 @@ geração automática (`LLM_GENERATION_PROVIDER`).
    antes de a transcrição ao vivo ser substituída.
 
 ## Depois da reunião (`runPostAnalysis`)
+
+Depois do passe final, os "Speaker N" são nomeados pelo casamento com a linha do tempo da chamada (e o nome
+manual prevalece); a análise abaixo já usa os nomes aplicados, que seguem como o resto do conteúdo para o LLM
+externo. A linha do tempo (`speaker_activity`) nunca é enviada. Ver "Nome dos falantes pela chamada" em
+`docs/ARCHITECTURE.md`.
 
 `pipeline.ts` executa, em ordem:
 
