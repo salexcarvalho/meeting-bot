@@ -324,15 +324,15 @@ export interface MeetingDetail {
   asrProvider: string | null;
   /** acesso de quem pediu: dono, compartilhada com edição ou só leitura */
   access: "owner" | "edit" | "read";
-  /** quem gerou a análise da ata: "local:<modelo>", "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
+  /** quem gerou a análise da ata: "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
   analysisProvider: string | null;
 }
 
 export type AsrProvider = "local" | "openrouter";
 
-// LLM das gerações (ata, itens pós-reunião, ADR). Ao vivo é sempre local (Constituição 1.4.0).
+// LLM das gerações (ata, itens ao vivo e pós-reunião, ADR). Sempre externo: não há modelo local.
 // claude/codex: CLI oficial com a assinatura do dono do host-agent, executado pelo host-agent.
-export const LLM_CHOICES = ["local", "openrouter", "claude", "codex"] as const;
+export const LLM_CHOICES = ["openrouter", "claude", "codex"] as const;
 export type LlmChoice = (typeof LLM_CHOICES)[number];
 export const SUBSCRIPTION_LLMS = ["claude", "codex"] as const;
 export type SubscriptionLlm = (typeof SUBSCRIPTION_LLMS)[number];
@@ -348,7 +348,6 @@ export interface SubscriptionLlmOption {
 export interface LlmOptions {
   /** provedor da geração automática ao fim da reunião (LLM_GENERATION_PROVIDER) */
   default: LlmChoice;
-  local: { model: string };
   external: { model: string; available: boolean } | null;
   /** assinaturas habilitadas no .env (a disponibilidade depende da reunião e do host-agent) */
   subscriptions: SubscriptionLlmOption[];

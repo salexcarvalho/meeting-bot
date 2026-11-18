@@ -35,7 +35,6 @@ const env = {
   PUBLIC_DIR: path.resolve(root, "../frontend/dist"),
   PORT: APP_PORT,
   WORKER_URL: "http://127.0.0.1:9",
-  OLLAMA_URL: "http://127.0.0.1:9",
   LOCAL_ONLY: "true",
   ALLOW_EXTERNAL_ASR: "false",
   ASR_PROVIDER: "local",
@@ -44,7 +43,7 @@ const env = {
   ALLOW_EXTERNAL_LLM: "true",
   // sem Chromium de bot no E2E: o assistente não entra sozinho
   AUTO_ASSISTANT: "false",
-  LLM_GENERATION_PROVIDER: "local",
+  LLM_GENERATION_PROVIDER: "openrouter",
   OPENROUTER_API_KEY: `e2e-${randomUUID()}`,
   OPENROUTER_URL: "https://127.0.0.1:9/api/v1",
   // Assinatura ligada: a Ana não é dona do host-agent, então a opção aparece desabilitada.

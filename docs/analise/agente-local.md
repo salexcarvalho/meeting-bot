@@ -6,6 +6,12 @@
 
 Data: 2026-09-16
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido, porque ocupava VRAM da GPU sem necessidade
+> (constituição 3.0.0). O LLM agora é sempre externo e exige `ALLOW_EXTERNAL_LLM=true`: `claude` (assinatura
+> do dono, padrão), `codex` ou `openrouter`; a análise ao vivo usa o mesmo provedor. O Whisper segue local
+> na GPU. As menções a Ollama, `qwen3.5:4b` e "LLM sempre local" abaixo (inclusive a decisão D4 e as
+> medições da §14) são o histórico da análise de 2026-09-16 e não valem mais.
+
 ## 1. Resumo
 
 A proposta é viável **localmente** para o fluxo principal:

@@ -158,35 +158,39 @@ describe("escolha do provedor de geração", () => {
     return import("../src/llm");
   }
 
-  it("sem a flag, o externo é recusado e o padrão é local", async () => {
+  it("sem a flag, não há LLM: tudo é recusado com o aviso claro", async () => {
     const llm = await loadLlm({ ALLOW_EXTERNAL_LLM: "false", OPENROUTER_API_KEY: "sk" });
-    expect(llm.parseLlmChoice(undefined)).toEqual({ ok: true, value: "local" });
+    expect(llm.parseLlmChoice(undefined)).toMatchObject({ ok: false, error: expect.stringMatching(/ative ALLOW_EXTERNAL_LLM/) });
+    expect(llm.llmSummary()).toMatchObject({ ok: false, model: "claude:sonnet" });
+    await expect(llm.automaticProvider("dono")).rejects.toThrow(/ative ALLOW_EXTERNAL_LLM.*transcrição está salva/);
+    expect(await llm.generationBlock("claude", "dono")).toMatch(/ALLOW_EXTERNAL_LLM/);
     expect(llm.parseLlmChoice("openrouter")).toMatchObject({ ok: false, error: expect.stringMatching(/ALLOW_EXTERNAL_LLM/) });
     expect(llm.parseLlmChoice("gpt")).toMatchObject({ ok: false });
     expect((await llm.llmOptions(null)).external).toBeNull();
     await expect(llm.generate("post", request, "openrouter")).rejects.toThrow(/desabilitado/);
   });
 
-  it("com a flag: padrão do .env, chave obrigatória e ao vivo sempre local", async () => {
+  it("com a flag: padrão do .env, chave obrigatória e ao vivo no mesmo provedor", async () => {
     const llm = await loadLlm({
       ALLOW_EXTERNAL_LLM: "true",
       LLM_GENERATION_PROVIDER: "openrouter",
       OPENROUTER_API_KEY: "",
       OPENROUTER_LLM_MODEL: "google/gemini-3.7-flash",
     });
-    expect(llm.parseLlmChoice("default")).toEqual({ ok: true, value: "openrouter" });
+    expect(llm.parseLlmChoice("default")).toMatchObject({ ok: false, error: expect.stringMatching(/OPENROUTER_API_KEY/) });
     expect(llm.parseLlmChoice("openrouter")).toMatchObject({ ok: false, error: expect.stringMatching(/OPENROUTER_API_KEY/) });
+    expect(await llm.generationBlock("openrouter", null)).toMatch(/OPENROUTER_API_KEY/);
     expect(await llm.llmOptions(null)).toMatchObject({
       default: "openrouter",
       external: { model: "google/gemini-3.7-flash", available: false },
     });
     expect(llm.generationLabel("openrouter")).toBe("openrouter:google/gemini-3.7-flash");
-    await expect(llm.generate("live", request, "openrouter")).rejects.toThrow(/ao vivo é sempre local/);
+    await expect(llm.generate("live", request, "openrouter")).rejects.toThrow(/OPENROUTER_API_KEY/);
   });
 
-  it("LLM_GENERATION_PROVIDER=openrouter sem a flag impede a subida", async () => {
-    await expect(loadLlm({ ALLOW_EXTERNAL_LLM: "false", LLM_GENERATION_PROVIDER: "openrouter" })).rejects.toThrow(
-      /exige ALLOW_EXTERNAL_LLM=true/,
-    );
+  it("LLM_GENERATION_PROVIDER: sem a flag a app sobe (só a geração fica desligada); 'local' não existe mais", async () => {
+    const llm = await loadLlm({ ALLOW_EXTERNAL_LLM: "false", LLM_GENERATION_PROVIDER: "openrouter" });
+    expect(llm.llmSummary().ok).toBe(false);
+    await expect(loadLlm({ LLM_GENERATION_PROVIDER: "local" })).rejects.toThrow(/LLM_GENERATION_PROVIDER inválido/);
   });
 });

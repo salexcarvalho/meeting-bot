@@ -677,12 +677,13 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       expect((await call("mu-admin", "POST", adrUrl(), {})).status).toBe(404);
     });
 
-    it("recusa escolha inválida, externo desligado, item errado e ADR já revisado", async () => {
+    it("recusa escolha inválida, assinatura desligada, item errado e ADR já revisado", async () => {
       expect((await call("mu-ana", "POST", adrUrl(), { llm: "gpt" })).status).toBe(400);
-      const external = await call("mu-ana", "POST", adrUrl(), { llm: "openrouter" });
+      expect((await call("mu-ana", "POST", adrUrl(), { llm: "local" })).status).toBe(400);
+      const external = await call("mu-ana", "POST", adrUrl(), { llm: "claude" });
       expect(external.status).toBe(400);
-      expect(external.json.error).toMatch(/ALLOW_EXTERNAL_LLM/);
-      const reprocess = await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "openrouter" });
+      expect(external.json.error).toMatch(/CLAUDE_CLI_ENABLED/);
+      const reprocess = await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "claude" });
       expect(reprocess.status).toBe(400);
       expect((await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "x" })).status).toBe(400);
 
@@ -712,9 +713,9 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       });
       const res = await call("mu-ana", "POST", adrUrl(), { itemId: decision.livre });
       expect(res.status).toBe(202);
-      expect(res.json).toMatchObject({ status: "queued", provider: expect.stringMatching(/^local:/) });
+      expect(res.json).toMatchObject({ status: "queued", provider: expect.stringMatching(/^openrouter:/) });
       await expect.poll(() => isProcessing(id)).toBe(false);
-      expect(runs).toEqual([{ meetingId: id, provider: "local", itemId: decision.livre }]);
+      expect(runs).toEqual([{ meetingId: id, provider: "openrouter", itemId: decision.livre }]);
 
       const rows = (await audit("generation_requested")).filter((r) => r.detail.meetingId === id);
       expect(rows).toEqual([

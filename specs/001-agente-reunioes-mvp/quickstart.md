@@ -1,5 +1,10 @@
 # Quickstart — validação do MVP
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido (constituição 3.0.0); todo LLM é externo e
+> exige `ALLOW_EXTERNAL_LLM=true`. Não há mais `ollama pull`. Para gerar ata e itens, ligue `ALLOW_EXTERNAL_LLM=true` e configure o
+> provedor (`claude` é o padrão; ver README). Sem isso, a gravação e a transcrição funcionam, mas ata e itens
+> não são gerados.
+
 Guia para provar, de ponta a ponta, que o MVP funciona. Os detalhes de API estão em
 [contracts/](contracts/) e os de dados em [data-model.md](data-model.md).
 
@@ -21,7 +26,6 @@ Guia para provar, de ponta a ponta, que o MVP funciona. Os detalhes de API estã
 ```bash
 docker compose build
 docker compose up -d
-docker compose exec ollama ollama pull qwen3.5:4b      # primeira vez
 docker compose ps                                       # todos healthy
 curl -s localhost:3000/healthz                          # {"ok":true}
 apps/host-agent/install.sh                              # uv sync + unit systemd --user
@@ -114,7 +118,7 @@ Resultado esperado: tudo verde.
 1. `docker compose exec backend node -e "fetch('https://api.anthropic.com').catch(e=>console.log(e.message))"`
    deve mostrar "bloqueado (LOCAL_ONLY)", e o bloqueio aparece em `audit_log`.
 2. Durante uma gravação, rodar
-   `sudo ss -tnp | grep -E 'backend|worker|ollama|host_agent'`: não há conexões para fora de
+   `sudo ss -tnp | grep -E 'backend|worker|host_agent'`: não há conexões para fora de
    127.0.0.1 ou da rede do compose. O Chromium do Modo Agente é a exceção, porque a própria
    reunião é externa.
 3. `grep -rE "anthropic" apps/ packages/` não encontra nada. `deepgram` só aparece como nome de

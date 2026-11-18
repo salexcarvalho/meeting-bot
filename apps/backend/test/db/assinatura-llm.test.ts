@@ -13,7 +13,7 @@ describe.skipIf(!enabled)("geração com a assinatura via host-agent (HTTP + Pos
   vi.stubEnv("CLAUDE_CLI_ENABLED", "true");
   vi.stubEnv("CODEX_CLI_ENABLED", "true");
   vi.stubEnv("CLAUDE_CLI_MODEL", "sonnet");
-  vi.stubEnv("LLM_GENERATION_PROVIDER", "local");
+  vi.stubEnv("LLM_GENERATION_PROVIDER", "claude");
   vi.stubEnv("AGENT_OWNER", "as-dono");
 
   const { pool, createUser } = await import("../../src/db");

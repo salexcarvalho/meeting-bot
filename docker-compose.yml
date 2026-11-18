@@ -11,7 +11,6 @@ services:
     environment:
       DATABASE_URL: postgres://meetingbot:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/meetingbot
       WORKER_URL: http://worker-gpu:8000
-      OLLAMA_URL: http://ollama:11434
       TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
       PORT: "3000"
     depends_on:
@@ -57,16 +56,6 @@ services:
       - models:/models
     restart: unless-stopped
 
-  # LLM local (LOCAL_ONLY). Modelos ficam no volume "ollama".
-  ollama:
-    image: ollama/ollama:0.32.14
-    environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-      OLLAMA_MAX_LOADED_MODELS: "1"
-    volumes:
-      - ollama:/root/.ollama
-    restart: unless-stopped
-
   # HTTPS automático (Let's Encrypt). Ative com: docker compose --profile https up -d
   caddy:
     image: caddy:2-alpine
@@ -82,7 +71,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  ollama:
   pgdata:
   botdata:
   models:

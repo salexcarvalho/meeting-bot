@@ -3,7 +3,7 @@ import { EXTERNAL_ASR_ID, providerLabel, transcribeFileExternal } from "./asr/op
 import { runTranscriptionJob, type JobChannelResult, type JobFile } from "./asr/workerClient";
 import { config } from "./config";
 import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
-import { automaticProvider, generationLabel, unloadLlm } from "./llm";
+import { automaticProvider, generationLabel } from "./llm";
 import { hub } from "./live/hub";
 import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, replaceWithFinal } from "./repo/transcripts";
 
@@ -91,12 +91,12 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
       current = meetingId;
       const resolve = () => providerFor(meetingId, opts.llm);
       if (onlyAdrs) {
-        const { provider, note } = await resolve();
+        const provider = await resolve();
         const result = await adrGeneration(meetingId, (s, p) => report(meetingId, s, p), provider, opts.itemId);
-        finalEvent = { done: `${adrSummary(result)}${note ? ` (${note})` : ""}` };
+        finalEvent = { done: adrSummary(result) };
       } else {
-        const note = await processMeeting(meetingId, step, resolve);
-        finalEvent = { done: `Ata gerada${note ? ` (${note})` : ""}.` };
+        await processMeeting(meetingId, step, resolve);
+        finalEvent = { done: "Ata gerada." };
       }
     })
     .catch(async (err) => {
@@ -113,30 +113,26 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
   return true;
 }
 
-type ProviderChoice = { provider: LlmChoice; note: string | null };
-
-async function providerFor(meetingId: string, requested: LlmChoice | undefined): Promise<ProviderChoice> {
-  if (requested) return { provider: requested, note: null };
+async function providerFor(meetingId: string, requested: LlmChoice | undefined): Promise<LlmChoice> {
+  if (requested) return requested;
   const meeting = await getMeeting(meetingId);
-  const chosen = await automaticProvider(meeting?.created_by ?? null, {
+  return automaticProvider(meeting?.created_by ?? null, {
     waitMs: config.subscriptionWaitMs,
     onWait: (reason) => {
       console.warn(`[pipeline ${meetingId}] aguardando ${config.generationProvider}: ${reason}`);
       report(meetingId, "aguardando_assinatura", 0);
     },
   });
-  if (chosen.note) console.warn(`[pipeline ${meetingId}] ${chosen.note}`);
-  return chosen;
 }
 
 /** O provedor é escolhido depois da transcrição: a espera pela assinatura não segura o passe final. */
 async function processMeeting(
   meetingId: string,
   step: ProcessStep,
-  resolveProvider: () => Promise<ProviderChoice>,
-): Promise<string | null> {
+  resolveProvider: () => Promise<LlmChoice>,
+): Promise<void> {
   const meeting = await getMeeting(meetingId);
-  if (!meeting) return null;
+  if (!meeting) return;
 
   if (step === "all" || (await countFinalSegments(meetingId)) === 0) {
     const audio = (await listAudio(meetingId)).filter((a) => a.format !== "pcm_s16le_16k");
@@ -162,8 +158,6 @@ async function processMeeting(
         );
       }
     } else {
-      // A diarização precisa da VRAM que o LLM ocupa.
-      await unloadLlm().catch(() => {});
       results = await runTranscriptionJob(
         files,
         { language: config.transcriptionLanguage, prompt: await promptFor(meetingId) },
@@ -195,10 +189,9 @@ async function processMeeting(
 
   // generating_ata com transcrição final: um reinício retoma só a análise (e a espera).
   await setMeetingStatus(meetingId, "generating_ata");
-  const { provider, note } = await resolveProvider();
+  const provider = await resolveProvider();
   report(meetingId, "analisando", 0);
-  if (provider !== "local") console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
+  console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
   await postAnalysis(meetingId, (s, p) => report(meetingId, s, p), provider);
   await markDone(meetingId);
-  return note;
 }

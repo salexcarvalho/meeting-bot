@@ -43,8 +43,8 @@ function depsFor(provider: LlmChoice): PostAnalysisDeps {
       };
     },
     generate: (req) => generate("post", req, provider),
-    chunkTokens: provider === "local" ? undefined : EXTERNAL_CHUNK_TOKENS,
-    consolidationItems: provider === "local" ? undefined : EXTERNAL_CONSOLIDATION_ITEMS,
+    chunkTokens: EXTERNAL_CHUNK_TOKENS,
+    consolidationItems: EXTERNAL_CONSOLIDATION_ITEMS,
     listItems,
     listAdrs,
     createAiItems: (meetingId, items, origin) => createAiItems(meetingId, items, origin, label),

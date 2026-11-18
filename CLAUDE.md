@@ -14,8 +14,8 @@ agente arquiteto, memória pesquisável.
 
 ## Regras do projeto (decididas pelo usuário)
 
-- `LOCAL_ONLY=true` sempre: nenhum áudio, transcrição ou documento sai da máquina; LLM só local (Ollama).
-  - Exceção (constituição 1.4.0): LLM externo opcional (`ALLOW_EXTERNAL_LLM=true`) para ata e ADR — OpenRouter ou a assinatura pessoal do dono (Claude Code/Codex, executados pelo host-agent, só nas reuniões do `AGENT_OWNER`); escolhido a cada clique em "Gerar ata/ADR" ou, na análise automática, por `LLM_GENERATION_PROVIDER`; Ollama continua padrão; ao vivo sempre local.
+- `LOCAL_ONLY=true` sempre: nenhum áudio, transcrição ou documento sai da máquina; não há LLM local (Ollama removido, constituição 3.0.0).
+  - Exceção (constituição 3.0.0, única via de LLM): LLM externo com `ALLOW_EXTERNAL_LLM=true` para ata, itens e ADR — `claude`/`codex` (assinatura pessoal do dono, executada pelo host-agent, só nas reuniões do `AGENT_OWNER`; `claude` é o padrão) ou `openrouter`; escolhido a cada clique em "Gerar ata/ADR" ou, na análise automática (pós-reunião e ao vivo), por `LLM_GENERATION_PROVIDER`. Sem a flag, a transcrição e a gravação seguem, mas ata e itens não são gerados.
   - Exceção (constituição 1.1.0): ASR externo de teste (Deepgram nova-3 via OpenRouter), só com `ALLOW_EXTERNAL_ASR=true`, só no passe final/upload, escolhido por `.env` ou por reunião. Whisper local continua padrão; ao vivo sempre local.
 - Nunca contornar políticas da organização (sem scraping de Outlook/Teams para burlar bloqueio de app).
 - Calendário: importação `.ics` + cadastro manual (tenant bloqueia Graph e acesso por e-mail).

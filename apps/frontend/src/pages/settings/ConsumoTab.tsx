@@ -10,7 +10,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
   claude: "Claude (assinatura)",
   codex: "Codex (assinatura)",
-  local: "Ollama (local)",
+  // rótulos antigos, de quando havia modelo local: seguem aparecendo como texto
+  local: "Modelo local (antigo)",
 };
 
 function tokens(n: number): string {
@@ -110,7 +111,7 @@ export function ConsumoTab() {
       />
       <p className="card-desc">
         Tokens e custo de cada geração de ata, ADR e análise. A assinatura do Claude/Codex não cobra por chamada:
-        aparece só o volume de tokens. O modelo local (Ollama) não gera registro, porque nada sai da máquina.
+        aparece só o volume de tokens. Gerações antigas feitas no modelo local não têm registro de consumo.
       </p>
       {error && <div className="banner error">{error}</div>}
       {busy && !report && <SkeletonLines lines={4} />}

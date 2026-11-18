@@ -14,13 +14,13 @@ data-model.md, contracts/).
 │  uploader com retomada       │ /api/agent/  │  postAnalysis → ata (render na leitura)      │
 └──────────────────────────────┘   audio      │  UI React estática + WS /api/live            │
                                               │  Modo Agente (Playwright + PulseAudio)       │
- navegador ── cookie ── 127.0.0.1:3000 ──────►│  egress guard (LOCAL_ONLY + exceção de ASR)  │
+ navegador ── cookie ── 127.0.0.1:3000 ──────►│  egress guard (LOCAL_ONLY + exceções ASR/LLM)│
                                               └───────┬──────────────┬──────────────┬────────┘
                                                       │              │              │
-                                               postgres 16    worker-gpu        ollama
-                                                              FastAPI           qwen3.5:4b
-                                                              faster-whisper    JSON Schema
-                                                              pyannote          (format)
+                                               postgres 16    worker-gpu
+                                                              FastAPI
+                                                              faster-whisper
+                                                              pyannote
 ```
 
 ## Serviços
@@ -30,14 +30,15 @@ data-model.md, contracts/).
 | `backend` | build de `apps/backend/Dockerfile` sobre `mcr.microsoft.com/playwright:v1.63.0-noble` | API, UI, WebSockets, agendador, agente, ata, Modo Agente |
 | `postgres` | `postgres:16-alpine` | persistência (`pgdata`) |
 | `worker-gpu` | build de `apps/worker-gpu` sobre `nvidia/cuda:12.8.1-base` | `/transcribe/chunk` (ao vivo) e `/jobs/transcribe` (passe final + diarização) |
-| `ollama` | `ollama/ollama:0.32.14` | LLM local (`qwen3.5:4b`) |
 | `caddy` | `caddy:2-alpine` (profile `https`) | TLS quando exposto em rede |
 
-Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama`, `pgdata`.
+Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata`.
 
 ## Fluxos
 
-> Servidor de teste (Dokploy): `docker-compose.vps.yml` troca worker-gpu e Ollama pelo ASR externo
+> Não há serviço de LLM: o LLM é sempre externo (constituição 3.0.0; o Ollama foi removido em 2026-11-18).
+>
+> Servidor de teste (Dokploy): `docker-compose.vps.yml` troca o worker-gpu pelo ASR externo
 > e pelo container `agent-cli` (host-agent em `AGENTE_MODE=llm`, só geração). Ver `docs/vps-dokploy.md`.
 
 1. **Agenda**
@@ -65,7 +66,8 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
 3. **Ao vivo**
    - O chunker corta por energia: pausa ≥ 500 ms depois de 8 s, ou força o corte em 30 s.
    - O worker aplica o VAD e o Whisper; os segmentos `live` são publicados no WS.
-   - O LiveAgent roda a cada 90 s de fala ou 180 s e valida a evidência (ids `S<n>` + citação).
+   - O LiveAgent (só com a chave "Itens" ligada e `ALLOW_EXTERNAL_LLM=true`) roda a cada 90 s de fala ou 180 s,
+     pelo provedor de `LLM_GENERATION_PROVIDER`, e valida a evidência (ids `S<n>` + citação).
    - A deduplicação usa Jaccard; a consolidação roda a cada 15 min.
 4. **Pós-reunião**
    - O finalize converte para Opus e confere a duração com o ffprobe.
@@ -116,15 +118,16 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
     OpenRouter (só https);
   - com `ALLOW_EXTERNAL_LLM=true`, também `/api/v1/chat/completions`;
   - bloqueios e envios externos vão para `audit_log`, sem conteúdo.
-- LLM local por padrão (`LLM_PROVIDER=ollama`; outros nomes são recusados e auditados).
-  - Exceção opt-in (constituição 1.4.0): ata e ADRs podem ir ao OpenRouter
-    (`llm/openrouter.ts`) ou à assinatura pessoal do dono (`llm/hostCli.ts`), escolhido a cada
-    pedido ou por `LLM_GENERATION_PROVIDER`.
+- Não há LLM local: todo LLM é externo e exige `ALLOW_EXTERNAL_LLM=true` (constituição 3.0.0). Sem a
+  flag, ata, itens e ADRs não são gerados (a transcrição e a gravação seguem) e a interface avisa.
+  - Provedores: `claude` (padrão de `LLM_GENERATION_PROVIDER`) e `codex`, pela assinatura pessoal do dono
+    (`llm/hostCli.ts`), ou `openrouter` (`llm/openrouter.ts`); escolhido a cada pedido ou por
+    `LLM_GENERATION_PROVIDER`.
   - Assinatura: o backend põe o pedido numa fila em memória (`llm/hostJobs.ts`); o host-agent
     busca por long-poll (`GET /api/agent/llm/next`), roda `claude -p` ou `codex exec` isolado
     (`host_agent/llm_runner.py`) e devolve o JSON (`POST /api/agent/llm/:id/result`). O backend
     nunca vê credenciais, e só as reuniões do `AGENT_OWNER` usam a assinatura.
-  - A análise ao vivo é sempre local; a geração externa não entra na fila da GPU.
+  - A análise ao vivo usa o mesmo provedor da geração; nenhum LLM entra na fila da GPU.
 - Caminhos de áudio montados a partir de UUID e canal validados; o worker recusa caminhos fora
   de `/data/audio`.
 
@@ -133,5 +136,4 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
 | Carga | VRAM medida |
 |---|---|
 | faster-whisper large-v3-turbo int8_float16 | ~1,4 GB |
-| qwen3.5:4b ctx 8k | ~3,0 GB na GPU (3,9 GB total) |
-| pyannote community-1 (só no passe final) | carregado sob demanda; o LLM é descarregado antes |
+| pyannote community-1 (só no passe final) | carregado sob demanda |

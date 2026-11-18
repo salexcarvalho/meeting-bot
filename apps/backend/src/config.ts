@@ -63,7 +63,7 @@ function asrProvider(allowed: boolean): AsrProvider {
 
 const external = externalAsr();
 
-export type GenerationProvider = "local" | "openrouter" | "claude" | "codex";
+export type GenerationProvider = "openrouter" | "claude" | "codex";
 
 // LLM externo opcional (Constituição 1.3.0, princípio I): só com ALLOW_EXTERNAL_LLM=true.
 // Usa o mesmo OpenRouter (URL e chave) do ASR externo.
@@ -101,20 +101,13 @@ function subscriptionLlm(allowed: boolean) {
   };
 }
 
-function generationProvider(
-  allowed: boolean,
-  subscriptions: ReturnType<typeof subscriptionLlm>,
-): GenerationProvider {
-  const raw = (process.env.LLM_GENERATION_PROVIDER || "local").trim().toLowerCase();
-  if (raw === "local") return "local";
+// LLM sempre externo (não há modelo local). Padrão: a assinatura do Claude via host-agent.
+// Sem ALLOW_EXTERNAL_LLM=true (ou sem o CLI/chave do provedor) a app sobe normalmente, mas a
+// geração é recusada em tempo de execução com erro claro; transcrição e gravação seguem.
+function generationProvider(): GenerationProvider {
+  const raw = (process.env.LLM_GENERATION_PROVIDER || "claude").trim().toLowerCase();
   if (raw !== "openrouter" && raw !== "claude" && raw !== "codex") {
-    throw new Error(`LLM_GENERATION_PROVIDER inválido: ${raw} (use local, openrouter, claude ou codex)`);
-  }
-  if (!allowed) {
-    throw new Error(`LLM_GENERATION_PROVIDER=${raw} exige ALLOW_EXTERNAL_LLM=true (a transcrição sai da máquina).`);
-  }
-  if (raw !== "openrouter" && !subscriptions[raw].enabled) {
-    throw new Error(`LLM_GENERATION_PROVIDER=${raw} exige ${raw.toUpperCase()}_CLI_ENABLED=true.`);
+    throw new Error(`LLM_GENERATION_PROVIDER inválido: ${raw} (use openrouter, claude ou codex)`);
   }
   return raw;
 }
@@ -126,7 +119,7 @@ function localOnly(): boolean {
   const raw = (process.env.LOCAL_ONLY ?? "true").toLowerCase();
   if (raw !== "true") {
     // Constituição, princípio I: LOCAL_ONLY=true é o único modo suportado.
-    throw new Error("LOCAL_ONLY=false não é suportado: este projeto só usa modelos locais.");
+    throw new Error("LOCAL_ONLY=false não é suportado: este projeto só aceita LOCAL_ONLY=true (áudio e transcrição ficam na máquina; o LLM externo é opt-in).");
   }
   return true;
 }
@@ -169,7 +162,7 @@ export const config = {
 
   // Privacidade
   localOnly: localOnly(),
-  egressAllowlist: list("EGRESS_ALLOWLIST", ["ollama", "worker-gpu", "localhost", "127.0.0.1"]),
+  egressAllowlist: list("EGRESS_ALLOWLIST", ["worker-gpu", "localhost", "127.0.0.1"]),
 
   // host-agent: a máquina grava só as reuniões deste usuário (vazio = SUPER_ADMIN mais antigo)
   agentToken: agentToken(),
@@ -186,13 +179,8 @@ export const config = {
   asrProvider: asrProvider(external.allowed),
   externalAsr: external,
 
-  // LLM local
-  llmProvider: (process.env.LLM_PROVIDER || "ollama").toLowerCase(),
-  ollamaUrl: (process.env.OLLAMA_URL || "http://ollama:11434").replace(/\/+$/, ""),
-  ollamaModel: process.env.OLLAMA_MODEL || "qwen3.5:4b",
-  ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE || "30m",
-  // Gerações pós-reunião e sob demanda: local ou OpenRouter (ao vivo é sempre local)
-  generationProvider: generationProvider(llmExternal.allowed, llmSubscriptions),
+  // LLM externo (OpenRouter ou assinatura via host-agent); ao vivo e pós-reunião usam o mesmo provedor
+  generationProvider: generationProvider(),
   /** geração automática com assinatura: quanto esperar o host-agent/CLI voltar antes de desistir */
   subscriptionWaitMs: int("SUBSCRIPTION_WAIT_MINUTES", 30) * 60_000,
   externalLlm: llmExternal,

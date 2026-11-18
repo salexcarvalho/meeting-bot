@@ -1,5 +1,25 @@
 <!--
 Sync Impact Report
+- Versão: 2.2.0 → 3.0.0 (MAJOR: o LLM local (Ollama) deixa de existir; todo LLM passa a ser externo e
+  opt-in; decisão do usuário em 2026-11-18, porque o Ollama ocupava VRAM da GPU sem necessidade)
+- Princípio redefinido: I. Local-first e Privacidade — "Todo LLM MUST rodar localmente" sai; a exceção
+  "LLM externo opcional" vira a única via de LLM: sem `ALLOW_EXTERNAL_LLM=true` não há ata, itens nem
+  ADR (a transcrição e a gravação seguem normalmente). Provedores: `claude` (assinatura do dono pelo
+  host-agent, novo padrão de `LLM_GENERATION_PROVIDER`), `codex` e `openrouter`. A análise ao vivo
+  (extração de itens, só com a chave "Itens" ligada) usa o mesmo provedor da geração e deixa de ser
+  "sempre local"; ASR ao vivo (Whisper) continua local. Embeddings seguem locais, em CPU.
+- Princípio modificado: V. Orçamento de GPU Consciente — a GPU atende só o Whisper; o `qwen3.5:4b` e o
+  orçamento de ~3 GB do LLM saem.
+- Princípio modificado: III. Humano no Controle — o racional não cita mais o modelo local medido.
+- Variáveis removidas: OLLAMA_MODEL, OLLAMA_KEEP_ALIVE, OLLAMA_URL, LLM_PROVIDER; `ollama` sai do
+  EGRESS_ALLOWLIST padrão; "Ollama (local)" sai da interface.
+- Artefatos dependentes: apps/backend (llm/*, config), apps/frontend, docker-compose*.yml,
+  .env.example, .env.vps.example, README.md (3 idiomas), CLAUDE.md, docs/ARCHITECTURE.md,
+  docs/agente-arquiteto.md, docs/analise/agente-local.md, docs/analise/plataforma-multiusuario.md,
+  specs/001-agente-reunioes-mvp/quickstart.md (nota)
+- Pendências adiadas: nenhuma
+
+Histórico anterior (2.1.0 → 2.2.0)
 - Versão: 2.1.0 → 2.2.0 (MINOR: o assistente pode entrar no Teams logado numa conta Microsoft
   dedicada ao agente, em vez de convidado sem conta; decisão do usuário em 2026-09-18)
 - Princípio modificado: II. Respeito às Políticas da Organização — conta dedicada do agente (nunca a
@@ -128,28 +148,32 @@ Histórico
 
 - `LOCAL_ONLY=true` é o único modo suportado. Áudio, transcrição, ata, itens extraídos e
   documentos ficam na **infraestrutura do dono** — o computador dele ou um servidor que ele
-  controla — e não podem ir para serviços de terceiros, salvo as exceções de ASR e LLM abaixo.
+  controla — e não podem ir para serviços de terceiros, salvo as exceções de ASR e LLM abaixo (o LLM só existe por essa exceção).
 - **Fora do computador do dono (servidor de teste):** só com decisão explícita dele, e então
   MUST ter HTTPS em todo acesso, segredos próprios daquele ambiente (nunca os do computador),
   cópia apenas do que o teste precisa e remoção dos volumes quando o teste acabar. Sem GPU no
-  servidor, o passe ao vivo fica desligado (ele é sempre local) e o passe final usa a exceção de
-  ASR externo.
-- Todo LLM, modelo de fala, diarização e embedding MUST rodar localmente (Ollama, faster-whisper,
-  pyannote etc.). Adaptadores para provedores externos não podem ser habilitados por padrão
-  e qualquer chamada externa MUST ser bloqueada e registrada em log de auditoria.
+  servidor, o passe ao vivo do Whisper fica desligado (ele é sempre local) e o passe final usa a exceção
+  de ASR externo.
+- Modelo de fala, diarização e embedding MUST rodar localmente (faster-whisper, pyannote etc.).
+  Não existe LLM local: todo LLM é externo e só funciona pela exceção abaixo. Adaptadores para
+  provedores externos não podem ser habilitados por padrão e qualquer chamada externa MUST ser
+  bloqueada e registrada em log de auditoria.
 - **Exceção — ASR externo de teste (opt-in):** com `ALLOW_EXTERNAL_ASR=true`, o áudio pode ser
   enviado ao endpoint de transcrição do OpenRouter (padrão `deepgram/nova-3`), somente no passe
   final e em uploads, e somente quando escolhido no `.env` (`ASR_PROVIDER=openrouter`) ou por
-  reunião. Requisitos: o Whisper local continua o padrão; o ao vivo é sempre local; o LLM é
-  sempre local; o egress libera apenas o caminho `/api/v1/audio/transcriptions`; cada envio é
+  reunião. Requisitos: o Whisper local continua o padrão; o ao vivo é sempre local; o egress
+  libera apenas o caminho `/api/v1/audio/transcriptions`; cada envio é
   registrado na auditoria (sem conteúdo); a UI MUST avisar quando uma transcrição usou o
   provedor externo. Sem a flag, qualquer tentativa é recusada.
-- **Exceção — LLM externo opcional (opt-in):** com `ALLOW_EXTERNAL_LLM=true`, gerações de IA
-  pós-reunião (ata, resumo, análise, ADR e demais documentos) podem usar um provedor externo
-  configurado (OpenRouter primeiro, depois OpenAI), somente quando escolhido explicitamente:
-  a cada pedido na interface, ou para a análise automática pós-reunião com
-  `LLM_GENERATION_PROVIDER=openrouter` no `.env`. Requisitos:
-  - o LLM local (Ollama) continua o padrão e a análise ao vivo é sempre local;
+- **LLM externo (opt-in; única via de LLM):** com `ALLOW_EXTERNAL_LLM=true`, as gerações de IA
+  (ata, resumo, análise, ADR, demais documentos e a extração de itens ao vivo) usam um provedor
+  externo configurado: `claude` (assinatura do dono, padrão de `LLM_GENERATION_PROVIDER`), `codex`
+  ou `openrouter`. A escolha vale a cada pedido na interface e, na análise automática (pós-reunião e
+  ao vivo), pelo `LLM_GENERATION_PROVIDER` do `.env`. Requisitos:
+  - sem `ALLOW_EXTERNAL_LLM=true` não há LLM: transcrição e gravação seguem, ata, itens e ADR não
+    são gerados e a UI MUST avisar isso com clareza;
+  - a análise ao vivo (só com a chave "Itens" ligada) usa o mesmo provedor da geração e só envia
+    trechos da transcrição; a transcrição em si continua local (Whisper);
   - as chaves nunca aparecem na interface nem em logs; enquanto não houver cadastro de
     provedores, a chave fica no `.env` (modo 600); com o cadastro, cifrada no banco e mostrada só
     pelo final;
@@ -163,8 +187,9 @@ Histórico
   - quem executa é o host-agent nativo, com o CLI oficial sem modificação e o login feito pelo
     fluxo do próprio fornecedor; o backend nunca lê, guarda ou repassa credenciais;
   - vale só para as reuniões do dono do host-agent (`AGENT_OWNER`); reunião de outra pessoa
-    nunca usa essa assinatura (a geração automática dela usa o modelo local); nas reuniões do dono,
-    assinatura fora do ar faz a geração automática esperar, sem trocar de modelo;
+    nunca usa essa assinatura (a geração automática dela só roda por outro provedor permitido,
+    como `openrouter`; sem ele, fica sem LLM); nas reuniões do dono, assinatura fora do ar faz a
+    geração automática esperar, sem trocar de modelo;
   - o CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
     temporária, com o conteúdo por stdin;
   - a UI MUST avisar que planos pessoais seguem os termos de consumidor.
@@ -177,10 +202,11 @@ Histórico
   HTTPS e autenticação.
 
 Racional: as reuniões contêm dados corporativos e de saúde pública, por isso o padrão é 100%
-local. As exceções de ASR e LLM existem por decisão explícita do usuário (2026-09-16): a de ASR
-serve para comparar a qualidade da transcrição; a de LLM serve para gerações de melhor
-qualidade quando ele quiser. Nas duas, o usuário responde por usá-las apenas com conteúdo que
-a política da organização permite enviar.
+local. As exceções de ASR e LLM existem por decisão explícita do usuário: a de ASR (2026-09-16)
+serve para comparar a qualidade da transcrição; a de LLM (2026-09-16) serve para gerações de
+melhor qualidade e, desde 2026-11-18, é a única via de LLM, porque o modelo local ocupava VRAM sem
+necessidade. Nas duas, o usuário responde por usá-las apenas com conteúdo que a política da
+organização permite enviar.
 
 ### II. Respeito às Políticas da Organização (NÃO NEGOCIÁVEL)
 
@@ -220,8 +246,8 @@ Racional: o tenant bloqueia apps e acesso por e-mail; o usuário exigiu nunca bu
 - Um ADR MUST NOT ser registrado ou exportado como definitivo sem aprovação explícita.
 - A UI MUST distinguir visualmente conteúdo proposto pela IA de conteúdo aprovado.
 
-Racional: o LLM local medido (qwen3.5:4b) acerta a maioria dos itens mas inventa e duplica
-alguns (docs/analise/agente-local.md §14).
+Racional: LLMs, inclusive os medidos (docs/analise/agente-local.md §14), acertam a maioria dos
+itens mas inventam e duplicam alguns.
 
 ### IV. Rastreabilidade
 
@@ -237,23 +263,23 @@ Racional: uma decisão só é confiável se for possível ouvir ou ler de onde e
 ### V. Orçamento de GPU Consciente
 
 - A VRAM disponível (RTX 4050, 6 GB) é restrição de projeto. Todo componente que usa GPU MUST
-  declarar seu consumo medido e respeitar o orçamento da fase (durante a reunião: ASR + LLM
-  pequeno; pós-reunião: cargas sequenciais).
-- Padrões vigentes: faster-whisper `large-v3-turbo` int8 (~1,4 GB) e `qwen3.5:4b` com contexto
-  de 4k (~3 GB). Embeddings rodam em CPU.
+  declarar seu consumo medido e respeitar o orçamento da fase (durante a reunião: só o ASR;
+  pós-reunião: cargas sequenciais).
+- Padrão vigente: faster-whisper `large-v3-turbo` int8 (~1,4 GB), único uso de GPU. Não há LLM
+  local. Embeddings rodam em CPU.
 - Trocar ou adicionar modelo exige medição real na máquina (tempo, VRAM, qualidade em pt-BR)
   registrada na documentação antes da adoção.
 - Falta de VRAM MUST degradar de forma controlada (fila, offload, menor frequência), nunca
   derrubar a gravação.
 
 Racional: medições mostraram que `openai_whisper` (5,2 GB) e modelos 8B inviabilizam o
-uso simultâneo.
+uso simultâneo; por isso o LLM saiu da GPU.
 
 ### VI. Desktop Nativo, Serviços em Container
 
 - Notificações, som, abertura de links, captura PipeWire e keyring rodam no `host-agent`
   nativo (Python 3.12, `systemd --user`, `graphical-session.target`).
-- Backend, workers, banco, filas, LLM e UI rodam no Docker Engine nativo (contexto `default`)
+- Backend, workers, banco, filas e UI rodam no Docker Engine nativo (contexto `default`)
   com NVIDIA Container Toolkit. Docker Desktop MUST NOT ser usado para este projeto.
 - A comunicação host-agent ↔ backend é local (loopback) e autenticada.
 - No servidor sem desktop, o agente roda em container no modo `llm` (`AGENTE_MODE=llm`): executa
@@ -342,4 +368,4 @@ Racional: aproveita o código validado e a stack principal do usuário.
 - Orientação de execução do dia a dia: `CLAUDE.md` do repositório e
   `docs/analise/agente-local.md`.
 
-**Version**: 2.2.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-18
+**Version**: 3.0.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-11-18

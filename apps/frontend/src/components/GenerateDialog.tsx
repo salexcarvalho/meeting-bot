@@ -37,9 +37,7 @@ export function useLlmOptions(meetingId: string, active: boolean): LlmOptions {
 }
 
 export function llmChoiceOptions(llm: LlmOptions): LlmChoiceOption[] {
-  const options: LlmChoiceOption[] = [
-    { value: "local", title: "Modelo local", detail: `${llm.local.model} · nada sai da máquina`, available: true },
-  ];
+  const options: LlmChoiceOption[] = [];
   if (llm.external) {
     options.push({
       value: "openrouter",
@@ -60,11 +58,12 @@ export function llmChoiceOptions(llm: LlmOptions): LlmChoiceOption[] {
 }
 
 export function defaultChoice(llm: LlmOptions): LlmChoice {
-  const found = llmChoiceOptions(llm).find((o) => o.value === llm.default);
-  return found?.available ? found.value : "local";
+  const options = llmChoiceOptions(llm);
+  const found = options.find((o) => o.value === llm.default);
+  return found?.available ? found.value : (options.find((o) => o.available)?.value ?? llm.default);
 }
 
-// Pergunta onde gerar (modelo local, OpenRouter ou assinatura) antes de cada geração sob demanda.
+// Pergunta onde gerar (OpenRouter ou assinatura) antes de cada geração sob demanda.
 export function GenerateDialog({
   meetingId,
   request,
@@ -86,7 +85,7 @@ export function GenerateDialog({
   }, [request, initial]);
 
   const selected = options.find((o) => o.value === choice);
-  const warning = request ? generationWarning(choice, request.scope) : null;
+  const warning = request && options.length > 0 ? generationWarning(choice, request.scope) : null;
 
   return (
     <Dialog open={request !== null} onClose={onClose} label={request?.title ?? "Gerar"}>
@@ -94,6 +93,11 @@ export function GenerateDialog({
         <>
           <h2>{request.title}</h2>
           <p className="muted">{request.message}</p>
+          {options.length === 0 && (
+            <p className="banner warn small" role="note">
+              LLM externo desabilitado: ative ALLOW_EXTERNAL_LLM no .env para gerar.
+            </p>
+          )}
           <fieldset className="llm-choice">
             <legend>Gerar com</legend>
             {options.map((o) => (

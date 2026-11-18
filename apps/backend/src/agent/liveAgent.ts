@@ -1,7 +1,7 @@
 import { Consolidacao, Extracao } from "@meeting-bot/contracts";
 import { config } from "../config";
 import { pool } from "../db";
-import { generate, generationLabel } from "../llm";
+import { generate, generationBlock, generationLabel } from "../llm";
 import { hub } from "../live/hub";
 import { getSpeakers, speakerNameResolver, type SegmentRow } from "../repo/transcripts";
 import { createAiItems, listItems, mergeInto } from "../items/service";
@@ -166,16 +166,20 @@ export class LiveAgent {
 
     let summary = "";
     try {
-      const result = await generate("live", {
-        system: SYSTEM_EXTRACAO,
-        user: extractionUser({ title: info.title, project: info.project, summary: info.live_summary, window: text }),
-        schema: Extracao,
-        numCtx: 4096,
-        label: `extração ao vivo ${this.meetingId.slice(0, 8)}`,
-      });
+      const result = await generate(
+        "live",
+        {
+          system: SYSTEM_EXTRACAO,
+          user: extractionUser({ title: info.title, project: info.project, summary: info.live_summary, window: text }),
+          schema: Extracao,
+          numCtx: 4096,
+          label: `extração ao vivo ${this.meetingId.slice(0, 8)}`,
+        },
+        config.generationProvider,
+      );
       summary = result.resumo_trecho.trim();
       const valid = validateExtraction(result, map);
-      const { created, merged } = await createAiItems(this.meetingId, valid, "live", generationLabel("local"));
+      const { created, merged } = await createAiItems(this.meetingId, valid, "live", generationLabel(config.generationProvider));
       console.log(
         `[agente ${this.meetingId.slice(0, 8)}] janela de ${window.length} segmentos: ${result.itens.length} itens, ${valid.length} válidos, ${created} novos, ${merged} mesclados`,
       );
@@ -217,18 +221,22 @@ export class LiveAgent {
       .slice(-MAX_CONSOLIDATION_ITEMS);
     const refs = new Map(proposed.map((item, i) => [`I${i + 1}`, item]));
 
-    const result = await generate("live", {
-      system: SYSTEM_CONSOLIDACAO,
-      user: consolidationUser({
-        title: info.title,
-        summary: info.live_summary,
-        windowSummaries,
-        items: [...refs].map(([ref, item]) => ({ ref, type: item.type, description: item.description })),
-      }),
-      schema: Consolidacao,
-      numCtx: 4096,
-      label: `consolidação ${this.meetingId.slice(0, 8)}`,
-    });
+    const result = await generate(
+      "live",
+      {
+        system: SYSTEM_CONSOLIDACAO,
+        user: consolidationUser({
+          title: info.title,
+          summary: info.live_summary,
+          windowSummaries,
+          items: [...refs].map(([ref, item]) => ({ ref, type: item.type, description: item.description })),
+        }),
+        schema: Consolidacao,
+        numCtx: 4096,
+        label: `consolidação ${this.meetingId.slice(0, 8)}`,
+      },
+      config.generationProvider,
+    );
 
     const summary = result.resumo.trim().slice(0, 1200);
     const at = new Date();
@@ -266,6 +274,23 @@ const agents = new Map<string, LiveAgent>();
 const TICK_MS = 15_000;
 let timer: NodeJS.Timeout | null = null;
 
+// Sem LLM utilizável (flag desligada, CLI fora do ar, reunião de outra pessoa) a análise ao vivo
+// fica parada; a gravação e a transcrição seguem. Avisa uma vez por reunião e por motivo.
+const warned = new Map<string, string>();
+
+async function liveBlocked(meetingId: string, ownerId: string | null): Promise<boolean> {
+  const reason = await generationBlock(config.generationProvider, ownerId);
+  if (!reason) {
+    warned.delete(meetingId);
+    return false;
+  }
+  if (warned.get(meetingId) !== reason) {
+    warned.set(meetingId, reason);
+    console.warn(`[agente ${meetingId.slice(0, 8)}] análise ao vivo parada: ${reason}`);
+  }
+  return true;
+}
+
 async function agentFor(meetingId: string): Promise<LiveAgent> {
   let agent = agents.get(meetingId);
   if (!agent) {
@@ -279,11 +304,13 @@ async function tickAll(): Promise<void> {
   try {
     const { rows } = await pool.query(
       // gravação local (recording/stopping) ou assistente dentro da chamada (in_call); só com os itens ligados
-      `SELECT id FROM meetings
+      `SELECT id, created_by FROM meetings
        WHERE extract_items
          AND ((source IN ('ics', 'manual') AND status IN ('recording', 'stopping')) OR status = 'in_call')`,
     );
-    for (const { id } of rows) void (await agentFor(id)).tick();
+    for (const { id, created_by: owner } of rows) {
+      if (!(await liveBlocked(id, owner))) void (await agentFor(id)).tick();
+    }
   } catch (err) {
     console.error("[agente] erro no ciclo:", err);
   }
@@ -292,12 +319,13 @@ async function tickAll(): Promise<void> {
 // Chamado pelo pipeline antes do passe final: a análise ao vivo termina sobre os segmentos `live`.
 export async function flushLiveAgent(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `SELECT 1 FROM transcript_segments s JOIN meetings m ON m.id = s.meeting_id
+    `SELECT m.created_by FROM transcript_segments s JOIN meetings m ON m.id = s.meeting_id
       WHERE s.meeting_id = $1 AND s.pass = 'live' AND m.extract_items LIMIT 1`,
     [meetingId],
   );
-  if (!rows.length) {
+  if (!rows.length || (await liveBlocked(meetingId, rows[0].created_by))) {
     agents.delete(meetingId);
+    warned.delete(meetingId);
     return;
   }
   const agent = await agentFor(meetingId);

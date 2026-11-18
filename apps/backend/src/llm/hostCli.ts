@@ -2,7 +2,7 @@ import type { AgentLlmResult, SubscriptionLlm } from "@meeting-bot/contracts";
 import { z } from "zod";
 import { audit } from "../security/audit";
 import { HostJobError, type HostJobQueue } from "./hostJobs";
-import { toJsonSchema } from "./ollama";
+import { toJsonSchema } from "./schema";
 import type { GenerateRequest, LLMProvider } from "./provider";
 
 // Geração com a assinatura pessoal (Constituição 1.4.0, princípio I): o host-agent roda o CLI
@@ -93,14 +93,6 @@ export class HostCliLlm implements LLMProvider {
       user = req.user + retryNote(JSON.stringify(output), lastError);
     }
     throw new Error(`Resposta do LLM inválida (${req.label}): ${lastError}`);
-  }
-
-  async unload(): Promise<void> {
-    // nada a liberar: roda fora da GPU
-  }
-
-  async health(): Promise<{ ok: boolean; model: string; error?: string }> {
-    return { ok: true, model: this.model };
   }
 
   private async run<T>(req: GenerateRequest<T>, user: string, schema: Record<string, unknown>): Promise<AgentLlmResult> {

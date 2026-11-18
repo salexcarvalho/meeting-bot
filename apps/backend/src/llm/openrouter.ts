@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { audit } from "../security/audit";
-import { toOllamaSchema } from "./ollama";
+import { toJsonSchema } from "./schema";
 import type { GenerateRequest, LLMProvider } from "./provider";
 
 // LLM externo opcional via OpenRouter /chat/completions (Constituição 1.3.0, princípio I).
@@ -52,7 +52,7 @@ export class OpenRouterLlm implements LLMProvider {
 
   async generate<T>(req: GenerateRequest<T>): Promise<T> {
     if (!this.settings.apiKey) throw new ExternalLlmError("OPENROUTER_API_KEY não configurada no .env.");
-    const schema = toOllamaSchema(req.schema);
+    const schema = toJsonSchema(req.schema);
     const messages: { role: string; content: string }[] = [
       { role: "system", content: req.system },
       { role: "user", content: req.user },
@@ -104,16 +104,6 @@ export class OpenRouterLlm implements LLMProvider {
       messages.push({ role: "assistant", content }, { role: "user", content: retryNote(lastError) });
     }
     throw new Error(`Resposta do LLM inválida (${req.label}): ${lastError}`);
-  }
-
-  async unload(): Promise<void> {
-    // nada a liberar: roda fora da máquina
-  }
-
-  async health(): Promise<{ ok: boolean; model: string; error?: string }> {
-    return this.settings.apiKey
-      ? { ok: true, model: this.model }
-      : { ok: false, model: this.model, error: "OPENROUTER_API_KEY não configurada" };
   }
 
   private async post(body: Record<string, unknown>): Promise<ChatCompletion> {

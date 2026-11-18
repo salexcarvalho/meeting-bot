@@ -12,8 +12,11 @@
 - generates the meeting minutes (19-section template; just the summary when items are off) and ADR suggestions;
 - leaves everything as **proposed** until you review it.
 
-Everything runs on the machine: Whisper (faster-whisper) and LLM (Ollama, `qwen3.5:4b`) on the local GPU. The
-only exception is the **test external ASR**, which is off by default
+Audio and transcription stay on the machine: Whisper (faster-whisper) runs on the local GPU. There is **no
+local LLM**: minutes, items, and ADRs depend on an external LLM (your Claude or Codex subscription, or
+OpenRouter), which only works with `ALLOW_EXTERNAL_LLM=true` ([see below](#external-llm)). Without it,
+recording and transcription work as usual, but minutes and items are not generated (the interface says
+so). There is also the **test external ASR**, off by default
 ([see below](#test-external-asr-optional)).
 
 The **audio/video upload** and **Agent Mode**, where a guest bot joins Meet/Teams, are also still
@@ -32,9 +35,9 @@ available.
 │ host-agent (systemd)     │ ───────────────► │ backend (Node 24) :3000                │
 │  alertas, som, xdg-open  │   WS PCM 16 kHz  │  agenda, gravação, agente, ata, UI     │
 │  parec: mic + monitor    │ ───────────────► │   │            │             │         │
-└──────────────────────────┘                  │ postgres   worker-gpu      ollama      │
- navegador → http://127.0.0.1:3000            │            (whisper,       (qwen3.5:4b)│
-                                              │             pyannote)                  │
+└──────────────────────────┘                  │ postgres   worker-gpu                  │
+ navegador → http://127.0.0.1:3000            │            (whisper, pyannote)         │
+                                              │                                        │
                                               └────────────────────────────────────────┘
 ```
 
@@ -59,7 +62,6 @@ sudo bash scripts/setup-host.sh          # NVIDIA Container Toolkit + pulseaudio
 cp .env.example .env                     # fill in POSTGRES_PASSWORD and AGENT_TOKEN
 export DOCKER_CONTEXT=default            # always the native Engine
 docker compose up -d --build
-docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec backend npm run user:create -- sergio --role=SUPER_ADMIN
 apps/host-agent/install.sh               # desktop service (systemd --user)
 ```
@@ -159,7 +161,7 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   requirements and ADRs are only generated in meetings where you turn the switch on. It starts **off**;
   a test-assist or delivery meeting ends up with just the transcript and minutes with the summary.
   - Off: live extraction does not run, and the post-meeting analysis produces only the summary (no items, no ADR).
-  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (local, OpenRouter or subscription), like Gerar ata.
+  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (subscription or OpenRouter), like Gerar ata.
     Turned on mid-meeting, live extraction starts from that point.
   - **Desligar itens** ("Turn items off") deletes nothing: what exists stays, and creating items by hand still works.
   - Meetings that predate this switch and already had items or an analysis are marked as on.
@@ -170,8 +172,8 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
     reviewed one (the evidence transfers to the approved one; a duplicate of a rejected one is discarded).
 - **Gerar ADRs** ("Generate ADRs") (ADRs tab) and **Gerar ADR** ("Generate ADR") (on each architectural decision, on the Itens ("Items") tab): generate or
   redo the suggested ADRs. ADRs that are approved, rejected, or manually edited aren't overwritten.
-- Each button asks where to generate: **modelo local** ("local model"), **OpenRouter**, or **sua assinatura** ("your subscription")
-  (Claude Code or Codex), depending on what's enabled. What was generated externally shows up flagged
+- Each button asks where to generate: **sua assinatura** ("your subscription", Claude Code or Codex) or **OpenRouter**,
+  depending on what's enabled (without `ALLOW_EXTERNAL_LLM=true`, the button warns that there is no LLM). What was generated externally shows up flagged
   ("OpenRouter", "Claude", or "Codex" on the item, the ADR, and the meeting minutes).
 
 ### Upload and Agent Mode
@@ -226,7 +228,7 @@ Each user has their own settings:
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Timezone for the agenda and the meeting minutes |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper on the worker |
 | `HF_TOKEN` | empty | Speaker diarization |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | Local LLM |
+| `ALLOW_EXTERNAL_LLM` / `LLM_GENERATION_PROVIDER` | `false` / `claude` | Turns on the external LLM (required for minutes and items) and picks the provider for automatic generation and live analysis: `claude`, `codex`, or `openrouter` ([see below](#external-llm)) |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Live extraction every N s of new speech… |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | …or at most every M s |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Running summary and deduplication |
@@ -238,7 +240,7 @@ Each user has their own settings:
 | `BOT_CAMERA` | `false` | Virtual camera with the agent's avatar (still image; becomes a video frame on the call) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Live transcription of the audio recorded by the assistant |
 | `MAX_AVATAR_KB` / `MAX_VOICE_KB` / `MAX_VOICE_SECONDS` | 2048 / 4096 / 60 | Profile file limits |
-| `EGRESS_ALLOWLIST` | `ollama,worker-gpu,localhost,127.0.0.1` | Hosts the backend can access |
+| `EGRESS_ALLOWLIST` | `worker-gpu,localhost,127.0.0.1` | Hosts the backend can access |
 
 ### Test External ASR (Optional)
 
@@ -246,8 +248,7 @@ To compare quality, the final pass and uploads can use **Deepgram nova-3 via
 OpenRouter**.
 
 > **Warning:** with this option, the **audio leaves the machine**. Only use it with audio that your
-> organization's policy allows sending to third parties. The live transcription and the entire LLM
-> remain local.
+> organization's policy allows sending to third parties. The live transcription remains local.
 
 ```bash
 # .env
@@ -266,31 +267,35 @@ Then, `docker compose up -d backend`.
 - Speakers are renumbered every 20 min of audio, because the provider doesn't keep identity
   across requests.
 
-### External LLM (Optional)
+### External LLM
 
-The meeting minutes and ADRs can be generated by an **OpenRouter** model (better quality than the local
-4B, with a cost per use).
+The LLM is always external (there is no local model) and stays off until `ALLOW_EXTERNAL_LLM=true`. The
+minutes, items, and ADRs come from **your subscription** (Claude or Codex, [see below](#your-subscription-claude-code-or-codex-optional))
+or from an **OpenRouter** model (cost per use). The **live analysis** (item extraction, only with the
+**Itens** switch on) uses the same provider as `LLM_GENERATION_PROVIDER`.
 
-> **Warning:** with this option, the **entire meeting transcription leaves the machine**. Only use it
-> with content that your organization's policy allows sending to third parties. The live analysis
-> always remains local.
+> **Warning:** with this option, the **meeting transcription leaves the machine**, including excerpts
+> sent during the meeting by the live analysis. Only use it with content that your organization's policy
+> allows sending to third parties. The live transcription (Whisper) remains local. Without
+> `ALLOW_EXTERNAL_LLM=true`, nothing is generated: recording and transcription continue and the interface
+> warns that minutes and items are unavailable.
 
 ```bash
 # .env
 ALLOW_EXTERNAL_LLM=true
 OPENROUTER_API_KEY=sk-or-...                    # the same key as the external ASR
 OPENROUTER_LLM_MODEL=anthropic/claude-sonnet-5  # any model with structured outputs
-LLM_GENERATION_PROVIDER=local                   # "openrouter" = automatic post-meeting analysis is also external
+LLM_GENERATION_PROVIDER=openrouter              # default is "claude" (subscription); also "codex"
 OPENROUTER_LLM_TIMEOUT_SECONDS=180
 OPENROUTER_LLM_MAX_TOKENS=32000             # reasoning models spend part of this
 ```
 
 Then, `docker --context default compose up -d backend`.
 
-- The **Gerar ata**, **Gerar ADRs**, and **Gerar ADR** buttons ask, on every click, whether the generation
-  is local or on OpenRouter, and warn before sending.
-- With `LLM_GENERATION_PROVIDER=openrouter`, the automatic processing after each meeting
-  also uses OpenRouter. Without `ALLOW_EXTERNAL_LLM=true`, the backend won't start with this option.
+- The **Gerar ata**, **Gerar ADRs**, and **Gerar ADR** buttons ask, on every click, where to generate
+  (subscription or OpenRouter), and warn before sending.
+- With `LLM_GENERATION_PROVIDER=openrouter`, the automatic processing (post-meeting and live)
+  uses OpenRouter. The default is `claude`. Without `ALLOW_EXTERNAL_LLM=true`, there is no LLM.
 - The response follows a strict JSON Schema (`response_format`) and only goes to providers that
   support it (`provider.require_parameters`).
 - Each call is logged in `audit_log` (`external_llm`), with tokens and cost, without content. Each request
@@ -300,7 +305,7 @@ Then, `docker --context default compose up -d backend`.
 
 ### Your Subscription: Claude Code or Codex (Optional)
 
-Instead of paying per use on OpenRouter, the meeting minutes and ADRs can come from **your subscription** to
+Instead of paying per use on OpenRouter, the meeting minutes, items, and ADRs can come from **your subscription** to
 Claude (Pro/Max) or ChatGPT (Codex). The one that runs it is the **host-agent**, with `claude` or `codex`
 installed on your machine and your login; the backend never sees credentials.
 
@@ -314,7 +319,7 @@ CLAUDE_CLI_ENABLED=true
 CLAUDE_CLI_MODEL=sonnet          # sonnet, opus, or the full model name
 CODEX_CLI_ENABLED=true
 CODEX_CLI_MODEL=                 # empty = Codex default
-LLM_GENERATION_PROVIDER=claude   # optional: automatic analysis via the subscription
+LLM_GENERATION_PROVIDER=claude   # default: automatic analysis via the subscription
 ```
 
 1. Install the host-agent (`apps/host-agent/install.sh`); it needs to be running.
@@ -332,8 +337,9 @@ Rules:
 - In automatic analysis, if the subscription is unavailable for a while (host-agent restarting, CLI
   not logged in), the meeting waits up to `SUBSCRIPTION_WAIT_MINUTES` (30) with the warning "Aguardando a
   assinatura" ("Waiting for the subscription"). If it doesn't come back, it's left with an error and the
-  transcription saved; the meeting minutes come out via **Gerar ata**. It never falls back to the local model
-  for this reason. Only another person's meeting uses the local model.
+  transcription saved; the meeting minutes come out via **Gerar ata**. It never switches provider
+  for this reason. Another person's meeting never uses your subscription: it is only generated if another
+  allowed provider (OpenRouter) is set up; otherwise it is left without minutes or items.
 - The CLI runs isolated: no tools, hooks, MCP, or user instructions, in a
   temporary folder, with the text passed via stdin. It consumes your plan's limit (no per-use cost).
 - Each call is logged in `audit_log` (`external_llm`, with tokens), without content.
@@ -368,7 +374,7 @@ E2E_SHOTS=/tmp/capturas npm run test:e2e -w @meeting-bot/backend   # keeps scree
 # worker without downloading torch: only the test dependencies
 (cd apps/worker-gpu && uv run --no-project --python 3.12 --with fastapi --with numpy \
   --with httpx --with pytest --with pydantic python -m pytest -q)
-npm run dev:backend            # needs Postgres, worker-gpu, and Ollama accessible
+npm run dev:backend            # needs Postgres and worker-gpu accessible
 npm run dev:frontend           # Vite with proxy to /api
 scripts/fixture-ics.sh 20      # test invite starting in 20 min
 ```
@@ -384,10 +390,9 @@ scripts/fixture-ics.sh 20      # test invite starting in 20 min
   meeting immediately following another, the second one waits for the first to stop (3 min without speech
   past the scheduled time) or for **Parar**; the host-agent warns about the conflict. The assistant inside
   the call doesn't have this limit: it joins up to `MAX_CONCURRENT_BOTS` meetings at the same time.
-- **The live analysis uses the local 4B model**, which makes mistakes and repeats items. That's why every
+- **The live analysis uses the same external LLM as the generation** (`LLM_GENERATION_PROVIDER`) and only runs
+  with the **Itens** switch on. Any LLM makes mistakes and repeats items; that's why every
   item is born proposed, with validated evidence, and duplicate items are merged in the final analysis.
-  Meeting minutes and ADRs come out better with the external LLM or the subscription
-  (`LLM_GENERATION_PROVIDER`).
 - **A manually created architectural decision** has no associated transcript excerpt: its ADR is
   generated using only the description and the meeting summary.
 - **One host-agent per machine**, tied to a single user (`AGENT_OWNER`). Other users use the
