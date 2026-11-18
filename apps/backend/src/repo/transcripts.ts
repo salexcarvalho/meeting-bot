@@ -9,6 +9,7 @@ import {
 } from "@meeting-bot/contracts";
 import { config } from "../config";
 import { pool, withTransaction } from "../db";
+import { invalidateTranscript } from "../search/dirty";
 
 export interface NewSegment {
   channel: Channel;
@@ -122,6 +123,8 @@ export async function replaceWithFinal(
     }
     if (remap) await remap(client, meetingId, inserted);
     await client.query(`DELETE FROM transcript_segments WHERE meeting_id = $1 AND pass = 'live'`, [meetingId]);
+    // os trechos de transcrição da busca saem na mesma transação (FR-014); a reindexação vem no fim do pipeline
+    await invalidateTranscript(client, meetingId);
     await client.query(
       `UPDATE meetings SET transcribed_at = now(), transcription_provider = $2 WHERE id = $1`,
       [meetingId, provider],

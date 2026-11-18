@@ -1,5 +1,7 @@
 import path from "path";
 import { recorderName } from "./bot/identity";
+import { parseWorkingDays } from "./calendar/workingDays";
+import { loadSearchConfig } from "./search/config";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -135,6 +137,8 @@ export const config = {
   sessionTtlHours: int("SESSION_TTL_HOURS", 24 * 7),
   appTimezone: process.env.APP_TIMEZONE || "America/Sao_Paulo",
   userDisplayName: process.env.USER_DISPLAY_NAME || "Sérgio",
+  /** dias com agenda (ISO, segunda = 1 … domingo = 7): fora deles não há lembrete nem gravação automática */
+  workingDays: parseWorkingDays(process.env.WORKING_DAYS),
 
   // Modo Agente (bot convidado)
   /** nome usado só quando o dono da reunião não existe mais */
@@ -179,12 +183,20 @@ export const config = {
   asrProvider: asrProvider(external.allowed),
   externalAsr: external,
 
-  // LLM externo (OpenRouter ou assinatura via host-agent); ao vivo e pós-reunião usam o mesmo provedor
+  // LLM externo (OpenRouter ou assinatura via host-agent); ao vivo, pós-reunião e chat usam o mesmo provedor
   generationProvider: generationProvider(),
+  // Ollama só para os embeddings da busca (bge-m3, em CPU); não há LLM local generativo
+  ollamaUrl: (process.env.OLLAMA_URL || "http://ollama:11434").replace(/\/+$/, ""),
+  // Busca e chat sobre as reuniões (specs/003-busca-chat)
+  search: loadSearchConfig(),
   /** geração automática com assinatura: quanto esperar o host-agent/CLI voltar antes de desistir */
   subscriptionWaitMs: int("SUBSCRIPTION_WAIT_MINUTES", 30) * 60_000,
   externalLlm: llmExternal,
   subscriptionLlm: llmSubscriptions,
+  // Retenção dos registros (constituição 2.3.0): dias; 0 = guardar sempre
+  usageRetentionDays: int("USAGE_RETENTION_DAYS", 730),
+  auditRetentionDays: int("AUDIT_RETENTION_DAYS", 365),
+  usageAsrFlushMinutes: int("USAGE_ASR_FLUSH_MINUTES", 10),
   liveExtractMinSpeechSeconds: int("LIVE_EXTRACT_MIN_SPEECH_SECONDS", 90),
   liveExtractMaxIntervalSeconds: int("LIVE_EXTRACT_MAX_INTERVAL_SECONDS", 180),
   liveConsolidateIntervalSeconds: int("LIVE_CONSOLIDATE_INTERVAL_SECONDS", 900),

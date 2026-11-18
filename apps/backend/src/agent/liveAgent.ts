@@ -174,6 +174,8 @@ export class LiveAgent {
           schema: Extracao,
           numCtx: 4096,
           label: `extração ao vivo ${this.meetingId.slice(0, 8)}`,
+          purpose: "ao_vivo",
+          meetingId: this.meetingId,
         },
         config.generationProvider,
       );
@@ -234,6 +236,8 @@ export class LiveAgent {
         schema: Consolidacao,
         numCtx: 4096,
         label: `consolidação ${this.meetingId.slice(0, 8)}`,
+        purpose: "ao_vivo",
+        meetingId: this.meetingId,
       },
       config.generationProvider,
     );

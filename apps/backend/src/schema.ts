@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { rbacSeedStatements } from "./authz/matrix";
+import { migrateSearch } from "./search/migration";
 
 // Idempotente: roda a cada boot. Mudanças futuras entram como novos
 // ALTER ... IF NOT EXISTS no fim da lista.
@@ -291,6 +292,19 @@ const statements = [
      PRIMARY KEY (meeting_id, user_id)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_meeting_shares_user ON meeting_shares (user_id)`,
+  // Compartilhamento (specs/005): seen_at nulo = destinatário ainda não abriu ("Nova"). O backfill roda só na
+  // primeira vez (coluna ainda inexistente), para os acessos que já existiam não aparecerem como novos.
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'meeting_shares' AND column_name = 'seen_at') THEN
+       ALTER TABLE meeting_shares
+         ADD COLUMN seen_at TIMESTAMPTZ,
+         ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+       UPDATE meeting_shares SET seen_at = created_at, updated_at = created_at;
+     END IF;
+   END $$`,
+  `CREATE INDEX IF NOT EXISTS idx_meeting_shares_unseen ON meeting_shares (user_id) WHERE seen_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_meetings_owner ON meetings (created_by, scheduled_start)`,
   `CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log (user_id, at DESC)`,
 
@@ -309,6 +323,119 @@ const statements = [
   // Evita duplicar ocorrência se o job de extensão da série rodar duas vezes.
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_meetings_series_start
      ON meetings (series_id, scheduled_start) WHERE series_id IS NOT NULL`,
+
+  // Agenda enviada por assistente externo (POST /api/agent/calendar/import): import_source marca de onde
+  // a reunião veio (só essas podem ser canceladas quando somem da lista do dia); import_removed_at
+  // distingue "sumiu da lista" de um cancelamento feito pelo usuário (só o primeiro volta se reaparecer).
+  `ALTER TABLE meetings
+     ADD COLUMN IF NOT EXISTS import_source TEXT,
+     ADD COLUMN IF NOT EXISTS import_removed_at TIMESTAMPTZ`,
+  `CREATE INDEX IF NOT EXISTS idx_meetings_import
+     ON meetings (created_by, import_source, scheduled_start) WHERE import_source IS NOT NULL`,
+
+  // Dia não útil (WORKING_DAYS): a reunião não tem lembrete nem entrada automática, a menos que o
+  // usuário peça. true = o usuário pediu para tratá-la como a de um dia útil.
+  `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS auto_on_off_day BOOLEAN NOT NULL DEFAULT false`,
+  // Minhas pendências e tarefas (specs/002-pendencias-tarefas): tarefas pessoais (owner_id), só aditivo.
+  // A tarefa sobrevive à reunião e ao item de origem (SET NULL) e guarda o instantâneo da origem.
+  `CREATE TABLE IF NOT EXISTS tasks (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     title TEXT NOT NULL,
+     description TEXT NOT NULL DEFAULT '',
+     status TEXT NOT NULL DEFAULT 'a_fazer'
+       CHECK (status IN ('a_fazer', 'em_andamento', 'bloqueada', 'concluida', 'cancelada')),
+     priority TEXT NOT NULL DEFAULT 'media' CHECK (priority IN ('baixa', 'media', 'alta', 'urgente')),
+     due_date DATE,
+     due_hint TEXT,
+     assignee_kind TEXT NOT NULL DEFAULT 'self' CHECK (assignee_kind IN ('self', 'other', 'none')),
+     assignee_name TEXT,
+     project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+     meeting_id UUID REFERENCES meetings(id) ON DELETE SET NULL,
+     source_item_id UUID REFERENCES meeting_items(id) ON DELETE SET NULL,
+     source_snapshot JSONB,
+     origin TEXT NOT NULL CHECK (origin IN ('item_auto', 'item_manual', 'manual')),
+     external_ref JSONB,
+     completed_at TIMESTAMPTZ,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     CHECK (assignee_kind <> 'other' OR assignee_name IS NOT NULL),
+     CHECK (assignee_kind <> 'self' OR assignee_name IS NULL),
+     CHECK (status <> 'concluida' OR completed_at IS NOT NULL)
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_item_owner
+     ON tasks (source_item_id, owner_id) WHERE source_item_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_status_due ON tasks (owner_id, status, due_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_project ON tasks (owner_id, project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_meeting ON tasks (owner_id, meeting_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_owner_updated ON tasks (owner_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS task_history (
+     id BIGSERIAL PRIMARY KEY,
+     task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+     action TEXT NOT NULL CHECK (action IN ('created', 'edited', 'status_changed')),
+     before JSONB,
+     after JSONB,
+     actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_task_history_task ON task_history (task_id, id)`,
+  // ---------- F6 uso e custo de IA (specs/004-uso-custo): só metadados e números, append-only ----------
+  `CREATE TABLE IF NOT EXISTS ai_usage_logs (
+     id BIGSERIAL PRIMARY KEY,
+     at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+     meeting_id UUID REFERENCES meetings(id) ON DELETE SET NULL,
+     category TEXT NOT NULL CHECK (category IN ('llm', 'asr')),
+     purpose TEXT NOT NULL CHECK (purpose IN ('ata', 'adr', 'itens', 'resumo', 'ao_vivo', 'asr_final', 'asr_ao_vivo', 'outro')),
+     provider TEXT NOT NULL,
+     model TEXT CHECK (char_length(model) <= 120),
+     channel TEXT CHECK (channel IN ('mic', 'remote', 'mixed')),
+     input_tokens BIGINT CHECK (input_tokens >= 0),
+     output_tokens BIGINT CHECK (output_tokens >= 0),
+     audio_seconds NUMERIC(12, 2) CHECK (audio_seconds >= 0),
+     cost_usd NUMERIC(14, 8) CHECK (cost_usd >= 0),
+     duration_ms INTEGER CHECK (duration_ms >= 0),
+     compute_ms INTEGER CHECK (compute_ms >= 0),
+     attempts SMALLINT NOT NULL DEFAULT 1,
+     success BOOLEAN NOT NULL,
+     error_code TEXT CHECK (
+       error_code IN ('timeout', 'unavailable', 'schema_invalid', 'refused', 'truncated', 'disabled', 'cancelled', 'other')
+       OR error_code ~ '^http_[0-9]{3}$'
+     ),
+     label TEXT CHECK (char_length(label) <= 80),
+     source TEXT NOT NULL DEFAULT 'live' CHECK (source IN ('live', 'audit_backfill')),
+     audit_log_id BIGINT,
+     CHECK (success OR error_code IS NOT NULL),
+     CHECK (category = 'asr' OR audio_seconds IS NULL),
+     CHECK (category = 'llm' OR purpose IN ('asr_final', 'asr_ao_vivo', 'outro')),
+     CHECK (category = 'asr' OR purpose NOT IN ('asr_final', 'asr_ao_vivo'))
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_user_at ON ai_usage_logs (user_id, at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_at ON ai_usage_logs (at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_usage_meeting ON ai_usage_logs (meeting_id) WHERE meeting_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_usage_audit_log ON ai_usage_logs (audit_log_id) WHERE audit_log_id IS NOT NULL`,
+  // Usuário excluído x "instância": a FK zera user_id nos dois casos, então marcamos as linhas antes de excluir.
+  `ALTER TABLE ai_usage_logs ADD COLUMN IF NOT EXISTS owner_removed BOOLEAN NOT NULL DEFAULT false`,
+  `CREATE OR REPLACE FUNCTION mark_usage_owner_removed() RETURNS trigger AS $$
+   BEGIN
+     UPDATE ai_usage_logs SET owner_removed = true WHERE user_id = OLD.id;
+     RETURN OLD;
+   END $$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_usage_owner_removed ON users`,
+  `CREATE TRIGGER trg_usage_owner_removed BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION mark_usage_owner_removed()`,
+  `CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log ((detail->>'target')) WHERE detail ? 'target'`,
+  // ---------- F3 busca e chat (specs/003-busca-chat): novas finalidades de uso de IA (embeddings e chat) ----------
+  `DO $$ BEGIN
+     IF EXISTS (
+       SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'ai_usage_logs'::regclass AND conname = 'ai_usage_logs_purpose_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%''chat''%'
+     ) THEN
+       ALTER TABLE ai_usage_logs DROP CONSTRAINT ai_usage_logs_purpose_check;
+       ALTER TABLE ai_usage_logs ADD CONSTRAINT ai_usage_logs_purpose_check
+         CHECK (purpose IN ('ata', 'adr', 'itens', 'resumo', 'ao_vivo', 'asr_final', 'asr_ao_vivo', 'busca', 'chat', 'outro'));
+     END IF;
+   END $$`,
 ];
 
 export async function migrate(pool: Pool): Promise<void> {
@@ -316,6 +443,7 @@ export async function migrate(pool: Pool): Promise<void> {
   try {
     await client.query("SELECT pg_advisory_lock(727001)");
     for (const sql of [...statements, ...rbacSeedStatements()]) await client.query(sql);
+    await migrateSearch(client);
   } finally {
     await client.query("SELECT pg_advisory_unlock(727001)").catch(() => {});
     client.release();

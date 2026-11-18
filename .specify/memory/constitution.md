@@ -1,23 +1,40 @@
 <!--
 Sync Impact Report
-- Versão: 2.2.0 → 3.0.0 (MAJOR: o LLM local (Ollama) deixa de existir; todo LLM passa a ser externo e
-  opt-in; decisão do usuário em 2026-11-18, porque o Ollama ocupava VRAM da GPU sem necessidade)
+- Versão: 2.3.0 → 3.0.0 (MAJOR: não existe mais LLM local; todo LLM passa a ser externo e opt-in;
+  decisão do usuário em 2026-11-18, porque o LLM local (qwen) ocupava VRAM da GPU de 6 GB sem necessidade)
 - Princípio redefinido: I. Local-first e Privacidade — "Todo LLM MUST rodar localmente" sai; a exceção
-  "LLM externo opcional" vira a única via de LLM: sem `ALLOW_EXTERNAL_LLM=true` não há ata, itens nem
-  ADR (a transcrição e a gravação seguem normalmente). Provedores: `claude` (assinatura do dono pelo
-  host-agent, novo padrão de `LLM_GENERATION_PROVIDER`), `codex` e `openrouter`. A análise ao vivo
-  (extração de itens, só com a chave "Itens" ligada) usa o mesmo provedor da geração e deixa de ser
-  "sempre local"; ASR ao vivo (Whisper) continua local. Embeddings seguem locais, em CPU.
+  "LLM externo opcional" vira a única via de LLM: sem `ALLOW_EXTERNAL_LLM=true` não há ata, itens, ADR
+  nem chat (a transcrição, a gravação e a busca seguem normalmente). Provedores: `claude` (assinatura do
+  dono pelo host-agent, novo padrão de `LLM_GENERATION_PROVIDER`), `codex` e `openrouter`. A análise ao
+  vivo (extração de itens, só com a chave "Itens" ligada) e o chat da busca (specs/003-busca-chat) usam o
+  mesmo provedor da geração e deixam de ser "sempre locais"; ASR ao vivo (Whisper) continua local.
+- Embeddings: o Ollama continua existindo SÓ para os embeddings da busca semântica (`bge-m3`, em CPU,
+  0 MiB de VRAM, sem reserva de GPU no compose). Nada sai da máquina na indexação nem na busca. O Ollama
+  não serve nenhum modelo generativo; o chat envia ao provedor externo apenas a pergunta e os trechos
+  recuperados (já filtrados por permissão), e a assinatura (claude/codex) só atende quando o dono de cada
+  reunião citada é o dono do host-agent.
 - Princípio modificado: V. Orçamento de GPU Consciente — a GPU atende só o Whisper; o `qwen3.5:4b` e o
   orçamento de ~3 GB do LLM saem.
 - Princípio modificado: III. Humano no Controle — o racional não cita mais o modelo local medido.
-- Variáveis removidas: OLLAMA_MODEL, OLLAMA_KEEP_ALIVE, OLLAMA_URL, LLM_PROVIDER; `ollama` sai do
-  EGRESS_ALLOWLIST padrão; "Ollama (local)" sai da interface.
-- Artefatos dependentes: apps/backend (llm/*, config), apps/frontend, docker-compose*.yml,
+- Variáveis removidas: OLLAMA_MODEL, OLLAMA_KEEP_ALIVE, LLM_PROVIDER; "Ollama (local)" como provedor de
+  LLM sai da interface. Mantidas: OLLAMA_URL, EMBED_* e SEARCH_* (só embeddings); `ollama` permanece no
+  EGRESS_ALLOWLIST padrão (o embedder fala com ele).
+- Artefatos dependentes: apps/backend (llm/*, config, search/chat/*), apps/frontend, docker-compose*.yml,
   .env.example, .env.vps.example, README.md (3 idiomas), CLAUDE.md, docs/ARCHITECTURE.md,
   docs/agente-arquiteto.md, docs/analise/agente-local.md, docs/analise/plataforma-multiusuario.md,
-  specs/001-agente-reunioes-mvp/quickstart.md (nota)
+  specs/001-agente-reunioes-mvp/quickstart.md (nota), specs/003-busca-chat/
 - Pendências adiadas: nenhuma
+
+Histórico anterior (2.2.0 → 2.3.0)
+- Versão: 2.2.0 → 2.3.0 (MINOR: regra de retenção dos registros de consumo de IA e da auditoria em
+  "Regras Operacionais"; decisão do dono em 2026-11-15, spec 004-uso-custo, Q2-A)
+- Seção modificada: Regras Operacionais → "Retenção": os registros de uso de IA (`ai_usage_logs`) e
+  a auditoria (`audit_log`) têm prazo de guarda configurável (padrão 24 e 12 meses), podados
+  diariamente e só com contagens auditadas; valor 0 = guardar sempre. O áudio continua indefinido.
+  Os registros guardam só metadados e números, nunca conteúdo de reunião.
+- Artefatos dependentes: apps/backend/src/{config,retention/prune,usage/*,audit/*}.ts, .env.example,
+  README.md (3 idiomas), CLAUDE.md, CHANGELOG.md, specs/004-uso-custo/
+- TODOs adiados: nenhum
 
 Histórico anterior (2.1.0 → 2.2.0)
 - Versão: 2.1.0 → 2.2.0 (MINOR: o assistente pode entrar no Teams logado numa conta Microsoft
@@ -154,8 +171,9 @@ Histórico
   cópia apenas do que o teste precisa e remoção dos volumes quando o teste acabar. Sem GPU no
   servidor, o passe ao vivo do Whisper fica desligado (ele é sempre local) e o passe final usa a exceção
   de ASR externo.
-- Modelo de fala, diarização e embedding MUST rodar localmente (faster-whisper, pyannote etc.).
-  Não existe LLM local: todo LLM é externo e só funciona pela exceção abaixo. Adaptadores para
+- Modelo de fala, diarização e embedding MUST rodar localmente (faster-whisper, pyannote etc.;
+  embeddings da busca: `bge-m3` no Ollama, em CPU, sem sair da máquina). Não existe LLM local: o
+  Ollama serve só embeddings, e todo LLM é externo e só funciona pela exceção abaixo. Adaptadores para
   provedores externos não podem ser habilitados por padrão e qualquer chamada externa MUST ser
   bloqueada e registrada em log de auditoria.
 - **Exceção — ASR externo de teste (opt-in):** com `ALLOW_EXTERNAL_ASR=true`, o áudio pode ser
@@ -166,7 +184,7 @@ Histórico
   registrado na auditoria (sem conteúdo); a UI MUST avisar quando uma transcrição usou o
   provedor externo. Sem a flag, qualquer tentativa é recusada.
 - **LLM externo (opt-in; única via de LLM):** com `ALLOW_EXTERNAL_LLM=true`, as gerações de IA
-  (ata, resumo, análise, ADR, demais documentos e a extração de itens ao vivo) usam um provedor
+  (ata, resumo, análise, ADR, demais documentos, a extração de itens ao vivo e o chat da busca) usam um provedor
   externo configurado: `claude` (assinatura do dono, padrão de `LLM_GENERATION_PROVIDER`), `codex`
   ou `openrouter`. A escolha vale a cada pedido na interface e, na análise automática (pós-reunião e
   ao vivo), pelo `LLM_GENERATION_PROVIDER` do `.env`. Requisitos:
@@ -174,6 +192,9 @@ Histórico
     são gerados e a UI MUST avisar isso com clareza;
   - a análise ao vivo (só com a chave "Itens" ligada) usa o mesmo provedor da geração e só envia
     trechos da transcrição; a transcrição em si continua local (Whisper);
+  - o chat da busca usa o mesmo provedor e envia só a pergunta e os trechos recuperados (já
+    filtrados por permissão); a busca e a indexação nunca saem da máquina; sem LLM habilitado a
+    busca segue e o chat responde com o erro claro;
   - as chaves nunca aparecem na interface nem em logs; enquanto não houver cadastro de
     provedores, a chave fica no `.env` (modo 600); com o cadastro, cifrada no banco e mostrada só
     pelo final;
@@ -202,7 +223,7 @@ Histórico
   HTTPS e autenticação.
 
 Racional: as reuniões contêm dados corporativos e de saúde pública, por isso o padrão é 100%
-local. As exceções de ASR e LLM existem por decisão explícita do usuário: a de ASR (2026-09-16)
+local (áudio, transcrição, busca e embeddings). As exceções de ASR e LLM existem por decisão explícita do usuário: a de ASR (2026-09-16)
 serve para comparar a qualidade da transcrição; a de LLM (2026-09-16) serve para gerações de
 melhor qualidade e, desde 2026-11-18, é a única via de LLM, porque o modelo local ocupava VRAM sem
 necessidade. Nas duas, o usuário responde por usá-las apenas com conteúdo que a política da
@@ -266,7 +287,7 @@ Racional: uma decisão só é confiável se for possível ouvir ou ler de onde e
   declarar seu consumo medido e respeitar o orçamento da fase (durante a reunião: só o ASR;
   pós-reunião: cargas sequenciais).
 - Padrão vigente: faster-whisper `large-v3-turbo` int8 (~1,4 GB), único uso de GPU. Não há LLM
-  local. Embeddings rodam em CPU.
+  local. Embeddings (bge-m3 no Ollama) rodam em CPU, sem reserva de GPU.
 - Trocar ou adicionar modelo exige medição real na máquina (tempo, VRAM, qualidade em pt-BR)
   registrada na documentação antes da adoção.
 - Falta de VRAM MUST degradar de forma controlada (fila, offload, menor frequência), nunca
@@ -326,6 +347,11 @@ Racional: aproveita o código validado e a stack principal do usuário.
   Limite de segurança de 4 horas nos dois casos.
 - **Retenção**: o áudio de cada canal é guardado indefinidamente; exclusão só por ação do
   usuário.
+- **Retenção dos registros**: os registros de consumo de IA (uso de LLM e de ASR) e a auditoria
+  de segurança guardam só metadados e números, nunca conteúdo de reunião, e são podados por prazo
+  configurável (padrão: 24 meses para o uso e 12 meses para a auditoria; valor 0 = guardar
+  sempre). A poda é diária e só registra contagens na auditoria. Excluir reunião ou usuário
+  preserva o consumo histórico, sem o vínculo removido.
 - **Calendário (MVP)**: importação de convites `.ics` e cadastro manual; Microsoft Graph apenas
   após aprovação da TI.
 - **Canais de áudio**: na gravação pelo computador, microfone do usuário e áudio remoto são

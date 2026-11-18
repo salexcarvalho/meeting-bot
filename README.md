@@ -13,10 +13,11 @@ Agente **local** de reuniões e arquitetura de software. Ele:
 - deixa tudo como **proposto** até você revisar.
 
 Áudio e transcrição ficam na máquina: o Whisper (faster-whisper) roda na GPU local. **Não há LLM
-local**: ata, itens e ADRs dependem de um LLM externo (sua assinatura do Claude ou do Codex, ou o
+local**: ata, itens, ADRs e o chat da busca dependem de um LLM externo (sua assinatura do Claude ou do Codex, ou o
 OpenRouter), que só funciona com `ALLOW_EXTERNAL_LLM=true` ([ver abaixo](#llm-externo)). Sem ele,
 a gravação e a transcrição seguem normalmente, mas a ata e os itens não são gerados (a interface
-avisa). Há ainda o **ASR externo de teste**, desligado por padrão
+avisa); a busca segue funcionando. O Ollama existe só para os embeddings da busca (`bge-m3`, em CPU).
+Há ainda o **ASR externo de teste**, desligado por padrão
 ([ver abaixo](#asr-externo-de-teste-opcional)).
 
 Também continuam disponíveis o **upload de áudio/vídeo** e o **Modo Agente**, em que um bot
@@ -111,7 +112,20 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 
 - **Importar convites**: no Outlook, salve o convite como `.ics` e arraste-o para a tela
   **Hoje**. Reimportar atualiza a reunião sem duplicar; um cancelamento a marca como cancelada.
+- **Agenda pela Aurora (Outlook)**: o assistente externo envia a agenda do dia para
+  `POST /api/agent/calendar/import` (token `AGENT_TOKEN`, no nome do `AGENT_OWNER`). Mesmo `uid` + início
+  atualiza em vez de duplicar (evento único é o mesmo de um `.ics`; ocorrência de série remarcada no dia mantém a reunião e as escolhas); reunião futura do mesmo dia que sumiu da
+  lista é cancelada (volta se reaparecer), mas lista vazia só limpa o dia com `confirmEmpty: true` e evento
+  fora do dia é ignorado sem derrubar o envio. Evento que já existe na agenda do dono (cadastro manual ou `.ics`, mesmo título e início ±5 min) é vinculado em vez de duplicado: o manual ganha o `uid` do envio, o `.ics` com UID próprio só é reconhecido. Outros dias, reuniões manuais/`.ics` e as escolhas do usuário (Não gravar, Gerar itens) não mudam, e o
+  envio não liga gravação extra: valem as regras de sempre. Detalhes em
+  [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md).
+  A mesma agenda do dia pode ser lida com `GET /api/agent/meetings?date=AAAA-MM-DD` (mesmo token; padrão hoje;
+  somente leitura, no escopo do `AGENT_OWNER`; devolve `icalUid`, horários, link, plataforma, "Não gravar", status e
+  `recurring`).
 - **Nova reunião**: cadastro manual com título, início, duração, link e projeto.
+- **Sem agenda no fim de semana** (`WORKING_DAYS`, padrão segunda a sexta, no fuso da agenda): séries (recorrência
+  manual, `.ics` e Aurora) não geram ocorrência em sábado e domingo. Uma reunião avulsa nesses dias aparece na agenda,
+  mas sem lembrete e sem o assistente entrar sozinho; use **Avisar e gravar neste dia** nela (ou **Enviar assistente agora**).
 - O projeto é **sugerido** pelas palavras-chave do título. Confirme-o em **Editar**.
 - **Não gravar**: disponível na tela ou no alerta do desktop; o assistente não entra.
 - **Enviar assistente agora**: manda o assistente antes do horário ou de novo depois de uma falha.
@@ -176,6 +190,41 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   conforme o que estiver habilitado (sem `ALLOW_EXTERNAL_LLM=true`, o botão avisa que não há LLM). O que foi gerado fora aparece marcado
   ("OpenRouter", "Claude" ou "Codex" no item, no ADR e na ata).
 
+### Compartilhar uma reunião
+
+Na página da reunião, o dono clica em **Compartilhar**, busca a pessoa pelo nome ou usuário (mínimo de 3 letras) e escolhe **Leitura** ou **Edição**:
+
+- **Leitura:** a pessoa vê a reunião (link, participantes, transcrição, áudio, itens e ata).
+- **Edição:** também edita itens, ADRs e nomes de falantes. Gravar, parar, reprocessar, reagendar, trocar o link, "Não gravar", "dia sem agenda", cancelar, gerar ata/ADR, ligar itens e excluir continuam só do dono. Quem não gerencia reuniões (VIEWER) só recebe leitura.
+- O dono vê **Quem tem acesso**, troca o nível e remove. Vale na hora, inclusive para quem está com a reunião aberta (a transcrição ao vivo para de chegar). Só o dono vê a lista; o destinatário vê o próprio nível e o nome do dono.
+- Em reunião de série, o diálogo oferece **só esta ocorrência** ou **esta e as próximas já na agenda**. Ocorrências passadas ficam de fora e as criadas depois não herdam o acesso.
+- Em **Reuniões**, os filtros **Todas**, **Minhas**, **Compartilhadas comigo** e **Compartilhadas por mim** (`?escopo=`); selo com o nível e o dono, marca **Nova** até abrir e aviso na tela. Nada sai da máquina (sem e-mail).
+- **Sair desta reunião** remove o próprio acesso. Administrador não lê conteúdo alheio, e desativar o dono não tira o acesso de quem recebeu.
+- Compartilhar, alterar, revogar e sair ficam no `audit_log` só com ids (nunca título ou conteúdo).
+
+### Minhas pendências e tarefas
+
+Menu **Minhas pendências** (permissão `tasks.read`/`tasks.manage`; o papel Leitor não a tem). A tarefa é **pessoal**: só quem a criou a vê e altera. Administrador e super administrador também não leem tarefa alheia.
+
+- **Aprovar vira tarefa:** aprovar uma **pendência** da reunião cria a sua tarefa, sem duplicar (aprovar de novo, reabrir e aprovar ou gerar a ata de novo mantém uma só). Só nasce sozinha se o responsável for você ("eu", seu usuário ou seu nome) ou estiver vazio, e então aparece como **Responsável não confirmado**. Pendência de outra pessoa não vira tarefa sozinha: o aviso diz de quem é.
+- **Virar tarefa:** em qualquer item aprovado (risco, requisito, decisão…) o botão cria a tarefa, com título, prazo e prioridade editáveis. Item proposto ou rejeitado não vira tarefa. Se já existe uma tarefa parecida na reunião, o diálogo avisa e deixa criar mesmo assim.
+- **Prazo:** só entra como data quando o texto é inequívoco (`30/11`, `até 5/12`, `hoje`, `amanhã`); "sexta" ou "semana que vem" ficam como **prazo dito** ao lado do campo, para você decidir.
+- **Tela:** contadores clicáveis (abertas, atrasadas, vencem hoje, sem responsável confirmado) e filtros por status, projeto, prazo, responsável, prioridade, reunião e busca; o filtro fica na URL (`?status=…&prazo=overdue`). O status muda direto na lista. "Hoje" e "atrasada" valem no fuso do usuário.
+- **Tarefa manual:** **Nova tarefa** (também na reunião) com projeto, prazo, prioridade e responsável; editar, excluir e ver o histórico (antes e depois, quem e quando).
+- **Reunião compartilhada:** quem recebeu a reunião cria as próprias tarefas dos itens que vê. Se o acesso for revogado, a tarefa continua, sem o link da reunião, do item e do áudio (fica o que foi copiado enquanto havia acesso). Excluir a reunião não apaga as tarefas.
+- **Tela Hoje:** cartão com atrasadas, vencem hoje, abertas e pendências propostas a revisar.
+- Nada sai da máquina e nenhuma IA é chamada. A migração é aditiva (`tasks`, `task_history`) e não cria tarefas de reuniões antigas; use **Virar tarefa**.
+
+### Buscar e perguntar às reuniões
+
+Menu **Busca** (atalho `Ctrl+K`). Exige `meetings.read`; a transcrição também exige `transcripts.read`, e ata, itens e ADRs exigem `documents.read`.
+
+- **Buscar:** modo **híbrido** por padrão (texto em português, sem acento nem flexão, mais busca **semântica** por sentido, fundidos por RRF). Filtros por projeto, período, tipo de conteúdo e modo; o resultado mostra o trecho destacado e se foi achado por texto ou por semântica. Clicar abre a reunião no segmento e no horário (`?seg=`, `?t=`, `?item=`, `?adr=`), com o áudio posicionado sem tocar. Item rejeitado nunca aparece; item ou ADR proposto aparece sinalizado.
+- **Perguntar:** aba **Perguntar** (RAG local). A resposta usa só trechos das reuniões que você pode ler, cada afirmação traz uma citação clicável conferida contra o trecho, e sem evidência a resposta é **"Não encontrei registro"**. Itens e ADRs ainda não aprovados entram rotulados como "proposto pela IA". O histórico da conversa fica só no navegador. O chat usa o **LLM externo** (o mesmo `LLM_GENERATION_PROVIDER`: assinatura ou OpenRouter; a pergunta e os trechos recuperados saem da máquina, a indexação não) e exige `ALLOW_EXTERNAL_LLM=true`: sem ele a busca continua e o chat responde com o aviso. A assinatura só atende quando as reuniões citadas são do dono do host-agent. Com reunião ao vivo, usa contexto menor.
+- **Privacidade:** a permissão é aplicada dentro da própria consulta (dono ou compartilhamento); revogar um compartilhamento tira a reunião dos resultados na hora; administrador não lê conteúdo alheio; texto de busca, pergunta, resposta e trechos nunca vão para log nem para auditoria. O consumo aparece em **Consumo de IA** (finalidades "Busca (embeddings)" e "Chat sobre reuniões").
+- **Índice:** pgvector no mesmo Postgres; os embeddings (`bge-m3`) rodam no Ollama **em CPU** (0 MiB de VRAM) e esperam enquanto houver gravação ou chamada; a busca de texto funciona mesmo com o Ollama (embeddings) fora. Reuniões antigas são indexadas em segundo plano (da mais recente para a mais antiga, retomável após reinício). **Configurações > Busca** mostra o estado e **Reindexar minhas reuniões**; no terminal: `docker compose exec backend npm run search:reindex`.
+- **Servidor de teste (VPS):** só busca de texto; semântica e chat ficam desligados (`SEARCH_SEMANTIC=off`).
+
 ### Upload e Modo Agente
 
 Em **Reuniões**:
@@ -210,9 +259,21 @@ Cada usuário tem as próprias configurações:
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar, gravação do nome falado e conta do agente no Teams.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
-- **Consumo de IA:** tokens e custo do mês por provedor, modelo e reunião, mais as últimas chamadas.
-  Vem do `audit_log`, é só leitura e não bloqueia geração. A assinatura não cobra por chamada: só
-  tokens. Cada um vê o consumo das reuniões que enxerga.
+- **Consumo de IA:** cada chamada de LLM (OpenRouter, assinatura), os embeddings da busca (Ollama, em CPU) e cada transcrição (Whisper local ou
+  Deepgram externo) fica registrada com finalidade, provedor, modelo, tokens, minutos de áudio, tempo e resultado
+  (inclusive falhas, só com um código curto). O painel mostra o mês ou um intervalo (até 24 meses): totais, por
+  finalidade, provedor, modelo e dia, minutos de ASR local × externo, as reuniões que mais consumiram e as últimas
+  chamadas, com filtro de falhas. O custo é o que o provedor informou (nunca estimado): assinatura e Ollama
+  mostram "sem custo por chamada". É só leitura e não bloqueia geração. Cada um vê só o consumo das reuniões que
+  criou: o custo é do dono, e reunião compartilhada não entra.
+- **Segurança:** os eventos que dizem respeito a você (entradas e tentativas recusadas, com IP só nas recusas, troca de
+  senha, conta Teams, ações de administrador na sua conta e envios para fora da máquina feitos em seu nome), sem
+  conteúdo de reunião.
+- **Administração > Uso de IA** (permissão `ai_usage.read`) mostra o consumo agregado por usuário, provedor, modelo,
+  finalidade e dia, sem título nem id de reunião; **Administração > Auditoria** (`audit.read`) mostra os eventos do
+  sistema, sempre por uma lista permitida de campos.
+- **Retenção:** o uso de IA é guardado por 24 meses (`USAGE_RETENTION_DAYS=730`) e a auditoria por 12 meses
+  (`AUDIT_RETENTION_DAYS=365`), podados todo dia; `0` guarda para sempre. O áudio segue indefinido.
 
 ## Configuração principal (`.env`)
 
@@ -221,9 +282,16 @@ Cada usuário tem as próprias configurações:
 | `AGENT_TOKEN` | — | Segredo compartilhado com o host-agent (≥ 32 caracteres) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Nome do canal do microfone |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso da agenda e da ata |
+| `WORKING_DAYS` | `1,2,3,4,5` | Dias com agenda (ISO, 1 = segunda … 7 = domingo). Fora deles não há lembrete nem gravação automática |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper no worker |
 | `HF_TOKEN` | vazio | Separação de falantes |
 | `ALLOW_EXTERNAL_LLM` / `LLM_GENERATION_PROVIDER` | `false` / `claude` | Liga o LLM externo (obrigatório para ata e itens) e escolhe o provedor da geração automática e da análise ao vivo: `claude`, `codex` ou `openrouter` ([ver abaixo](#llm-externo)) |
+| `SEARCH_ENABLED` / `SEARCH_SEMANTIC` | `true` / `auto` | Liga a busca; `auto`/`on` exigem pgvector (o boot falha com mensagem clara sem ele), `off` = só texto |
+| `EMBED_MODEL` / `EMBED_DIM` | `bge-m3` / `1024` | Modelo de embedding (Ollama, em CPU) e dimensão da coluna `vector` |
+| `EMBED_KEEP_ALIVE` / `EMBED_BATCH` | `10m` / `16` | Permanência do modelo em RAM e textos por requisição |
+| `SEARCH_INDEX_DEBOUNCE_SECONDS` | 20 | Junta edições próximas antes de reindexar a reunião |
+| `CHAT_MIN_SIMILARITY` | `0.45` | Relevância mínima para o chat responder (abaixo: "não encontrei") |
+| `CHAT_MAX_CONTEXT_TOKENS` / `CHAT_MAX_CONTEXT_TOKENS_LIVE` | 3500 / 2000 | Contexto do chat (normal / com reunião ao vivo) |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Extração ao vivo a cada N s de fala nova… |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | …ou no máximo a cada M s |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Resumo corrente e deduplicação |
@@ -235,7 +303,7 @@ Cada usuário tem as próprias configurações:
 | `BOT_CAMERA` | `false` | Câmera virtual com o avatar do agente (imagem parada; vira quadro de vídeo na chamada) |
 | `BOT_LIVE_TRANSCRIPTION` | `true` | Transcrição ao vivo do áudio gravado pelo assistente |
 | `MAX_AVATAR_KB` / `MAX_VOICE_KB` / `MAX_VOICE_SECONDS` | 2048 / 4096 / 60 | Limites dos arquivos de perfil |
-| `EGRESS_ALLOWLIST` | `worker-gpu,localhost,127.0.0.1` | Hosts que o backend pode acessar |
+| `EGRESS_ALLOWLIST` | `ollama,worker-gpu,localhost,127.0.0.1` | Hosts que o backend pode acessar |
 
 ### ASR externo de teste (opcional)
 
@@ -267,10 +335,10 @@ Depois, `docker compose up -d backend`.
 O LLM é sempre externo (não há modelo local) e fica desligado até `ALLOW_EXTERNAL_LLM=true`. A ata,
 os itens e os ADRs saem da **sua assinatura** (Claude ou Codex, [ver abaixo](#sua-assinatura-claude-code-ou-codex-opcional))
 ou de um modelo do **OpenRouter** (com custo por uso). A **análise ao vivo** (extração de itens,
-só com a chave **Itens** ligada) usa o mesmo provedor de `LLM_GENERATION_PROVIDER`.
+só com a chave **Itens** ligada) e o **chat da busca** usam o mesmo provedor de `LLM_GENERATION_PROVIDER`.
 
 > **Atenção:** com essa opção, a **transcrição da reunião sai da máquina**, inclusive trechos
-> enviados durante a reunião pela análise ao vivo. Use apenas com conteúdo que a política da
+> enviados durante a reunião pela análise ao vivo, e a pergunta e os trechos recuperados pelo chat da busca. Use apenas com conteúdo que a política da
 > organização permite enviar para terceiros. A transcrição ao vivo (Whisper) continua local.
 > Sem `ALLOW_EXTERNAL_LLM=true`, nada é gerado: a gravação e a transcrição seguem e a interface
 > avisa que ata e itens estão indisponíveis.
@@ -347,6 +415,23 @@ Não exponha a porta 3000 sem TLS. Com o Caddy incluído:
 docker compose --profile https up -d
 ```
 
+### Atualizar uma instalação existente para a busca (pgvector)
+
+O Postgres passa a usar uma imagem própria (`docker/postgres`: `postgres:16-alpine` com o pgvector compilado). É a **mesma versão major e a mesma base Alpine**, então o volume `pgdata` abre como está: sem `pg_upgrade`, sem dump/restore e sem `REINDEX`. Faça com o backend **ocioso** (nenhuma reunião gravando ou processando):
+
+```bash
+export DOCKER_CONTEXT=default
+mkdir -p ~/backups && docker compose exec postgres pg_dump -U meetingbot -Fc meetingbot > ~/backups/meetingbot-$(date +%F).dump
+docker compose build postgres                       # imagem com pgvector
+docker compose up -d postgres ollama                # recria os dois com os volumes existentes
+docker compose exec ollama ollama pull bge-m3       # download inicial do modelo de embedding
+docker compose up -d --build backend                # a migração cria a extensão e as tabelas; a indexação roda em segundo plano
+```
+
+- A migração é idempotente (`CREATE EXTENSION IF NOT EXISTS vector`) e **falha com mensagem clara** se o Postgres ainda não for a imagem nova (ou use `SEARCH_SEMANTIC=off` para só texto).
+- O container `ollama` serve só o embedding (CPU, sem reserva de GPU); não há LLM local.
+- Restaurar o dump exige o Postgres da mesma versão major (16). **Rollback:** `SEARCH_ENABLED=false` no `.env` e `docker compose up -d backend`; para voltar a imagem, `DROP EXTENSION vector CASCADE;` antes de trocar para `postgres:16-alpine` (as tabelas `search_*` são reconstruíveis).
+
 ### Servidor de teste (VPS com Dokploy)
 
 `docker-compose.vps.yml` sobe a mesma aplicação num servidor, sem GPU e sem desktop: a transcrição
@@ -391,7 +476,6 @@ scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
   gerado só com a descrição e o resumo da reunião.
 - **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o
   upload ou o assistente convidado.
-- **Compartilhar reunião** ainda não tem tela (a estrutura `meeting_shares` já existe no backend).
 - **O assistente convidado aparece só com as iniciais** na reunião: convidado anônimo não tem foto no Meet
   nem no Teams. A câmera virtual (`BOT_CAMERA`) mostra o ícone, mas como quadro de vídeo. No Teams, a
   conta do agente troca o convidado pelo nome da conta.

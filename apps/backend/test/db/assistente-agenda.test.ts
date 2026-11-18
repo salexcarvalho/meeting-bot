@@ -34,6 +34,8 @@ vi.mock("../../src/bot/runner", async (importOriginal) => ({
 describe.skipIf(!enabled)("assistente nas reuniões da agenda (HTTP + Postgres)", async () => {
   vi.stubEnv("AUTO_ASSISTANT", "true");
   vi.stubEnv("AUTO_LOCAL_RECORDING", "false");
+  // As reuniões são criadas em torno de "agora": todo dia vale, senão o teste dependeria de rodar em dia útil.
+  vi.stubEnv("WORKING_DAYS", "1,2,3,4,5,6,7");
   vi.stubEnv("AGENT_OWNER", "aa-dono");
 
   const { pool, createUser, recoverInterruptedMeetings } = await import("../../src/db");

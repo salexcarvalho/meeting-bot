@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Adr, Item } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
@@ -103,7 +103,7 @@ function AdrCard({
   }
 
   return (
-    <article className={`adr-card ${adr.status}`}>
+    <article id={`adr-${adr.id}`} className={`adr-card ${adr.status}`}>
       <h3 className="adr-head">
         <button type="button" className="adr-toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle} disabled={editing}>
           <span className="adr-code">{adr.code ?? "Sugestão"}</span>
@@ -222,13 +222,18 @@ function AdrCard({
   );
 }
 
+/** ADR a mostrar (vindo da busca); `seq` repete o foco no mesmo ADR. */
+export type AdrFocus = { id: string; seq: number };
+
 export function AdrList({
   adrs,
   items = [],
   onChange,
   onShowItem,
+  focus = null,
   readOnly = false,
 }: {
+  focus?: AdrFocus | null;
   adrs: Adr[];
   items?: Item[];
   onChange: (a: Adr) => void;
@@ -240,6 +245,30 @@ export function AdrList({
   // null = padrão (aberto só quando há um ADR na lista); depois, os ids abertos. Trocar o filtro volta ao padrão.
   const [openIds, setOpenIds] = useState<Set<string> | null>(null);
   const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  const adrsRef = useRef(adrs);
+  adrsRef.current = adrs;
+
+  // Vindo da busca: mostra o filtro certo, abre o ADR, rola até ele e o destaca.
+  useEffect(() => {
+    if (!focus) return;
+    const target = adrsRef.current.find((a) => a.id === focus.id);
+    if (!target) return;
+    setFilter(target.status === "rejeitado" ? "rejeitado" : "ativos");
+    setOpenIds(new Set([target.id]));
+    let clear = 0;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`adr-${focus.id}`);
+      if (!el) return;
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+      el.classList.add("flash");
+      clear = window.setTimeout(() => el.classList.remove("flash"), 1800);
+    }, 50);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(clear);
+    };
+  }, [focus]);
   const counts = useMemo(() => {
     const c: Record<Filter, number> = { ativos: 0, proposto: 0, aprovado: 0, rejeitado: 0 };
     for (const a of adrs) {

@@ -3,9 +3,12 @@ import { EXTERNAL_ASR_ID, providerLabel, transcribeFileExternal } from "./asr/op
 import { runTranscriptionJob, type JobChannelResult, type JobFile } from "./asr/workerClient";
 import { config } from "./config";
 import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
+import { markDirty } from "./search/dirty";
 import { automaticProvider, generationLabel } from "./llm";
 import { hub } from "./live/hub";
 import { countFinalSegments, defaultSpeaker, EvidenceRemapper, NewSegment, replaceWithFinal } from "./repo/transcripts";
+import { classifyError } from "./usage/errorCode";
+import { recordUsage } from "./usage/recorder";
 
 /** all = transcrição final + análise; analysis = só a análise (ata); adrs = só os ADRs */
 export type ProcessStep = "all" | "analysis" | "adrs";
@@ -93,6 +96,7 @@ export function enqueueProcessing(meetingId: string, step: ProcessStep = "all", 
       if (onlyAdrs) {
         const provider = await resolve();
         const result = await adrGeneration(meetingId, (s, p) => report(meetingId, s, p), provider, opts.itemId);
+        await markDirty(meetingId);
         finalEvent = { done: adrSummary(result) };
       } else {
         await processMeeting(meetingId, step, resolve);
@@ -123,6 +127,41 @@ async function providerFor(meetingId: string, requested: LlmChoice | undefined):
       report(meetingId, "aguardando_assinatura", 0);
     },
   });
+}
+
+/** Passe final no Whisper local: uma linha de uso por passe (minutos de áudio e tempo de parede). */
+async function runLocalFinalPass(
+  meetingId: string,
+  files: JobFile[],
+  run: () => Promise<JobChannelResult[]>,
+): Promise<JobChannelResult[]> {
+  const started = Date.now();
+  const record = (success: boolean, error: unknown, seconds: number) =>
+    recordUsage({
+      category: "asr",
+      purpose: "asr_final",
+      provider: "whisper",
+      model: null,
+      meetingId,
+      inputTokens: null,
+      outputTokens: null,
+      audioSeconds: seconds,
+      costUsd: null,
+      durationMs: Date.now() - started,
+      computeMs: null,
+      attempts: 1,
+      success,
+      errorCode: success ? null : classifyError(error),
+      label: `${files.length} canal(is)`,
+    });
+  try {
+    const results = await run();
+    record(true, null, results.reduce((sum, r) => sum + r.duration, 0));
+    return results;
+  } catch (err) {
+    record(false, err, 0);
+    throw err;
+  }
 }
 
 /** O provedor é escolhido depois da transcrição: a espera pela assinatura não segura o passe final. */
@@ -158,11 +197,13 @@ async function processMeeting(
         );
       }
     } else {
-      results = await runTranscriptionJob(
-        files,
-        { language: config.transcriptionLanguage, prompt: await promptFor(meetingId) },
-        (workerStep, progress) =>
-          report(meetingId, workerStep === "diarizando" ? "diarizando" : "transcrevendo", progress),
+      results = await runLocalFinalPass(meetingId, files, async () =>
+        runTranscriptionJob(
+          files,
+          { language: config.transcriptionLanguage, prompt: await promptFor(meetingId) },
+          (workerStep, progress) =>
+            report(meetingId, workerStep === "diarizando" ? "diarizando" : "transcrevendo", progress),
+        ),
       );
     }
 
@@ -194,4 +235,6 @@ async function processMeeting(
   console.log(`[pipeline ${meetingId}] análise fora da máquina: ${generationLabel(provider)}`);
   await postAnalysis(meetingId, (s, p) => report(meetingId, s, p), provider);
   await markDone(meetingId);
+  // reunião concluída: entra na fila de indexação da busca (nunca lança)
+  await markDirty(meetingId);
 }

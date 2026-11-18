@@ -6,15 +6,17 @@ agente arquiteto, memória pesquisável.
 
 - Análise, decisões (D1–D8) e backlog: `docs/analise/agente-local.md`
 - Agente arquiteto no código (prompts, fluxo ao vivo e pós-reunião): `docs/agente-arquiteto.md`
+- Busca e chat sobre as reuniões (F3): `specs/003-busca-chat/` (módulo `apps/backend/src/search/`; Postgres com pgvector pela imagem `docker/postgres`, mesma major 16 e base Alpine; embeddings `bge-m3` no Ollama em CPU, que é o único uso do Ollama)
 - Especificação do MVP (Spec Kit): `specs/001-agente-reunioes-mvp/` (spec, plan, research, data-model, contracts, quickstart, tasks)
+- Minhas pendências e tarefas (Spec Kit): `specs/002-pendencias-tarefas/` (tarefas pessoais por `owner_id`; aprovar pendência vira tarefa; implementada em `apps/backend/src/tasks/`)
 - Estado atual do código: monorepo `apps/{backend,frontend,worker-gpu,host-agent}` + `packages/contracts` (Node 24 + TS, React, Python 3.12); visão geral em `docs/ARCHITECTURE.md`
-- Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
+- Comandos: `npm run typecheck`, `npm test`, `npm run test:db -w @meeting-bot/backend` (Postgres descartável com pgvector, imagem de `docker/postgres` construída uma vez), `npm run search:reindex -w @meeting-bot/backend` (fila de indexação da busca), `uv run pytest` no host-agent; subir com `docker --context default compose up -d --build`
 - Fluxo de trabalho: Spec Kit (`/speckit-*`), commits em português
 - Git: repositório público `github.com/salexcarvalho/meeting-bot` (AGPL-3.0-or-later). Branches `feat/*` → `develop` → `homolog` → `main`; tag `vX.Y.Z` em `main` (ver `CONTRIBUTING.md`). README em 3 idiomas (`README.md`, `README.en.md`, `README.es.md`): mudança de comportamento atualiza os três
 
 ## Regras do projeto (decididas pelo usuário)
 
-- `LOCAL_ONLY=true` sempre: nenhum áudio, transcrição ou documento sai da máquina; não há LLM local (Ollama removido, constituição 3.0.0).
+- `LOCAL_ONLY=true` sempre: nenhum áudio, transcrição ou documento sai da máquina; não há LLM local (constituição 3.0.0): o Ollama existe só para os embeddings da busca, em CPU, e nada sai da máquina na indexação.
   - Exceção (constituição 3.0.0, única via de LLM): LLM externo com `ALLOW_EXTERNAL_LLM=true` para ata, itens e ADR — `claude`/`codex` (assinatura pessoal do dono, executada pelo host-agent, só nas reuniões do `AGENT_OWNER`; `claude` é o padrão) ou `openrouter`; escolhido a cada clique em "Gerar ata/ADR" ou, na análise automática (pós-reunião e ao vivo), por `LLM_GENERATION_PROVIDER`. Sem a flag, a transcrição e a gravação seguem, mas ata e itens não são gerados.
   - Exceção (constituição 1.1.0): ASR externo de teste (Deepgram nova-3 via OpenRouter), só com `ALLOW_EXTERNAL_ASR=true`, só no passe final/upload, escolhido por `.env` ou por reunião. Whisper local continua padrão; ao vivo sempre local.
 - Nunca contornar políticas da organização (sem scraping de Outlook/Teams para burlar bloqueio de app).
@@ -29,7 +31,10 @@ agente arquiteto, memória pesquisável.
   - no Teams, o dono pode conectar uma conta Microsoft dedicada ao agente (constituição 2.2.0): o bot entra logado com o nome da conta (que precisa dizer que é a ata); sessão cifrada por usuário gerada com `npm run teams:login`, sem senha guardada;
   - host-agent grava só as reuniões de `AGENT_OWNER` (host-agent do sócio fica para o futuro).
 
+- Sem agenda no fim de semana (`WORKING_DAYS`, padrão seg–sex, fuso `APP_TIMEZONE`): séries não geram ocorrência em sábado/domingo (manual, `.ics`, Aurora); reunião avulsa nesses dias aparece na agenda, mas sem lembrete e sem o assistente entrar/gravar sozinho, salvo pedido do usuário por reunião (`auto_on_off_day`) ou "Enviar assistente agora"/"Gravar agora".
+- Busca e chat (`specs/003-busca-chat`): o chat usa o **LLM externo** do `LLM_GENERATION_PROVIDER` (exige `ALLOW_EXTERNAL_LLM=true`; assinatura só se as reuniões citadas forem do dono do host-agent; sem LLM a busca segue e o chat responde 503 com o motivo); busca e chat só enxergam reuniões visíveis (`visibleMeetingsSql`), com a permissão aplicada dentro da consulta; consulta, pergunta e trechos nunca vão para log nem auditoria; embeddings só rodam sem gravação ou chamada em curso; no servidor de teste é só busca de texto (`SEARCH_SEMANTIC=off`). Aplicar a imagem nova do Postgres exige `pg_dump` antes e backend ocioso.
 - Itens (decisões, pendências, riscos, requisitos, ADRs) só são gerados nas reuniões com a chave "Itens" ligada (`meetings.extract_items`, padrão desligada; ligada por "Gerar itens" na reunião). Desligada: sem extração ao vivo e análise final só com resumo.
+- Retenção de registros (constituição 2.3.0): consumo de IA (`ai_usage_logs`, só metadados) 24 meses e auditoria 12 meses, podados diariamente (`USAGE_RETENTION_DAYS`/`AUDIT_RETENTION_DAYS`; 0 = guardar sempre); o áudio segue indefinido.
 - Servidor de teste (constituição 2.0.0): VPS com Dokploy, `docker-compose.vps.yml` + `.env.vps.example`; transcrição final pelo OpenRouter (sem GPU), ata/ADR pela assinatura do Claude no container `agent-cli` (`AGENTE_MODE=llm`), sem passe ao vivo e sem gravação pelo PC. Guia: `docs/vps-dokploy.md`.
 
 ## Ambiente

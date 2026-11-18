@@ -28,15 +28,16 @@ data-model.md, contracts/).
 | Serviço | Imagem | Papel |
 |---|---|---|
 | `backend` | build de `apps/backend/Dockerfile` sobre `mcr.microsoft.com/playwright:v1.63.0-noble` | API, UI, WebSockets, agendador, agente, ata, Modo Agente |
-| `postgres` | `postgres:16-alpine` | persistência (`pgdata`) |
+| `postgres` | build de `docker/postgres` (`meeting-bot-postgres:16-pgvector`: `postgres:16-alpine` + pgvector 0.8.7) | persistência (`pgdata`), busca de texto e vetorial |
 | `worker-gpu` | build de `apps/worker-gpu` sobre `nvidia/cuda:12.8.1-base` | `/transcribe/chunk` (ao vivo) e `/jobs/transcribe` (passe final + diarização) |
+| `ollama` | `ollama/ollama:0.32.14` | só embeddings da busca (`bge-m3`, CPU, sem reserva de GPU; `OLLAMA_MAX_LOADED_MODELS=1`); nenhum modelo generativo |
 | `caddy` | `caddy:2-alpine` (profile `https`) | TLS quando exposto em rede |
 
 Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata`.
 
 ## Fluxos
 
-> Não há serviço de LLM: o LLM é sempre externo (constituição 3.0.0; o Ollama foi removido em 2026-11-18).
+> Não há LLM local: o LLM (ata, itens, ADR, análise ao vivo e chat) é sempre externo (constituição 3.0.0). O `ollama` existe só para os embeddings da busca, em CPU.
 >
 > Servidor de teste (Dokploy): `docker-compose.vps.yml` troca o worker-gpu pelo ASR externo
 > e pelo container `agent-cli` (host-agent em `AGENTE_MODE=llm`, só geração). Ver `docs/vps-dokploy.md`.
@@ -45,6 +46,9 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata
    - `.ics`: o node-ical expande recorrências.
    - O upsert usa `(UID, RECURRENCE-ID)` e `SEQUENCE`.
    - Cadastro manual também entra na agenda.
+   - Dia fora de `WORKING_DAYS` (padrão sáb/dom, fuso `APP_TIMEZONE`): série não gera ocorrência (recorrência manual
+     e sua extensão, RRULE do `.ics`, `recurring: true` da Aurora). Reunião avulsa fica na agenda, mas sem lembrete
+     (`AgentMeeting.noAlerts`) e sem entrada/gravação automática, salvo `meetings.auto_on_off_day` (`calendar/offDay.ts`).
    - O projeto é sugerido por palavra-chave.
 2. **Gravação**
    - No horário, o scheduler põe o **assistente** (`bot/autoJoin.ts`) em toda reunião da agenda com link
@@ -84,6 +88,13 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata
    - O resumo para enviar (`GET /meetings/:id/resumo`, `renderResumo`) sai dos mesmos dados, só com itens aprovados.
    - Rejeitados são omitidos e propostos aparecem marcados.
 
+6. **Busca e chat** (`apps/backend/src/search/`, specs/003)
+   - Índice: `search_chunks` (trechos de transcrição `final` em janelas de ~180 palavras, narrativa da ata, itens, ADRs e metadados) e `search_index_state` (fila durável, um estado por reunião), no mesmo Postgres. Texto: `tsvector` com a configuração `pt_unaccent`; vetor: `vector(1024)` com HNSW parcial.
+   - Indexação em duas fases (`indexer.ts`, `worker.ts`): **texto** (só banco, a qualquer momento) e **vetores** (`bge-m3` no Ollama com `num_gpu: 0`, 0 MiB de VRAM, RAM extra < 2,5 GB). O worker pega uma reunião por vez (alteração mais recente primeiro, depois a reunião mais recente), espera o debounce (`SEARCH_INDEX_DEBOUNCE_SECONDS`), **não calcula embeddings com reunião em `recording`/`stopping`/`joining`/`waiting_admission`/`in_call`**, usa hash do conteúdo mais o modelo para só recalcular o que mudou, espera 30 s, 2 min, 10 min, 1 h e 6 h entre falhas e marca `failed` na 5ª. No boot, `indexing` volta a `pending`; o backfill das reuniões antigas é o seed da migração (mais recente primeiro, retomável). Gatilhos: fim do pipeline e dos ADRs, passe final (a invalidação dos trechos de transcrição entra na mesma transação de `replaceWithFinal`), itens, ADRs, falantes, título, projeto.
+   - Consulta (`query.ts`): léxica (`websearch_to_tsquery`, AND com reserva em OR) e vetorial (`hnsw.iterative_scan = relaxed_order`), fundidas por RRF (k = 60). **A permissão é aplicada na consulta**: `visibleMeetingsSql` + tipos permitidos pelo papel + item/ADR rejeitado fora, antes do `LIMIT`; o índice não guarda dono, e a hidratação do resultado reaplica a permissão. Sem Ollama (embeddings), pgvector ou modelo, a busca cai para texto e informa o motivo.
+   - Chat (`chat/`): recupera pela mesma consulta, descarta o que não passa de `CHAT_MIN_SIMILARITY` (ou de acerto léxico estrito), monta o prompt com trechos delimitados como dados, chama o **LLM externo** do `LLM_GENERATION_PROVIDER` (`generate("post", …, provider)`; exige `ALLOW_EXTERNAL_LLM=true`; assinatura `claude`/`codex` só vale se o dono de cada reunião citada é o dono do host-agent, e entra na fila de um CLI por vez; sem LLM utilizável a busca segue e o chat responde 503 com o motivo), e **valida** cada citação (`ref` existente, `quote` literal conferida); sem citação válida, "não encontrei". Histórico só no cliente.
+   - Consumo: embeddings (`busca`) e chat (`chat`) entram em `ai_usage_logs` (embeddings: provedor `ollama`; chat: o provedor do LLM externo), sem conteúdo.
+
 O detalhamento do agente arquiteto (prompts, janelas, validação, deduplicação, schemas e onde alterar)
 está em [`agente-arquiteto.md`](agente-arquiteto.md).
 
@@ -99,7 +110,18 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - `router.param` (`meetingParamGuard`/`childParamGuard`) confere o acesso antes de qualquer rota com `:id`/`:itemId`;
   - sem acesso, a resposta é 404; só leitura tentando escrever recebe 403;
   - listas, agenda e projetos usam `visibleMeetingsSql`;
-  - o WebSocket só entrega eventos a quem tem acesso.
+  - o WebSocket só entrega eventos a quem tem acesso;
+  - gestão de compartilhamento (`shares/`): `GET|POST /meetings/:id/shares`, `PUT|DELETE /meetings/:id/shares/:userId`, `GET /users/lookup`, `POST|DELETE /shared-with-me/:meetingId[/seen]`. As rotas de gestão estão em `OWNER_ONLY_ANY_METHOD` (`authz/ownerOnly.ts`): dono em qualquer método, inclusive `GET`, e cada função de `shares/service.ts` confere `created_by` de novo (404 sem acesso, 403 para destinatário, também para admin sem relação);
+  - revogação imediata: `LiveHub.revokeAccess` invalida a audiência, remove a assinatura do usuário e só então envia o evento direcionado `meeting_access` (sem esperar o `sweep` de 30 s); excluir a reunião avisa os destinatários (`deleted`);
+  - os campos por espectador (`access`, `ownerName`, `shareCount`, `shareUnseen`) existem só em `MeetingListItem` (`GET /meetings`, `/agenda`); o resumo difundido `meeting` continua igual para todos;
+  - a busca de usuário devolve só `id`, `username`, `name`, `canEdit` (prefixo, mínimo 3 letras, até 8, 30 por minuto por usuário); a lista de acessos é só do dono; auditoria `meeting_share_*` só com ids.
+- **Tarefas pessoais (`tasks/`, specs/002):**
+  - `tasks` e `task_history` (aditivo em `schema.ts`); permissões `tasks.read`/`tasks.manage` em `OWN_CONTENT` (Leitor sem elas);
+  - o dono é `tasks.owner_id` e **toda** consulta do módulo filtra por ele (`TASK_SELECT` só é usado depois de `t.owner_id = $1`; `test/tasks-scope.test.ts` falha se uma consulta perder o escopo);
+  - `router.param("taskId")` (`taskParamGuard`) devolve 404 a id inválido, inexistente ou de outro dono, também para ADMIN, SUPER_ADMIN e quem tem `meetings.read_all`; não existe rota que liste tarefa alheia;
+  - a tarefa copia o texto e um instantâneo da origem (reunião, item, citação) enquanto o dono tinha acesso; título atual, item e links só saem se `visibleMeetingsSql` ainda o permite, e revogar o compartilhamento ou excluir a reunião (`ON DELETE SET NULL`) mantém a tarefa sem o vínculo;
+  - fluxo aprovar → tarefa: `POST /items/:itemId/approve` chama `createFromApproval` depois do commit da revisão (pendência do próprio aprovador ou sem responsável, `isSelfOwner`); falha da tarefa nunca desfaz a aprovação. `POST /tasks/from-item` (leitura da reunião + `meetings.read` + `tasks.manage`) serve ao botão "Virar tarefa". Uma tarefa por `(item, dono)` (índice único parcial + `ON CONFLICT DO NOTHING`) e dedup por Jaccard (`agent/dedup.ts`) na mesma reunião;
+  - só item `aprovado` vira tarefa; sem IA, sem rede e sem WebSocket nesta feature; `audit_log` registra `task_created_from_item` só com ids.
 - **Host-agent:**
   - grava só as reuniões do dono (`AGENT_OWNER`; vazio = primeiro usuário cadastrado, se ainda for SUPER_ADMIN ativo — o dono nunca passa sozinho para outra pessoa);
   - o heartbeat e o "não gravar" do agente são limitados a esse dono.
@@ -107,8 +129,19 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
   - ficam em `DATA_DIR/profiles/<userId>/`;
   - o tipo é conferido pelos bytes iniciais (sem SVG);
   - nomes seguem um padrão fixo (sem path traversal) e a gravação usa modo 0600.
-- **Consumo de LLM:** `GET /llm/usage?month=AAAA-MM` agrega o próprio `audit_log` (`llm/usage.ts`),
-  sem tabela nova; a aba "Consumo de IA" mostra o mês. Só leitura, não limita geração.
+- **Uso e custo de IA (F6):** o funil `llm/index.ts#generate` e os três pontos de ASR (Whisper final no
+  `pipeline.ts`, ao vivo agregado em `usage/liveAsr.ts`, Deepgram em `asr/openrouter.ts`) gravam uma linha por
+  chamada em `ai_usage_logs` (só metadados e números, append-only; falha de gravação nunca derruba a geração).
+  O custo é o informado pelo provedor, nunca calculado. `GET /usage/me` e `/usage/me/calls` leem só `user_id = eu`
+  (reunião compartilhada não entra); `GET /admin/usage` (`ai_usage.read`) agrega sem nenhum campo de reunião.
+  Só leitura, não limita geração.
+- **Auditoria visível:** `GET /audit/me` (ator ou alvo, lista fechada de tipos) e `GET /admin/audit` (`audit.read`)
+  passam pela projeção `audit/projection.ts` (lista permitida de campos por tipo, default deny; `meetingId` e título
+  nunca). Login, falha de login (IP só na falha), logout e troca de senha são auditados; `external_llm` e
+  `external_asr` gravam o dono da reunião.
+- **Retenção (constituição 2.3.0):** `retention/prune.ts` poda `ai_usage_logs` (730 dias) e `audit_log` (365 dias) todo
+  dia, em lotes e com trava no banco; `0` desliga. O histórico `external_*` antigo do `audit_log` é incorporado uma
+  vez (`usage/backfill.ts`, idempotente).
 - **Ações administrativas:** criar, editar, trocar papel, ativar, redefinir senha e redefinir configurações; todas vão para `audit_log`.
 - host-agent autenticado por `AGENT_TOKEN` (Bearer, comparação em tempo constante, limite de
   falhas auditado).

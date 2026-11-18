@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Extracao } from "@meeting-bot/contracts";
-import { LlmQueue } from "../src/llm/provider";
+import { LlmQueue, UsageCarryingError, UsageMeter } from "../src/llm/provider";
 import { toJsonSchema } from "../src/llm/schema";
 
 describe("toJsonSchema", () => {
@@ -16,6 +16,31 @@ describe("toJsonSchema", () => {
 
   it("com limits mantém os tamanhos máximos", () => {
     expect(JSON.stringify(toJsonSchema(Extracao, { limits: true }))).toContain("maxItems");
+  });
+});
+
+describe("UsageMeter", () => {
+  it("soma o uso entre as tentativas e deixa nulo o que o provedor não informou", async () => {
+    const meter = new UsageMeter("m");
+    const out = await meter.run(async () => {
+      meter.add({ inputTokens: 100, outputTokens: 20, costUsd: 0.01 });
+      meter.add({ inputTokens: 50, outputTokens: 5, costUsd: 0.02, model: "efetivo" });
+      return "ok";
+    });
+    expect(out.data).toBe("ok");
+    expect(out.usage).toEqual({ inputTokens: 150, outputTokens: 25, costUsd: 0.03, computeMs: null, attempts: 2, model: "efetivo" });
+  });
+
+  it("falha carrega o uso parcial já gasto", async () => {
+    const meter = new UsageMeter("m");
+    const err = await meter
+      .run(async () => {
+        meter.add({ inputTokens: 5, outputTokens: 1 });
+        throw new Error("falhou");
+      })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(UsageCarryingError);
+    expect(err.usage).toMatchObject({ inputTokens: 5, outputTokens: 1, attempts: 1 });
   });
 });
 

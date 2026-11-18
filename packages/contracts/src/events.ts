@@ -3,6 +3,7 @@ import type {
   CaptureState,
   GpuStats,
   Item,
+  MeetingListItem,
   MeetingSummary,
   Segment,
   TranscriptPass,
@@ -41,8 +42,26 @@ export interface RecordingEvent {
   stopReason?: string;
 }
 
+/** Mudança de acesso a uma reunião, enviada só ao usuário afetado (nunca difundida). */
+export interface MeetingAccessEvent {
+  type: "meeting_access";
+  meetingId: string;
+  change: "granted" | "changed" | "revoked" | "deleted";
+  /** null em revoked e deleted */
+  access: "edit" | "read" | null;
+  /** nome de quem agiu (null em deleted) */
+  by: string | null;
+  /** só em granted e changed */
+  title: string | null;
+  /** só em granted: o item com o `access` do destinatário */
+  meeting: MeetingListItem | null;
+  /** parte de um lote ("esta e as próximas"): atualiza a lista, mas sem aviso na tela */
+  silent?: boolean;
+}
+
 export type LiveServerMessage =
   | { type: "meeting"; meeting: MeetingSummary }
+  | MeetingAccessEvent
   | { type: "segments"; meetingId: string; pass: TranscriptPass; segments: Segment[] }
   | { type: "transcript_replaced"; meetingId: string }
   | { type: "items"; meetingId: string; items: Item[] }
@@ -54,6 +73,8 @@ export type LiveServerMessage =
   | ({ type: "gpu" } & GpuStats)
   | { type: "host_agent"; online: boolean; lastSeenAt: string | null }
   | { type: "bot"; meetingId: string; progress: BotProgress | null }
+  /** estado do índice de busca da reunião; sem conteúdo de trecho */
+  | { type: "search_index"; meetingId: string; status: "pending" | "indexing" | "text_ready" | "indexed" | "failed" }
   | { type: "pong" };
 
 // WebSocket host-agent → backend (contracts/ws-audio.md)

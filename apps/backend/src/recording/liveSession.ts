@@ -2,6 +2,7 @@ import { transcribeChunk, WorkerUnavailableError } from "../asr/workerClient";
 import { config } from "../config";
 import { pool } from "../db";
 import { hub } from "../live/hub";
+import { liveAsrUsage } from "../usage/liveAsr";
 import { defaultSpeaker, getSpeakers, insertLiveSegments, speakerNameResolver, toSegmentJson } from "../repo/transcripts";
 import { BYTES_PER_SECOND, Chunk, Chunker } from "./chunker";
 import { glossaryFor } from "./glossary";
@@ -85,6 +86,7 @@ export class LiveSession {
   close(): void {
     this.closed = true;
     this.queue = [];
+    liveAsrUsage.flush(this.meetingId, this.channel);
   }
 
   private enqueue(chunk: Chunk): void {
@@ -127,6 +129,7 @@ export class LiveSession {
           prompt: prompt || undefined,
           channel: this.channel,
         });
+        liveAsrUsage.add(this.meetingId, this.channel, result);
         if (result.speech_seconds > 0) {
           await markSpeech(this.meetingId, new Date(chunk.cutAt));
         }

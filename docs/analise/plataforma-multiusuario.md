@@ -6,7 +6,8 @@
 
 > **Atualização 2026-11-18:** o `OllamaProvider` (LLM local) foi removido (constituição 3.0.0). Todo LLM é
 > externo e exige `ALLOW_EXTERNAL_LLM=true`; os provedores são `claude` (assinatura, padrão), `codex` e
-> `openrouter`, e a análise ao vivo usa o mesmo provedor da geração. As menções a Ollama, fila de GPU para
+> `openrouter`, e a análise ao vivo e o chat da busca usam o mesmo provedor da geração; o Ollama fica só para
+> os embeddings da busca (CPU). As menções a Ollama, fila de GPU para
 > LLM e "análise ao vivo sempre local" abaixo são o histórico da auditoria.
 
 **Legenda de classificação:**
@@ -105,8 +106,8 @@ No banco, a diferença entre `created_at` e `started_at` ficou entre 34 e 58 s.
 | 16 | Tipos de conteúdo gerado | **EP** | Já existem ata, resumo e ADR. Faltam anotações, pendências pessoais, tarefas, decisões e análise arquitetural como documento |
 | 17 | Ata com a estrutura pedida | **PA** | O template de 19 seções cobre quase tudo. Faltam "Objetivo" explícito, "Prazos" e "Riscos" como seções nomeadas: é só ajuste de template |
 | 18 | Anotações informais | **NE** | É um prompt novo sobre a mesma base |
-| 19 | Minhas pendências | **EP** | Os itens `pendencia` existem. Faltam o vínculo com o usuário (nome ou apelido) e o texto "Responsável não confirmado" |
-| 20 | Minhas tarefas (5 status) | **NE** | Nova tabela `tasks`, convertida a partir de uma pendência |
+| 19 | Minhas pendências | **OK** | Entregue em `specs/002-pendencias-tarefas`: aprovar uma pendência cria a tarefa do aprovador (responsável é ele ou vazio, "Responsável não confirmado") e "Virar tarefa" em qualquer item aprovado |
+| 20 | Minhas tarefas (5 status) | **OK** | Entregue em `specs/002-pendencias-tarefas`: tabelas `tasks` e `task_history`, tarefas pessoais por `owner_id`, tela com filtros e cartão em Hoje |
 | 21 | Hub "Gerar com IA" | **NE** | Hoje a análise é única, no fim da reunião |
 | 22 | Jobs assíncronos com status e reprocessamento | **EP** | Existe a fila do pipeline. Falta tabela `generation_jobs` por tipo |
 | 23 | Rastreabilidade | **JE** (itens) / **NE** (documentos novos) | Reusar `item_evidence` e referências `S<n>` |
@@ -194,7 +195,7 @@ Todas as mudanças são **aditivas** no `schema.ts`, que é idempotente (`IF NOT
 | `prompt_templates`, `prompt_versions` | F3 | tipo, escopo (global ou usuário), versão, `active`, `created_at`, `updated_at`, autor |
 | `generation_jobs` | F4 | tipo, status (`queued`/`running`/`done`/`error`), tentativas, erro, resultado |
 | `documents` | F4 | reunião, dono, tipo (ata, anotações, resumo, decisões, análise, pendências), conteúdo, origem (IA/usuário), `edited`, `approved_by`, versão, referências a segmentos |
-| `tasks` | F4 | título, descrição, projeto, reunião, item de origem, responsável, prioridade, prazo e status (5 valores) |
+| `tasks` | F4 — **entregue** (`specs/002`) | título, descrição, projeto, reunião, item de origem, responsável (rótulo), prioridade, prazo e status (5 valores); pessoal por `owner_id`. Com `task_history`. `documents` e `generation_jobs` seguem pendentes |
 | `ai_usage_logs` | F6 | usuário, provedor, modelo, tokens de entrada e saída, custo estimado, reunião, tipo e duração |
 
 **Não criar** `meeting_minutes`, `meeting_decisions`, `action_items`, `architectural_decisions`, `transcripts` ou `calendar_accounts`. Estruturas equivalentes já existem (`documents`, `meeting_items`, `adrs`, `transcript_segments`), ou o recurso está bloqueado pelo tenant (Graph).
@@ -258,7 +259,7 @@ Todas as mudanças são **aditivas** no `schema.ts`, que é idempotente (`IF NOT
 |---|---|
 | SUPER_ADMIN | todas, incluindo `providers.manage` e a gestão de outros admins |
 | ADMIN | `users.*` (exceto conceder ou alterar SUPER_ADMIN), `agents.*`, `settings.manage`, `audit.read` e `ai_usage.read` |
-| USER | `meetings.read`, `meetings.manage`, `transcripts.read`, `transcripts.delete`, `documents.generate`, `documents.read`, `agents.read`, `agents.manage` (próprio) e `settings.manage` (próprio) |
+| USER | `meetings.read`, `meetings.manage`, `transcripts.read`, `transcripts.delete`, `documents.generate`, `documents.read`, `agents.read`, `agents.manage` (próprio), `settings.manage` (próprio), `tasks.read` e `tasks.manage` (próprias) |
 | VIEWER | `meetings.read`, `transcripts.read`, `documents.read`, apenas no que foi **compartilhado** |
 
 - **Escopo:** toda permissão de conteúdo vale **só** para recursos próprios ou compartilhados. Ver conteúdo de outro usuário por ser admin exige a permissão `meetings.read_all`. **Por padrão, nenhum papel a recebe** (Q2).
@@ -325,7 +326,7 @@ Rota/Job ──► AIOrchestrator.run(purpose, meeting, user)
 | **F1** | Esta auditoria; shell visual azul com tema manual; correção da latência do "Entrar" (esperas em corrida, tempos por etapa, estados na tela, anti-duplicidade); perfil do usuário; "Meu agente" (nome, descrição, persona, avatar, voz); identidade no bot (com sufixo obrigatório) | — |
 | **F2** | RBAC (tabelas, seed, middleware, sessão com permissões); isolamento por dono e compartilhamento; Administração > Usuários; configurações por categoria; host-agent ligado ao dono | Q2 e Q3 (o padrão seguro é implementado antes) |
 | **F3** | AIProvider com uso; catálogo de modelos; prompts no banco com versão; agente arquiteto usando o perfil; provedor externo opcional por flag (Q1) — **parcial (2026-09-17):** OpenRouter para ata e ADR pela `.env`, com auditoria de uso e custo | — |
-| **F4** | Jobs de geração; documentos (ata, anotações, resumo, decisões, análise); minhas pendências; tarefas; hub "Gerar com IA"; painel completo | — |
+| **F4** | Jobs de geração; documentos (ata, anotações, resumo, decisões, análise); minhas pendências; tarefas; hub "Gerar com IA"; painel completo — **parcial (2026-11):** minhas pendências e tarefas entregues (`specs/002-pendencias-tarefas`); faltam `documents`, `generation_jobs`, hub e painel | — |
 | **F5** | Identidade por reunião (entregue na F1). Ícone do agente na reunião por câmera virtual (entregue em 2026-09-17, Q5 revista). | — |
 | **F6** | Painel de uso e custo; auditoria na interface; painel de admin | — |
 
@@ -475,5 +476,6 @@ Typecheck e build também passaram.
 
 **Ainda não feito:**
 
-- tela de compartilhamento (quando existir, revogar deve derrubar na hora as assinaturas do WebSocket; hoje a revalidação acontece a cada 30 s);
-- resto da F3 (prompts no banco, perfil no agente, cadastro de provedores com chave cifrada) e F4 a F6.
+- ~~tela de compartilhamento~~ (feita em `specs/005-compartilhamento`: busca mínima, leitura/edição, série, "Compartilhadas comigo", "Nova", auditoria; revogar derruba na hora a assinatura do WebSocket e o consumo de IA ficou só do dono);
+- ~~minhas pendências e tarefas~~ (feitas em `specs/002-pendencias-tarefas`: tarefas pessoais, aprovar vira tarefa, filtros, histórico, cartão em Hoje);
+- resto da F3 (prompts no banco, perfil no agente, cadastro de provedores com chave cifrada), o restante da F4 (`documents`, `generation_jobs`, hub "Gerar com IA", painel) e F5 a F6.

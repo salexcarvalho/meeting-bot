@@ -1,28 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, Pencil, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { ArrowLeft, Bot, Circle, ExternalLink, ListChecks, LogOut, Pencil, RefreshCw, Share2, Sparkles, Square, Trash2 } from "lucide-react";
 import {
   IDLE_STATUSES,
   type Adr,
   type Channel,
   type GpuStats,
   type Item,
+  type ItemReviewTask,
   type LlmChoice,
   type MeetingDetail,
   type MeetingSummary,
   type RecordingEvent,
+  type SearchIndexStatusValue,
   type Segment,
+  type Task,
 } from "@meeting-bot/contracts";
-import { api, ApiError, errorMessage } from "../api";
-import { AdrList } from "../components/AdrList";
+import { api, ApiError, errorMessage, ignoreError, searchStatus } from "../api";
+import { AdrList, type AdrFocus } from "../components/AdrList";
 import { AtaView } from "../components/AtaView";
 import { AudioPlayers, type AudioPlayersHandle } from "../components/AudioPlayers";
 import { ItemsBoard, type ItemFocus } from "../components/ItemsBoard";
 import { Speakers } from "../components/Speakers";
+import { MeetingTasks } from "../components/tasks/MeetingTasks";
+import { TaskDialog } from "../components/tasks/TaskDialog";
+import { TaskFromItemDialog } from "../components/tasks/TaskFromItemDialog";
 import { ConfirmDialog, Dialog } from "../components/Dialog";
 import { LivePanel, type ProcessingState } from "../components/LivePanel";
 import { MeetingForm } from "../components/MeetingForm";
 import { Markdown } from "../components/Markdown";
+import { ShareBadge } from "../components/ShareBadge";
+import { ShareDialog } from "../components/ShareDialog";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { Transcript } from "../components/Transcript";
@@ -35,10 +43,12 @@ import {
   type GenerateRequest,
 } from "../components/GenerateDialog";
 import { sendBot } from "../bot";
+import { fetchMeetingTasks } from "../tasks";
 import { SkeletonLines } from "../components/ui";
 import { formatDateTime, formatTime, minutesBetween } from "../format";
 import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
+import { INDEX_BADGES } from "../searchUi";
 import {
   asrLabel,
   EXTERNAL_ASR_WARNING,
@@ -107,6 +117,20 @@ function waitingText(m: MeetingSummary): string | undefined {
   return WAITING_TEXT[m.status];
 }
 
+/** Segmento indicado pela busca: o `seg` se ainda existir; senão, o mais próximo de `t` (segundos). */
+function resolveSegment(segments: Segment[], seg: string | null, t: number | null): Segment | null {
+  const byId = seg === null ? undefined : segments.find((s) => s.id === Number(seg));
+  if (byId) return byId;
+  if (t === null || !segments.length) return null;
+  return segments.reduce((a, b) => (Math.abs(b.start - t) < Math.abs(a.start - t) ? b : a));
+}
+
+function secondsParam(value: string | null): number | null {
+  if (value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export function Reuniao() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -118,7 +142,8 @@ export function Reuniao() {
   const [recording, setRecording] = useState<RecordingEvent | null>(null);
   const [processing, setProcessing] = useState<ProcessingState | null>(null);
   const [gpu, setGpu] = useState<GpuStats | null>(null);
-  const [confirm, setConfirm] = useState<null | "delete" | "reprocess" | "stop">(null);
+  const [confirm, setConfirm] = useState<null | "delete" | "reprocess" | "stop" | "leave">(null);
+  const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const { asr } = useSession();
@@ -132,32 +157,101 @@ export function Reuniao() {
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [adrs, setAdrs] = useState<Adr[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskItem, setTaskItem] = useState<Item | null>(null);
+  const [newTask, setNewTask] = useState(false);
   const [highlight, setHighlight] = useState<Set<number>>(new Set());
   const [ataVersion, setAtaVersion] = useState(0);
+  const [indexStatus, setIndexStatus] = useState<SearchIndexStatusValue | null>(null);
+  const [adrFocus, setAdrFocus] = useState<AdrFocus | null>(null);
+  const [params] = useSearchParams();
+  const focusSeg = params.get("seg");
+  const focusT = params.get("t");
+  const focusItem = params.get("item");
+  const focusAdr = params.get("adr");
+  const appliedSeg = useRef("");
+  const appliedItem = useRef("");
+  const appliedAdr = useRef("");
   const { projects } = useProjects();
   const players = useRef<AudioPlayersHandle>(null);
 
+  const canTasks = can("tasks.read");
+  const canMakeTask = can("tasks.manage");
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const tasksByItem = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const t of tasks) if (t.sourceItem) map.set(t.sourceItem.id, t);
+    return map;
+  }, [tasks]);
+
+  const loadTasks = useCallback(() => {
+    if (canTasks) fetchMeetingTasks(id).then(setTasks).catch(ignoreError);
+  }, [id, canTasks]);
+
   const load = useCallback(() => {
+    loadTasks();
     api<{ items: Item[] }>(`/meetings/${id}/items`).then((r) => setItems(r.items)).catch(() => {});
     api<{ adrs: Adr[] }>(`/meetings/${id}/adrs`).then((r) => setAdrs(r.adrs)).catch(() => {});
     setAtaVersion((v) => v + 1);
+    // 404 = reunião fora do índice ou busca desligada: sem selo
+    searchStatus(id).then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api<MeetingDetail>(`/meetings/${id}`)
       .then((d) => {
         setDetail(d);
         setError("");
       })
       .catch((err) => setError(err instanceof ApiError && err.status === 404 ? "Reunião não encontrada." : errorMessage(err)));
-  }, [id]);
+  }, [id, loadTasks]);
 
   useEffect(() => {
     setDetail(null);
     setItems([]);
     setAdrs([]);
+    setTasks([]);
     setRecording(null);
     setProcessing(null);
+    setIndexStatus(null);
     load();
   }, [load]);
+
+  // Vindo da busca (?seg=&t=): destaca o segmento e posiciona o áudio, sem tocar.
+  useEffect(() => {
+    if (!detail || detail.meeting.id !== id || (focusSeg === null && focusT === null)) return;
+    const key = `${id}|${focusSeg}|${focusT}`;
+    if (appliedSeg.current === key) return;
+    const at = secondsParam(focusT);
+    const segment = resolveSegment(detail.segments, focusSeg, at);
+    if (!segment) return;
+    appliedSeg.current = key;
+    setTab("transcricao");
+    setHighlight(new Set([segment.id]));
+    window.setTimeout(() => players.current?.cue(segment.channel, at ?? segment.start), 150);
+  }, [detail, id, focusSeg, focusT]);
+
+  // Vindo da busca (?item=): abre a aba Itens (ao vivo, o quadro fica ao lado da transcrição) e destaca o item.
+  useEffect(() => {
+    if (!focusItem || !detail || detail.meeting.id !== id || !items.some((i) => i.id === focusItem)) return;
+    if (appliedItem.current === `${id}|${focusItem}`) return;
+    appliedItem.current = `${id}|${focusItem}`;
+    if (!LIVE_STATUSES.includes(detail.meeting.status)) setTab("itens");
+    setItemFocus({ id: focusItem, seq: Date.now() });
+  }, [detail, id, items, focusItem]);
+
+  // Vindo da busca (?adr=): abre a aba ADRs e destaca o ADR.
+  useEffect(() => {
+    if (!focusAdr || !detail || detail.meeting.id !== id || !adrs.some((a) => a.id === focusAdr)) return;
+    if (appliedAdr.current === `${id}|${focusAdr}`) return;
+    appliedAdr.current = `${id}|${focusAdr}`;
+    setTab("adrs");
+    setAdrFocus({ id: focusAdr, seq: Date.now() });
+  }, [detail, id, adrs, focusAdr]);
   useEffect(() => live.subscribe({ topic: "meeting", meetingId: id }), [id]);
+  // Reunião compartilhada comigo: abrir marca como vista (some o selo "Nova"). Nada a fazer para o dono.
+  const receivedShare = detail !== null && detail.access !== "owner";
+  useEffect(() => {
+    if (receivedShare) api(`/shared-with-me/${id}/seen`, { method: "POST" }).catch(ignoreError);
+  }, [id, receivedShare]);
   useEffect(() => live.onReconnect(load), [load]);
 
   const setMeeting = useCallback((meeting: MeetingSummary) => {
@@ -174,6 +268,15 @@ export function Reuniao() {
       switch (msg.type) {
         case "meeting":
           if (msg.meeting.id === id) setMeeting(msg.meeting);
+          break;
+        case "meeting_access":
+          if (msg.meetingId !== id) break;
+          if (msg.change === "changed" && msg.access) {
+            const access = msg.access;
+            setDetail((d) => (d ? { ...d, access } : d));
+          } else if (msg.change === "revoked" || msg.change === "deleted") {
+            navigate("/reunioes");
+          }
           break;
         case "segments":
           if (msg.meetingId !== id) break;
@@ -231,12 +334,15 @@ export function Reuniao() {
             setDetail((d) => (d ? { ...d, meeting: { ...d.meeting, botProgress: msg.progress } } : d));
           }
           break;
+        case "search_index":
+          if (msg.meetingId === id) setIndexStatus(msg.status);
+          break;
         case "gpu":
           setGpu({ utilization: msg.utilization, memoryUsedMb: msg.memoryUsedMb, memoryTotalMb: msg.memoryTotalMb, name: msg.name });
           break;
       }
     },
-    [id, load, setMeeting, toast],
+    [id, load, setMeeting, toast, navigate],
   );
 
   async function action(path: string, body: unknown, message: string | (() => string | null), method = "POST") {
@@ -354,6 +460,20 @@ export function Reuniao() {
     setAtaVersion((v) => v + 1);
   }
 
+  // Aprovar uma pendência pode criar a tarefa (ou explicar por que não criou): avisa e recarrega o mapa item → tarefa.
+  function onTaskResult(result: ItemReviewTask) {
+    const known = result.task ? tasksRef.current.some((t) => t.id === result.task!.id) : false;
+    loadTasks();
+    if (result.task) {
+      const action = { label: "Abrir", to: `/pendencias?tarefa=${result.task.id}` };
+      toast(known ? "Esta pendência já tem tarefa em Minhas pendências" : "Tarefa criada em Minhas pendências", "info", action);
+    } else if (result.taskNotice?.kind === "possible_duplicate") {
+      toast("Já existe uma tarefa parecida", "info", { label: "Ver", to: `/pendencias?tarefa=${result.taskNotice.taskId}` });
+    } else if (result.taskNotice?.kind === "assignee_other") {
+      toast(`Esta pendência é de ${result.taskNotice.name}; use Virar tarefa para acompanhá-la`);
+    }
+  }
+
   function upsertAdr(adr: Adr) {
     setAdrs((list) => list.map((a) => (a.id === adr.id ? adr : a)));
     setAtaVersion((v) => v + 1);
@@ -390,10 +510,16 @@ export function Reuniao() {
               {m.project && <span className="badge">{m.project.name}{m.project.suggested ? " (sugerido)" : ""}</span>}
               {m.organizer && <span>org.: {m.organizer}</span>}
               {m.createdBy && <span>por {m.createdBy}</span>}
-              {detail.access !== "owner" && (
-                <span className="badge info">{detail.access === "read" ? "Compartilhada · somente leitura" : "Compartilhada · edição"}</span>
-              )}
+              {detail.access !== "owner" && <ShareBadge access={detail.access} ownerName={detail.ownerName} />}
               {m.botDisplayName && <span title="Nome do assistente na reunião">assistente: {m.botDisplayName}</span>}
+              {indexStatus && (
+                <span
+                  className={`badge ${INDEX_BADGES[indexStatus].tone}`}
+                  title={INDEX_BADGES[indexStatus].hint}
+                >
+                  {INDEX_BADGES[indexStatus].label}
+                </span>
+              )}
             </div>
             {m.attendees.length > 0 && (
               <details className="small" style={{ marginTop: 6 }}>
@@ -450,6 +576,16 @@ export function Reuniao() {
             {ownerActions && (
               <button type="button" onClick={() => setEditing(true)}>
                 <Pencil aria-hidden="true" /> Editar
+              </button>
+            )}
+            {ownerActions && (
+              <button type="button" onClick={() => setSharing(true)}>
+                <Share2 aria-hidden="true" /> Compartilhar
+              </button>
+            )}
+            {detail.access !== "owner" && (
+              <button type="button" onClick={() => setConfirm("leave")}>
+                <LogOut aria-hidden="true" /> Sair desta reunião
               </button>
             )}
             {canDelete && idle && (
@@ -536,6 +672,10 @@ export function Reuniao() {
                 onChange={upsertItem}
                 onEvidence={showEvidence}
                 onGenerateAdr={onGenerateAdr}
+                focus={itemFocus}
+                tasksByItem={tasksByItem}
+                onMakeTask={canMakeTask ? setTaskItem : undefined}
+                onTaskResult={onTaskResult}
               />
             </div>
           ) : (
@@ -556,15 +696,21 @@ export function Reuniao() {
       )}
 
       {tab === "itens" && (
-        <ItemsBoard
-          meetingId={m.id}
-          items={items}
-          readOnly={!writable}
-          onChange={upsertItem}
-          onEvidence={showEvidence}
-          onGenerateAdr={onGenerateAdr}
-          focus={itemFocus}
-        />
+        <>
+          <ItemsBoard
+            meetingId={m.id}
+            items={items}
+            readOnly={!writable}
+            onChange={upsertItem}
+            onEvidence={showEvidence}
+            onGenerateAdr={onGenerateAdr}
+            focus={itemFocus}
+            tasksByItem={tasksByItem}
+            onMakeTask={canMakeTask ? setTaskItem : undefined}
+            onTaskResult={onTaskResult}
+          />
+          {canTasks && <MeetingTasks tasks={tasks} canManage={canMakeTask} onNew={() => setNewTask(true)} />}
+        </>
       )}
 
       {tab === "ata" && (
@@ -594,6 +740,7 @@ export function Reuniao() {
             adrs={adrs}
             items={items}
             readOnly={!writable}
+            focus={adrFocus}
             onChange={upsertAdr}
             onShowItem={(itemId) => {
               setTab("itens");
@@ -620,6 +767,27 @@ export function Reuniao() {
         </section>
       )}
 
+      <TaskFromItemDialog
+        item={taskItem}
+        onClose={() => setTaskItem(null)}
+        onCreated={(task, created) => {
+          loadTasks();
+          toast(created ? "Tarefa criada em Minhas pendências" : "Esta pendência já tinha tarefa", "info", {
+            label: "Abrir",
+            to: `/pendencias?tarefa=${task.id}`,
+          });
+        }}
+      />
+      <TaskDialog
+        open={newTask}
+        task={null}
+        meetingId={m.id}
+        projects={projects}
+        meetings={[{ id: m.id, title: m.title }]}
+        onClose={() => setNewTask(false)}
+        onSaved={loadTasks}
+        onDeleted={loadTasks}
+      />
       <MeetingForm open={editing} meeting={m} projects={projects} onClose={() => setEditing(false)} onSaved={setMeeting} />
       <ConfirmDialog
         open={confirm === "stop"}
@@ -718,6 +886,18 @@ export function Reuniao() {
             );
           }
         }}
+      />
+      <ShareDialog open={sharing} onClose={() => setSharing(false)} meetingId={m.id} title={m.title} />
+      <ConfirmDialog
+        open={confirm === "leave"}
+        title="Sair desta reunião?"
+        message={`Você deixa de ver “${m.title}”. Só o dono pode compartilhar de novo.`}
+        confirmLabel="Sair"
+        danger
+        onClose={() => setConfirm(null)}
+        onConfirm={() =>
+          void action(`/shared-with-me/${m.id}`, undefined, "Você saiu da reunião.", "DELETE").then((ok) => ok && navigate("/reunioes"))
+        }
       />
       <ConfirmDialog
         open={confirm === "delete"}

@@ -1,4 +1,4 @@
-# GPU NVIDIA para worker-gpu (precisa do NVIDIA Container Toolkit).
+# GPU NVIDIA para worker-gpu (precisa do NVIDIA Container Toolkit). O ollama (só embeddings, CPU) não reserva GPU.
 # Ative com COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml no .env
 services:
   worker-gpu:

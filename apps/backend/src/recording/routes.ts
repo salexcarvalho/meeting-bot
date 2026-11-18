@@ -11,6 +11,7 @@ import { closeAllIngest, handleAudioUpgrade } from "./audioIngest";
 import { lastGpu, sampleGpu, startGpuSampler, stopGpuSampler } from "./gpuSampler";
 import { hostAgentStatusFor } from "./hostAgentState";
 import { activeRecordingId, RecordingError, requestStop, startRecordingNow, startScheduler, stopScheduler } from "./scheduler";
+import { searchSystemInfo } from "../search/service";
 
 function register(router: Router): void {
   router.post(
@@ -62,6 +63,7 @@ function register(router: Router): void {
         gpu,
         recordingMeetingId: await visibleMeetingId(user, activeRecordingId()),
         queue: { ...queue, current: await visibleMeetingId(user, queue.current) },
+        search: await searchSystemInfo(),
       });
     }),
   );

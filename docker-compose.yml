@@ -11,6 +11,7 @@ services:
     environment:
       DATABASE_URL: postgres://meetingbot:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/meetingbot
       WORKER_URL: http://worker-gpu:8000
+      OLLAMA_URL: http://ollama:11434
       TZ: ${APP_TIMEZONE:-America/Sao_Paulo}
       PORT: "3000"
     depends_on:
@@ -26,8 +27,10 @@ services:
     stop_grace_period: 40s
     restart: unless-stopped
 
+  # postgres:16-alpine + pgvector (docker/postgres/Dockerfile): mesma major e mesma libc, o pgdata existente abre sem migração de dados.
   postgres:
-    image: postgres:16-alpine
+    build: ./docker/postgres
+    image: meeting-bot-postgres:16-pgvector
     environment:
       POSTGRES_DB: meetingbot
       POSTGRES_USER: meetingbot
@@ -56,6 +59,15 @@ services:
       - models:/models
     restart: unless-stopped
 
+  # Só embeddings da busca (bge-m3, em CPU: sem reserva de GPU). Não há LLM local; modelos ficam no volume "ollama".
+  ollama:
+    image: ollama/ollama:0.32.14
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
   # HTTPS automático (Let's Encrypt). Ative com: docker compose --profile https up -d
   caddy:
     image: caddy:2-alpine
@@ -71,6 +83,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  ollama:
   pgdata:
   botdata:
   models:

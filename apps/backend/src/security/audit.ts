@@ -4,6 +4,8 @@ export type AuditKind =
   | "egress_blocked"
   | "llm_provider_blocked"
   | "agent_auth_failed"
+  | "agent_calendar_import"
+  | "agent_calendar_import_failed"
   | "external_asr"
   | "external_llm"
   | "generation_requested"
@@ -16,7 +18,17 @@ export type AuditKind =
   | "admin_user_settings_reset"
   | "teams_account_connected"
   | "teams_account_removed"
-  | "teams_account_expired";
+  | "teams_account_expired"
+  | "meeting_share_granted"
+  | "meeting_share_changed"
+  | "meeting_share_revoked"
+  | "meeting_share_left"
+  | "task_created_from_item"
+  | "auth_login"
+  | "auth_login_failed"
+  | "auth_logout"
+  | "auth_password_changed"
+  | "retention_pruned";
 
 // Nunca registrar conteúdo de reunião aqui — só metadados.
 export function audit(kind: AuditKind, detail: Record<string, unknown>, userId: string | null = null): void {
