@@ -260,4 +260,52 @@ describe.skipIf(!enabled)("importação da agenda casa com cadastro existente (H
     await send(day, [ev("h-outro", "Outra coisa", day, 17)]);
     expect(await one(m.id)).toEqual(snapshot);
   });
+  const icsComLink = (uid: string, title: string, stamp: string) =>
+    ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//teste//PT", "BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20310301T120000Z",
+      `DTSTART:${stamp}`, `DTEND:${stamp.replace("T12", "T13")}`, `SUMMARY:${title}`, "LOCATION:Microsoft Teams Meeting",
+      `DESCRIPTION:Participe: ${TEAMS}`, "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
+
+  it(".ics depois da Aurora (sem link) completa a reunião com o link, sem duplicar; a Aurora depois não apaga o link", async () => {
+    const day = "2031-04-28";
+    expect((await send(day, [ev("hash-sem-link", "Daily do Projeto", day, 9, 30)])).json).toMatchObject({ created: 1 });
+    const [antes] = await rows(day);
+    expect(antes).toMatchObject({ url: null, import_source: SOURCE, ical_uid: "hash-sem-link" });
+
+    const text = icsComLink("uid-real-link@teste", "Daily do Projeto", "20310428T123000Z");
+    for (let pass = 0; pass < 2; pass++) {
+      await importIcs([{ name: "d.ics", text }], owner);
+      const lista = await rows(day);
+      expect(lista).toHaveLength(1);
+      expect(lista[0]).toMatchObject({
+        id: antes.id, url: TEAMS, status: "scheduled", import_source: SOURCE, ical_uid: "hash-sem-link",
+      });
+    }
+    expect((await one(antes.id)).platform).toBe("teams");
+
+    // Novo envio da Aurora (ainda sem link): reconhece a mesma linha e mantém o link do .ics.
+    const res = await send(day, [ev("hash-sem-link", "Daily do Projeto", day, 9, 30)]);
+    expect(res.json).toMatchObject({ created: 0, removed: 0 });
+    const depois = await rows(day);
+    expect(depois).toHaveLength(1);
+    expect(depois[0]).toMatchObject({ id: antes.id, url: TEAMS, status: "scheduled" });
+    expect((await one(antes.id)).platform).toBe("teams");
+  });
+
+  it(".ics sobre reunião da Aurora já realizada ou de outro dono não altera nem absorve", async () => {
+    const day = "2031-04-29";
+    await send(day, [ev("hash-realizada", "Retro Fechada", day, 9, 30)]);
+    const [feita] = await rows(day);
+    await setStatus(feita.id, "done");
+    const snapshot = await one(feita.id);
+
+    await importIcs([{ name: "r.ics", text: icsComLink("uid-retro@teste", "Retro Fechada", "20310429T123000Z") }], owner);
+    expect(await one(feita.id)).toEqual(snapshot);
+    expect(await rows(day)).toHaveLength(1);
+
+    const sozinho = "2031-04-30";
+    await send(sozinho, [ev("hash-do-dono", "Sync Exclusivo", sozinho, 9, 30)]);
+    const text = icsComLink("uid-outra@teste", "Sync Exclusivo", "20310430T123000Z");
+    expect((await importIcs([{ name: "o.ics", text }], outro)).created).toBe(1);
+    expect((await rows(sozinho))[0].url).toBeNull();
+  });
 });

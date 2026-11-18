@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 import type { ImportResult } from "@meeting-bot/contracts";
 import { meetingSelect, type MeetingRow } from "../db";
 import type { Occurrence } from "./ics";
-import { adoptExisting, applyLinked, isLinkedManual } from "./match";
+import { adoptExisting, adoptImported, applyLinked, isLinkedManual } from "./match";
 import { decideUpsert, EDITABLE_STATUSES, suggestProject, type ProjectMatcher, type UpsertDecision } from "./rules";
 
 // Persistência de uma ocorrência de calendário (compartilhada pela importação de .ics e pela
@@ -197,6 +197,8 @@ export async function applyOccurrence(client: PoolClient, incoming: Occurrence, 
   const keyed = ctx.importSource && !existing ? await withSeriesKey(client, incoming, ctx) : incoming;
   // Reunião que o usuário já tinha (cadastro manual ou .ics): vincula em vez de duplicar.
   if (ctx.importSource && !existing && !keyed.cancelled && (await adoptExisting(client, keyed, ctx))) return;
+  // .ics sobre reunião que a importação automática criou sem link: completa a existente em vez de duplicar.
+  if (!ctx.importSource && !existing && !keyed.cancelled && (await adoptImported(client, keyed, ctx))) return;
   const o = ctx.importSource && existing ? keepUnsentDetails(incoming, existing) : keyed;
   if (existing) ctx.seen?.add(existing.id);
   await execute(client, decide(existing, o, ctx), existing, o, ctx);
