@@ -150,6 +150,12 @@ export const config = {
   botCamera: bool("BOT_CAMERA", false),
   /** transcrição ao vivo do áudio que o assistente grava na chamada */
   botLiveTranscription: bool("BOT_LIVE_TRANSCRIPTION", true),
+  /** lê na tela da chamada quem está falando e nomeia os "Speaker N" (spec 006); desligado = comportamento anterior */
+  botSpeakerNames: bool("BOT_SPEAKER_NAMES", true),
+  /** atraso fixo (ms) do indicador de fala em relação ao áudio; só ajuste de calibração, o passe final estima o real */
+  botSpeakerSkewMs: int("BOT_SPEAKER_SKEW_MS", 0),
+  /** diagnóstico: grava só a estrutura dos quadros da chamada (sem áudio, vídeo ou nomes) para calibrar os seletores */
+  botSpeakerDiagnostic: bool("BOT_SPEAKER_DIAGNOSTIC", false),
   /** silêncio que faz o assistente sair de uma reunião sem horário previsto */
   botSilenceStopMs: int("BOT_SILENCE_STOP_MINUTES", 10) * 60_000,
   defaultAgentName: (process.env.DEFAULT_AGENT_NAME || "Assistente").trim().slice(0, 40),

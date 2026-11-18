@@ -3,6 +3,7 @@ import { EXTERNAL_ASR_ID, providerLabel, transcribeFileExternal } from "./asr/op
 import { runTranscriptionJob, type JobChannelResult, type JobFile } from "./asr/workerClient";
 import { config } from "./config";
 import { getMeeting, listAudio, markDone, setMeetingStatus } from "./db";
+import { applyCallNames, labelUndiarized, markSegmentModeSpeakers } from "./meetings/applyCallNames";
 import { markDirty } from "./search/dirty";
 import { automaticProvider, generationLabel } from "./llm";
 import { hub } from "./live/hub";
@@ -164,6 +165,28 @@ async function runLocalFinalPass(
   }
 }
 
+/** Sem diarização, nomeia cada segmento pela linha do tempo da chamada (spec 006); falha aqui nunca derruba o passe final. */
+async function nameFromCall(meetingId: string, segments: NewSegment[]): Promise<{ segments: NewSegment[]; names: string[] }> {
+  if (!config.botSpeakerNames) return { segments, names: [] };
+  try {
+    return await labelUndiarized(meetingId, segments);
+  } catch (err) {
+    console.error(`[pipeline ${meetingId}] nomes da chamada por segmento:`, err);
+    return { segments, names: [] };
+  }
+}
+
+/** Casa os "Speaker N" do passe final com os nomes da chamada; falha só vai para o log. */
+async function applyNamesFromCall(meetingId: string, segmentModeNames: string[]): Promise<void> {
+  if (!config.botSpeakerNames) return;
+  try {
+    await markSegmentModeSpeakers(meetingId, segmentModeNames);
+    await applyCallNames(meetingId);
+  } catch (err) {
+    console.error(`[pipeline ${meetingId}] nomes da chamada:`, err);
+  }
+}
+
 /** O provedor é escolhido depois da transcrição: a espera pela assinatura não segura o passe final. */
 async function processMeeting(
   meetingId: string,
@@ -218,7 +241,9 @@ async function processMeeting(
         })),
       )
       .sort((a, b) => a.start - b.start);
-    await replaceWithFinal(meetingId, segments, evidenceRemapper, external ? providerLabel() : "worker-gpu");
+    const named = await nameFromCall(meetingId, segments);
+    await replaceWithFinal(meetingId, named.segments, evidenceRemapper, external ? providerLabel() : "worker-gpu");
+    await applyNamesFromCall(meetingId, named.names);
     hub.publishToMeeting(meetingId, { type: "transcript_replaced", meetingId });
     console.log(
       `[pipeline ${meetingId}] ${segments.length} segmentos via ${external ? providerLabel() : "worker-gpu"} (${results.map((r) => `${r.channel}${r.diarized ? "+falantes" : ""}`).join(", ")}) em ${Math.round((Date.now() - started) / 1000)}s`,

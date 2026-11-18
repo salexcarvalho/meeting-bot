@@ -177,6 +177,19 @@ const RULES: Record<string, KindRule> = {
     fields: ["table", "deleted", "olderThanDays"],
     title: fixed("Poda de registros antigos"),
   },
+  // spec 006: só contadores e estado, nunca nomes nem trechos
+  speaker_timeline_recorded: {
+    label: "Leitura dos nomes na chamada",
+    userVisible: false,
+    fields: ["status", "reason", "people", "intervals"],
+    title: fixed("Leitura dos nomes na chamada"),
+  },
+  speaker_names_applied: {
+    label: "Nomes da chamada aplicados",
+    userVisible: false,
+    fields: ["applied", "skipped", "status", "mode"],
+    title: fixed("Nomes da chamada aplicados"),
+  },
 };
 
 export function knownKinds(): string[] {

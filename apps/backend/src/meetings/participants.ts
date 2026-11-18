@@ -1,4 +1,5 @@
 import type { Attendee } from "@meeting-bot/contracts";
+import { foldName } from "../bot/speakers/names";
 
 export interface Self {
   name: string;
@@ -11,5 +12,12 @@ export function participantNames(speakers: string[], attendees: Attendee[], self
   const invited = attendees
     .map((a) => (mine && self && a.email?.toLowerCase() === mine ? self.name : a.name || a.email || ""))
     .filter(Boolean);
-  return [...new Set([...speakers, ...invited])];
+  // Um nome lido na chamada e o mesmo nome no convite (outra caixa ou acentuação) são a mesma pessoa.
+  const seen = new Set<string>();
+  return [...speakers, ...invited].filter((name) => {
+    const key = foldName(name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

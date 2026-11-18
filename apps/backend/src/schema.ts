@@ -116,6 +116,26 @@ const statements = [
      PRIMARY KEY (meeting_id, label)
    )`,
 
+  // ---------- spec 006: nome dos falantes pela chamada ----------
+  // Linha do tempo de quem falou na tela da chamada (nomes de terceiros: apagada com a reunião, sem prazo próprio).
+  `CREATE TABLE IF NOT EXISTS speaker_activity (
+     id BIGSERIAL PRIMARY KEY,
+     meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+     participant_key TEXT NOT NULL,
+     display_name TEXT NOT NULL,
+     platform TEXT NOT NULL,
+     start_seconds NUMERIC NOT NULL,
+     end_seconds NUMERIC NOT NULL CHECK (end_seconds >= start_seconds)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_speaker_activity_meeting ON speaker_activity (meeting_id, start_seconds)`,
+  `ALTER TABLE meeting_speakers
+     ADD COLUMN IF NOT EXISTS name_source TEXT CHECK (name_source IN ('call', 'manual')),
+     ADD COLUMN IF NOT EXISTS name_confidence REAL`,
+  // legado: renomeações feitas à mão antes desta funcionalidade valem como manuais
+  `UPDATE meeting_speakers SET name_source = 'manual'
+     WHERE name_source IS NULL AND display_name <> label AND label <> 'user'`,
+  `ALTER TABLE meetings ADD COLUMN IF NOT EXISTS speaker_timeline_meta JSONB`,
+
   `CREATE TABLE IF NOT EXISTS meeting_notes (
      id BIGSERIAL PRIMARY KEY,
      meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,

@@ -1,5 +1,7 @@
 import { Locator, Page } from "playwright";
 import { gotoWithRetry } from "./navigate";
+import { probeFor, type SpeakerProfile } from "./speakers";
+import type { ProbeConfig } from "./speakers/probe";
 import { CameraState, driveJoin, JoinControl, JoinIdentity, JoinOptions, JoinResult, JoinScreen } from "./join";
 
 /**
@@ -29,6 +31,8 @@ export interface PlatformDriver {
   participantCount(page: Page): Promise<number | null>;
   /** Tela de "a chamada terminou" / "você saiu". */
   hasEnded(page: Page): Promise<boolean>;
+  /** Leitor de quem está falando na tela (spec 006); sem ele, nada é instalado na página. */
+  speakerProbe?(profile: SpeakerProfile): ProbeConfig | null;
 }
 
 // O botão de pessoas leva o total no nome ("People 8", "Pessoas 8", "Show everyone 3").
@@ -181,6 +185,8 @@ const meet: PlatformDriver = {
       /you('ve| have)? left the (meeting|call)|call ended|meeting (has )?ended|return to home screen|você saiu da (chamada|reunião)|a (chamada|reunião) (terminou|foi encerrada)/i,
     );
   },
+
+  speakerProbe: (profile) => probeFor("meet", profile),
 };
 
 const TEAMS_CAMERA_SWITCH = /camera|câmera|video|vídeo/i;
@@ -298,6 +304,8 @@ const teams: PlatformDriver = {
       /you left the meeting|meeting (has )?ended|call ended|you were removed|você saiu da reunião|a reunião (terminou|foi encerrada)/i,
     );
   },
+
+  speakerProbe: (profile) => probeFor("teams", profile),
 };
 
 export const drivers = { meet, teams } as const;

@@ -59,6 +59,7 @@ import { getAgent, getProfile, getSelf } from "./users/repo";
 import type { User } from "./types";
 import { toMeetingListItem, toMeetingSummary } from "./meetings/summary";
 import { countFinalSegments, getSegments, getSpeakers, speakerNameResolver, toSegmentJson } from "./repo/transcripts";
+import { toTimelineInfo } from "./repo/speakerActivity";
 import { features } from "./features";
 import { hub } from "./live/hub";
 import { EXTERNAL_ASR_ID, externalAsrStatus } from "./asr/openrouter";
@@ -167,6 +168,7 @@ export async function loadMeetingDetail(meetingId: string, user: User): Promise<
     access: myAccess,
     ownerName: myAccess === "owner" ? null : await ownerNameOf(meeting.created_by),
     analysisProvider: meeting.analysis_provider,
+    speakerTimeline: toTimelineInfo(meeting.speaker_timeline_meta),
   };
 }
 

@@ -13,6 +13,7 @@ import type {
 } from "@meeting-bot/contracts";
 import { config } from "./config";
 import { User } from "./types";
+import type { SpeakerTimelineMeta } from "./repo/speakerActivity";
 
 export const pool = new Pool({ connectionString: config.databaseUrl });
 
@@ -220,6 +221,8 @@ export interface MeetingRow {
   analysis: MeetingAnalysis | null;
   analyzed_at: Date | null;
   analysis_provider: string | null;
+  /** leitura dos nomes na tela da chamada (spec 006): estado e contadores, nunca nomes */
+  speaker_timeline_meta: SpeakerTimelineMeta | null;
   series_id: string | null;
   recurrence_rule: RecurrenceRule | null;
   /** só nas consultas por espectador (meetingSelectFor): nome do dono, nível próprio e contagens */

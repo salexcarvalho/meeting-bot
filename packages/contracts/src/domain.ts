@@ -67,6 +67,8 @@ export type TranscriptPass = (typeof PASSES)[number];
 // Rótulo fixo do canal do microfone (nome exibido vem de USER_DISPLAY_NAME).
 export const USER_SPEAKER_LABEL = "user";
 export const REMOTE_SPEAKER_LABEL = "Remoto";
+/** Prefixo do rótulo temporário da transcrição ao vivo com o nome lido na chamada ("live:Maria"); nunca vira falante da reunião. */
+export const LIVE_SPEAKER_PREFIX = "live:";
 
 export const ITEM_TYPES = [
   "decisao",
@@ -212,10 +214,33 @@ export interface Segment {
   end: number;
 }
 
+/** Origem do nome do falante: lido na chamada ou digitado pelo usuário; null = o rótulo padrão. */
+export type SpeakerNameSource = "call" | "manual";
+
 export interface Speaker {
   label: string;
   displayName: string;
   isUser: boolean;
+  nameSource: SpeakerNameSource | null;
+  /** 0 a 1; só em nome vindo da chamada */
+  nameConfidence: number | null;
+}
+
+export const SPEAKER_TIMELINE_STATUSES = ["ok", "partial", "unavailable", "off"] as const;
+export type SpeakerTimelineStatus = (typeof SPEAKER_TIMELINE_STATUSES)[number];
+
+/** Estado da leitura dos nomes na tela da chamada (nunca traz nomes de pessoas). */
+export interface SpeakerTimelineInfo {
+  status: SpeakerTimelineStatus;
+  reason?: string;
+  people: number;
+  source?: string;
+}
+
+/** Resposta de POST /meetings/:id/speakers/apply-call-names. */
+export interface ApplyCallNamesResult {
+  applied: number;
+  skipped: number;
 }
 
 export interface AudioChannelInfo {
@@ -368,6 +393,8 @@ export interface MeetingDetail {
   ownerName: string | null;
   /** quem gerou a análise da ata: "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
   analysisProvider: string | null;
+  /** leitura dos nomes na tela da chamada; null = reunião sem assistente na chamada */
+  speakerTimeline: SpeakerTimelineInfo | null;
 }
 
 export type AsrProvider = "local" | "openrouter";
