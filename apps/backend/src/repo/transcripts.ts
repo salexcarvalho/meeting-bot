@@ -1,10 +1,12 @@
 import type { PoolClient } from "pg";
 import {
+  LIVE_SPEAKER_PREFIX,
   REMOTE_SPEAKER_LABEL,
   USER_SPEAKER_LABEL,
   type Channel,
   type Segment,
   type Speaker,
+  type SpeakerNameSource,
   type TranscriptPass,
 } from "@meeting-bot/contracts";
 import { config } from "../config";
@@ -129,6 +131,11 @@ export async function replaceWithFinal(
       `UPDATE meetings SET transcribed_at = now(), transcription_provider = $2 WHERE id = $1`,
       [meetingId, provider],
     );
+    // Retranscrição: nomes da chamada e padrões são refeitos (a numeração dos "Speaker N" muda); os manuais ficam por rótulo.
+    await client.query(
+      `DELETE FROM meeting_speakers WHERE meeting_id = $1 AND (name_source IS NULL OR name_source = 'call')`,
+      [meetingId],
+    );
     await seedSpeakers(client, meetingId, inserted);
     return inserted;
   });
@@ -145,33 +152,45 @@ async function seedSpeakers(client: PoolClient, meetingId: string, segments: Seg
   }
 }
 
+function toSpeaker(r: Record<string, unknown>): Speaker {
+  return {
+    label: r.label as string,
+    displayName: r.display_name as string,
+    isUser: r.label === USER_SPEAKER_LABEL,
+    nameSource: (r.name_source as SpeakerNameSource | null) ?? null,
+    nameConfidence: r.name_confidence === null || r.name_confidence === undefined ? null : Number(r.name_confidence),
+  };
+}
+
 export async function getSpeakers(meetingId: string): Promise<Speaker[]> {
   const { rows } = await pool.query(
-    `SELECT label, display_name FROM meeting_speakers WHERE meeting_id = $1 ORDER BY label`,
+    `SELECT label, display_name, name_source, name_confidence FROM meeting_speakers WHERE meeting_id = $1 ORDER BY label`,
     [meetingId],
   );
-  return rows.map((r) => ({ label: r.label, displayName: r.display_name, isUser: r.label === USER_SPEAKER_LABEL }));
+  return rows.map(toSpeaker);
 }
 
+// Renomear grava origem "manual" (nunca sobrescrita pelo casamento); nome igual ao rótulo = voltar ao padrão.
 export async function renameSpeaker(meetingId: string, label: string, displayName: string): Promise<Speaker | null> {
   const { rows } = await pool.query(
-    `INSERT INTO meeting_speakers (meeting_id, label, display_name)
-     SELECT $1, $2, $3 WHERE EXISTS (
+    `INSERT INTO meeting_speakers (meeting_id, label, display_name, name_source)
+     SELECT $1, $2, $3, CASE WHEN $3 = $2 THEN NULL ELSE 'manual' END WHERE EXISTS (
        SELECT 1 FROM transcript_segments WHERE meeting_id = $1 AND speaker = $2
      )
-     ON CONFLICT (meeting_id, label) DO UPDATE SET display_name = EXCLUDED.display_name
-     RETURNING label, display_name`,
+     ON CONFLICT (meeting_id, label) DO UPDATE
+       SET display_name = EXCLUDED.display_name, name_source = EXCLUDED.name_source, name_confidence = NULL
+     RETURNING label, display_name, name_source, name_confidence`,
     [meetingId, label, displayName],
   );
-  if (!rows[0]) return null;
-  return { label: rows[0].label, displayName: rows[0].display_name, isUser: rows[0].label === USER_SPEAKER_LABEL };
+  return rows[0] ? toSpeaker(rows[0]) : null;
 }
 
-// Nome exibido: renomeação da reunião > nome do usuário (canal mic) > rótulo.
+// Nome exibido: renomeação da reunião > nome do usuário (canal mic) > rótulo. Rótulo ao vivo ("live:Nome") vale o nome.
 export function speakerNameResolver(speakers: Speaker[]): (label: string | null) => string | null {
   const names = new Map(speakers.map((s) => [s.label, s.displayName]));
   return (label) => {
     if (!label) return null;
+    if (label.startsWith(LIVE_SPEAKER_PREFIX)) return label.slice(LIVE_SPEAKER_PREFIX.length) || null;
     return names.get(label) ?? (label === USER_SPEAKER_LABEL ? config.userDisplayName : label);
   };
 }

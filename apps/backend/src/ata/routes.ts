@@ -1,10 +1,12 @@
 import type { Router } from "express";
 import { z } from "zod";
+import type { ApplyCallNamesResult } from "@meeting-bot/contracts";
 import { config } from "../config";
 import { emitMeetingChanged, getMeeting } from "../db";
 import { features } from "../features";
 import { listAdrs, listItems } from "../items/service";
 import { hub } from "../live/hub";
+import { applyCallNames } from "../meetings/applyCallNames";
 import { toMeetingSummary } from "../meetings/summary";
 import { getSelf } from "../users/repo";
 import { parseBody, wrap } from "../routes";
@@ -100,7 +102,23 @@ function register(router: Router): void {
       emitMeetingChanged(meetingId);
       markDirtyLater(meetingId);
       hub.publishToMeeting(meetingId, { type: "transcript_replaced", meetingId });
-      res.json({ label: speaker.label, displayName: speaker.displayName });
+      res.json({ label: speaker.label, displayName: speaker.displayName, nameSource: speaker.nameSource });
+    }),
+  );
+
+  // Refaz o casamento com os nomes lidos na chamada, sem retranscrever (nome manual nunca é sobrescrito).
+  router.post(
+    "/meetings/:id/speakers/apply-call-names",
+    wrap(async (req, res) => {
+      const meetingId = String(req.params.id);
+      const { applied, skipped } = await applyCallNames(meetingId);
+      const result: ApplyCallNamesResult = { applied, skipped };
+      if (applied > 0) {
+        emitMeetingChanged(meetingId);
+        markDirtyLater(meetingId);
+        hub.publishToMeeting(meetingId, { type: "transcript_replaced", meetingId });
+      }
+      res.json(result);
     }),
   );
 }

@@ -6,8 +6,9 @@ import { liveAsrUsage } from "../usage/liveAsr";
 import { defaultSpeaker, getSpeakers, insertLiveSegments, speakerNameResolver, toSegmentJson } from "../repo/transcripts";
 import { BYTES_PER_SECOND, Chunk, Chunker } from "./chunker";
 import { glossaryFor } from "./glossary";
-import type { Channel } from "@meeting-bot/contracts";
+import { LIVE_SPEAKER_PREFIX, type Channel } from "@meeting-bot/contracts";
 import { runtimeFor } from "./runtime";
+import { getTimeline } from "./speakerTimeline";
 
 // Transcrição ao vivo de um canal: corta o PCM recebido e manda cada trecho ao worker.
 // Canais mic/remote vêm do host-agent; "mixed" vem do assistente dentro da chamada.
@@ -115,6 +116,19 @@ export class LiveSession {
     }
   }
 
+  // Rótulo temporário "live:Nome" com quem mais falou no trecho (canal do assistente, só com linha do tempo).
+  // Nunca vira falante da reunião: some junto com os segmentos ao vivo quando o passe final chega.
+  private liveSpeaker(start: number, end: number): string | null {
+    if (this.channel !== "mixed" || !config.botSpeakerNames) return null;
+    const timeline = getTimeline(this.meetingId);
+    if (!timeline) return null;
+    const name = timeline.dominant(start, end, {
+      skewSeconds: config.botSpeakerSkewMs / 1000,
+      nowSeconds: Number.MAX_SAFE_INTEGER,
+    });
+    return name ? `${LIVE_SPEAKER_PREFIX}${name}` : null;
+  }
+
   // false = tentar de novo o mesmo trecho.
   private async process(chunk: QueuedChunk): Promise<boolean> {
     const base = chunk.offsetBytes / BYTES_PER_SECOND;
@@ -139,7 +153,7 @@ export class LiveSession {
             .filter((s) => s.text.trim())
             .map((s) => ({
               channel: this.channel,
-              speaker: defaultSpeaker(this.channel, null),
+              speaker: this.liveSpeaker(base + s.start, base + Math.max(s.end, s.start)) ?? defaultSpeaker(this.channel, null),
               text: s.text.trim(),
               start: Math.round((base + s.start) * 100) / 100,
               end: Math.round((base + Math.max(s.end, s.start)) * 100) / 100,

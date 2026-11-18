@@ -28,7 +28,9 @@ export type AuditKind =
   | "auth_login_failed"
   | "auth_logout"
   | "auth_password_changed"
-  | "retention_pruned";
+  | "retention_pruned"
+  | "speaker_timeline_recorded"
+  | "speaker_names_applied";
 
 // Nunca registrar conteúdo de reunião aqui — só metadados.
 export function audit(kind: AuditKind, detail: Record<string, unknown>, userId: string | null = null): void {

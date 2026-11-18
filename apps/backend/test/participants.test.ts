@@ -28,3 +28,11 @@ describe("participantNames", () => {
     expect(participantNames([], attendees, null)).toHaveLength(3);
   });
 });
+
+describe("participantNames: nomes lidos da chamada (spec 006)", () => {
+  it("o mesmo nome da chamada e do convite, com outra caixa ou acento, aparece uma vez", () => {
+    const invited = [{ name: "Ana Souza", email: "ana@empresa.com" }];
+    expect(participantNames(["ANA SOUZA", "Speaker 2"], invited, null)).toEqual(["ANA SOUZA", "Speaker 2"]);
+    expect(participantNames(["Joao Lima"], [{ name: "João Lima", email: "j@e.com" }], null)).toEqual(["Joao Lima"]);
+  });
+});

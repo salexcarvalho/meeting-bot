@@ -137,3 +137,42 @@ describe("transcribeFileExternal", () => {
     expect(unauthorized).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("nomes da chamada com o ASR externo (spec 006)", () => {
+  it("os rótulos 'Speaker N' do provedor são nomeados localmente e nada além do áudio sai", async () => {
+    const mod = await load({ ALLOW_EXTERNAL_ASR: "true", OPENROUTER_API_KEY: "sk-teste", ASR_PROVIDER: "openrouter" });
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        bodies.push(String(init.body));
+        return Response.json({
+          text: "x",
+          segments: [
+            { start: 10, end: 18, text: "Bom dia.", speaker: 0 },
+            { start: 19, end: 27, text: "Olá.", speaker: 1 },
+            { start: 28, end: 36, text: "Certo.", speaker: 0 },
+            { start: 37, end: 45, text: "Tudo bem?", speaker: 1 },
+          ],
+          usage: { seconds: 45, cost: 0.0002 },
+        });
+      }),
+    );
+    const result = await mod.transcribeFileExternal("m", { path: wav, channel: "mixed", diarize: true }, { language: "pt" }, () => {});
+    expect(result.segments.map((s) => s.speaker)).toEqual(["Speaker 1", "Speaker 2", "Speaker 1", "Speaker 2"]);
+
+    const { matchSpeakers } = await import("../src/meetings/speakerNames");
+    const timeline = [
+      { key: "id:1", name: "Maria Souza", start: 10, end: 18 },
+      { key: "id:2", name: "João Lima", start: 19, end: 27 },
+      { key: "id:1", name: "Maria Souza", start: 28, end: 36 },
+      { key: "id:2", name: "João Lima", start: 37, end: 45 },
+    ];
+    const match = matchSpeakers(result.segments.map((s) => ({ label: s.speaker, start: s.start, end: s.end })), timeline);
+    expect(match.names.get("Speaker 1")?.name).toBe("Maria Souza");
+    expect(match.names.get("Speaker 2")?.name).toBe("João Lima");
+    // o corpo enviado ao provedor leva só o áudio e as opções de diarização: nenhum nome, nenhuma linha do tempo
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toMatch(/Maria|João|speaker_activity/);
+  });
+});

@@ -52,12 +52,12 @@ visíveis)
 
 ## Constitution Check
 
-*GATE: aprovado para a Phase 0; reavaliado após o design (sem novas violações). Revisado contra a Constituição 3.0.0 em 2026-11-18.*
+*GATE: aprovado para a Phase 0; reavaliado após o design (sem novas violações). Revisado contra a Constituição 3.0.0 em 2026-11-18; emenda MINOR 3.1.0 aplicada em 2026-11-18 (T063).*
 
 | Princípio | Como o plano atende | Status |
 |---|---|---|
 | I. Local-first e Privacidade | Leitura, linha do tempo e casamento rodam no backend local, sem chamada nova de rede; diarização (pyannote) e Whisper seguem locais, e nenhum modelo novo é adicionado. No ASR externo (exceção de teste) só o áudio sai, como hoje, e os nomes são aplicados localmente. Não existe LLM local (3.0.0): ata, itens ao vivo, ADR e chat usam o provedor externo de `LLM_GENERATION_PROVIDER` (padrão `claude`), só com `ALLOW_EXTERNAL_LLM=true`. Os nomes da chamada passam a fazer parte da transcrição enviada a esse provedor, como o título e os falantes renomeados já fazem (Decisão 3); sem a flag não há envio e a busca, a transcrição e os nomes seguem normalmente. O backend nunca envia a linha do tempo (`speaker_activity`), só os nomes já aplicados aos segmentos, e a chamada ao provedor continua registrada com uso e custo, sem conteúdo. Nomes de terceiros são dado pessoal: guardados com a reunião e apagados junto (Decisão 1). Sem biometria nem vetores de voz. | ✅ |
-| II. Respeito às Políticas da Organização (NÃO NEGOCIÁVEL) | Lê só o DOM que o convidado já vê; sem endpoints internos, sem interceptar tráfego, sem pedir permissão, sem simular ações para obter dado liberado só a outros papéis. Sem ligar legendas nem abrir painéis na v1. Risco de interpretação: "automação que simule o usuário para obter dados" — aqui não há ação do usuário simulada, só leitura passiva. | ⚠️ exige emenda MINOR 3.1.0 registrando a leitura passiva (Decisão 2, aprovada; aplicar antes do merge da implementação, T063) |
+| II. Respeito às Políticas da Organização (NÃO NEGOCIÁVEL) | Lê só o DOM que o convidado já vê; sem endpoints internos, sem interceptar tráfego, sem pedir permissão, sem simular ações para obter dado liberado só a outros papéis. Sem ligar legendas nem abrir painéis na v1. Risco de interpretação: "automação que simule o usuário para obter dados" — aqui não há ação do usuário simulada, só leitura passiva. | ✅ emenda MINOR 3.1.0 aplicada (leitura passiva do que o convidado vê; Decisão 2, T063) |
 | III. Humano no Controle | Nome automático é proposta: marcado "da chamada" + confiança, editável, reversível; manual prevalece. O que o LLM externo gera com esses nomes continua proposta. | ✅ |
 | IV. Rastreabilidade | Linha do tempo guarda a evidência do nome (intervalos por pessoa); segmentos e evidências dos itens não mudam (só o `speaker`). Retranscrição refaz o casamento. | ✅ |
 | V. Orçamento de GPU | Nenhum uso de GPU/VRAM (a GPU atende só o Whisper); casamento é CPU puro. Sem Ollama nem modelo generativo local. | ✅ |
@@ -331,6 +331,14 @@ mostra o aviso (US2). Nada disso lança exceção para o runner.
    falsa do worker, rodando o `pipeline` até `speakers` na API.
 7. **Validação real (Princípio VII)**: T060–T062 (Teams convidado, Teams conta, Meet).
 
+### Medição de custo (T038)
+
+Medido com fixtures sintéticas (Chromium headless, configuração de produção: 250 ms, 500 ms com mais de 30
+quadros), `ScriptDuration` da página por segundo de relógio: Teams 8/30/40 quadros ≈ 0,10% / 0,15% / 0,10% de um
+núcleo; Meet 8/40 quadros ≈ 0,07% / 0,09% (meta: < 3%, SC-006). Guardado como teste de regressão
+(`apps/backend/test/speakers-cost.test.ts`). O DOM real é bem mais pesado que o sintético: repetir a medição na
+reunião real (T060–T062).
+
 ## Project Structure
 
 ### Documentation (this feature)
@@ -392,7 +400,7 @@ reunião": nomes ao vivo; (3) "Depois da reunião": origem e confiança, reaplic
 `BOT_SPEAKER_NAMES`, `BOT_SPEAKER_SKEW_MS`; (5) "Limitações conhecidas": seletores quebram, reuniões
 grandes mostram só parte dos participantes, só com assistente, aviso LGPD de nomes. Também: `CLAUDE.md`
 (regras do projeto), `CHANGELOG.md`, `.env.example`, `.env.vps.example`, `docs/ARCHITECTURE.md`,
-`docs/agente-arquiteto.md` (nomes ao vivo) e a constituição (emenda MINOR 3.1.0, aprovada; T063).
+`docs/agente-arquiteto.md` (nomes ao vivo) e a constituição (emenda MINOR 3.1.0, aprovada e aplicada; T063).
 
 ## Riscos principais
 
@@ -404,7 +412,7 @@ grandes mostram só parte dos participantes, só com assistente, aviso LGPD de n
 | 4 | Defasagem indicador × áudio | estimativa de δ por reunião, correlação com o áudio como trava |
 | 5 | CPU/estabilidade da leitura na página | poll leve com cache, 250–500 ms, medição (T038), isolamento de falha |
 | 6 | Nomes de terceiros (LGPD) | tratado como dado local, cascade, Decisões 1 e 3, auditoria sem nomes |
-| 7 | Interpretação do Princípio II | emenda MINOR 3.1.0 aprovada (aplicar antes do merge da implementação); leitura passiva do que o convidado vê |
+| 7 | Interpretação do Princípio II | emenda MINOR 3.1.0 aplicada (T063); leitura passiva do que o convidado vê |
 | 8 | Retranscrição renumera rótulos e deixa nome manual no cluster errado | refazer casamento, manter manual por rótulo e avisar (decisão 5) |
 
 ## Complexity Tracking
@@ -419,8 +427,8 @@ O usuário decidiu as seis questões que estavam em aberto. O plano e as tarefas
    junto com ela e com "excluir transcrição" (cascade). Permite reaplicar e retranscrever. Sem prazo
    próprio de retenção.
 2. **Emenda à constituição (Princípio II, MINOR 3.1.0)**: aprovada. Registra que o assistente lê
-   passivamente o que o convidado já vê na tela (nomes e indicador de fala). Deve ser aplicada antes do
-   merge da implementação (T063), com Sync Impact Report. Não é aplicada neste PR de documentação.
+   passivamente o que o convidado já vê na tela (nomes e indicador de fala). Aplicada em
+   2026-11-18 (T063), com Sync Impact Report, antes do merge da implementação.
 3. **Nomes da chamada no que vai para LLM externo e ata**: tratados como o resto do conteúdo (já vão o
    título, os participantes e os falantes renomeados), sob `ALLOW_EXTERNAL_LLM` e o provedor de
    `LLM_GENERATION_PROVIDER`. O aviso existente na UI cobre.

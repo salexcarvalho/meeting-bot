@@ -104,6 +104,85 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata
 O detalhamento do agente arquiteto (prompts, janelas, validação, deduplicação, schemas e onde alterar)
 está em [`agente-arquiteto.md`](agente-arquiteto.md).
 
+## Nome dos falantes pela chamada
+
+Spec `specs/006-nome-dos-falantes/`; constituição 3.1.0 (Princípio II). O assistente lê passivamente, na tela do
+Teams (convidado e conta do agente) e do Meet, quem está com o indicador de fala ativo; o casamento dá nome aos
+"Speaker N". Sem biometria de voz e sem rede nova. Desligável por `BOT_SPEAKER_NAMES=false`.
+
+**Módulos** (relativos a `apps/backend/src/`):
+
+| Módulo | Papel |
+|---|---|
+| `bot/speakers/{meet,teams}.ts`, `probe.ts`, `probeSource.ts` | Seletores por plataforma (Teams: perfis `guest` e `account`; camadas semântica, estrutural e painel) e leitor que roda **dentro da página** (poll de 250 ms; só as bordas do indicador saem para o Node, pela ponte do Playwright) |
+| `bot/speakers/collector.ts`, `start.ts` | Liga a leitura ao bot: converte as bordas para o relógio do áudio, alimenta a linha do tempo, grava em lotes e fecha a leitura com o estado (`finish`); nunca lança para o `runner.ts` |
+| `bot/speakers/health.ts` | Saúde da leitura: ok, parcial ou indisponível |
+| `bot/speakers/names.ts` | Normalização e chave do participante; o assistente e os quadros de compartilhamento são ignorados |
+| `recording/clockAnchor.ts`, `recording/speakerTimeline.ts` | Relógio do áudio e linha do tempo em memória (intervalos por pessoa, fusão de pausas < 0,5 s, fala mínima de 0,3 s, nome dominante de um trecho) |
+| `meetings/speakerNames.ts` | Casamento puro "Speaker N" ↔ nome (sem banco, relógio nem DOM) |
+| `meetings/applyCallNames.ts` | Aplica o casamento (passe final, `POST /meetings/:id/speakers/apply-call-names`), respeitando o nome manual |
+| `repo/speakerActivity.ts` | Persistência de `speaker_activity` e do estado `meetings.speaker_timeline_meta` |
+| `bot/speakers/diagnostic*.ts` | Diagnóstico opcional (abaixo) |
+
+**Fluxo:**
+
+1. O `bot/runner.ts` chama `startSpeakerReader` depois de entrar na chamada. O leitor instala o poll na página (e
+   reinstala a cada 5 s se a tela mudar); o coletor drena as bordas a cada 1 s e grava em lotes a cada 10 s.
+2. **Relógio do áudio:** o `.ogg` e o PCM ao vivo saem do mesmo ffmpeg. O `ClockAnchor` estima o instante zero do
+   áudio pelo menor valor de (chegada do bloco − bytes ÷ taxa); toda borda do indicador vira segundos do áudio gravado.
+3. **Ao vivo** (`recording/liveSession.ts`, só o canal `mixed` do assistente): cada trecho transcrito sai com o nome
+   dominante do intervalo (≥ 50% do trecho e ≥ 0,5 s), como rótulo temporário `live:Nome`. Esse rótulo nunca vira
+   falante (`meeting_speakers`) e some quando o passe final substitui os segmentos ao vivo.
+4. **Passe final** (`pipeline.ts`, depois da diarização): `matchSpeakers` monta a matriz rótulo × pessoa por
+   sobreposição temporal ponderada, estima o deslocamento do indicador por reunião (até ±2 s, passo de 0,1 s; `BOT_SPEAKER_SKEW_MS`
+   é o ponto de partida) e só nomeia com evidência mínima (2 s e 15% da fala do rótulo), cobertura (30%), pureza (60%) e
+   margem sobre o segundo nome (1,5×); abaixo disso fica "Speaker N". Se a linha do tempo não correlaciona com a fala
+   detectada pelo ASR (menos de 50%), a leitura é descartada. Sem diarização (ASR externo sem falantes), cada segmento
+   recebe o nome dominante. Os limiares são os iniciais e serão calibrados nas validações reais (T060–T062).
+5. **Origem e prioridade:** `meeting_speakers.name_source` (`call` | `manual` | nulo) e `name_confidence` (0 a 1; "alta"
+   a partir de 0,75, senão "conferir" na interface). Nome manual prevalece sempre, também na retranscrição (mantido por
+   rótulo; a interface avisa que a numeração pode mudar). Renomeações anteriores à funcionalidade valem como manuais.
+6. **Reaplicar:** `POST /meetings/:id/speakers/apply-call-names` refaz o casamento com a linha do tempo guardada,
+   sem retranscrever; devolve `{ applied, skipped }`.
+
+**Saúde e degradação:** `SpeakerHealth` marca `unavailable` (sem nenhum quadro com nome por 60 s com mais de uma pessoa
+na chamada, ou mais de 20 exceções de leitura por minuto), `partial` (som na chamada sem nenhuma fala detectada pelo
+indicador por 120 s; indicador preso, com 80% ou mais dos quadros "falando" por 20 s; ou baixa correlação com o áudio).
+Leitura parcial ou indisponível não é usada para nomear e a reunião mostra o aviso; a gravação, a transcrição e a
+numeração "Speaker N" seguem como antes. A falha nunca derruba o bot.
+
+**Dados** (migração aditiva em `schema.ts`):
+
+- `speaker_activity` (`meeting_id` com `ON DELETE CASCADE`, `participant_key`, `display_name`, `platform`,
+  `start_seconds`, `end_seconds`): linha do tempo de quem falou. Nomes de terceiros ficam só com a reunião e são
+  apagados com ela e com "excluir transcrição"; sem prazo próprio de retenção.
+- `meeting_speakers.name_source` e `name_confidence`; `meetings.speaker_timeline_meta` (JSONB: estado, motivo,
+  camada, número de pessoas e intervalos, deslocamento estimado e rótulos sem decisão; nunca traz nomes).
+- Auditoria só com contadores: `speaker_timeline_recorded` (estado, motivo, pessoas, intervalos) e
+  `speaker_names_applied` (aplicados, ignorados, estado). Nomes nunca vão para log nem auditoria.
+
+**Privacidade:** nenhuma chamada de rede nova; nomes e linha do tempo não saem da máquina. Os nomes já aplicados aos
+segmentos seguem como o resto do conteúdo para o LLM externo (só com `ALLOW_EXTERNAL_LLM=true`); a linha do tempo
+(`speaker_activity`) nunca é enviada.
+
+**Configuração (`.env`):** `BOT_SPEAKER_NAMES` (padrão `true`), `BOT_SPEAKER_SKEW_MS` (padrão 0, calibração) e
+`BOT_SPEAKER_DIAGNOSTIC` (padrão `false`).
+
+**Seletores são hipóteses:** os seletores do Teams e do Meet só foram escritos a partir de conhecimento geral das telas
+e de fixtures; ficam confirmados só depois da captura em reunião real (T001) e das validações T060–T062.
+
+**Diagnóstico para recalibrar os seletores** (`BOT_SPEAKER_DIAGNOSTIC=true`): o bot salva em
+`DATA_DIR/debug/speakers/<id-da-reunião>/NNNN.json` só a **estrutura** dos quadros da chamada (tags, atributos e papéis;
+sem texto, nomes, áudio nem vídeo), até 120 arquivos. `node apps/backend/scripts/capture-speaker-dom.mjs <pasta-da-reunião> [--top N]`
+lista os elementos cujo estilo ou atributos mudam entre as capturas, candidatos a indicador de fala. Passo a passo na
+próxima reunião real:
+
+1. Ligar `BOT_SPEAKER_DIAGNOSTIC=true` no `.env` e reiniciar só o backend (com o backend ocioso, sem reunião em processamento).
+2. Deixar o assistente entrar numa reunião com 3 ou mais pessoas.
+3. Anotar quem fala e em que horário por uns 5 minutos.
+4. Copiar a pasta `DATA_DIR/debug/speakers/<id-da-reunião>/`.
+5. Rodar o script sobre a pasta e compartilhar o resultado (a verdade anotada no passo 3 serve para conferir os candidatos).
+
 ## Segurança e privacidade
 
 - UI em `127.0.0.1`; sessões em cookie `httpOnly` (scrypt); `requireSameOrigin` nas mutações.

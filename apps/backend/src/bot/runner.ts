@@ -9,6 +9,8 @@ import { enqueueProcessing } from "../pipeline";
 import { closeLiveSessions, liveSession } from "../recording/liveSession";
 import { audit } from "../security/audit";
 import { dropRuntime } from "../recording/runtime";
+import { ClockAnchor } from "../recording/clockAnchor";
+import { dropTimeline } from "../recording/speakerTimeline";
 import { markTeamsSessionExpired, MAX_SESSION_BYTES, parseSession, refreshTeamsSession } from "../users/teamsAccount";
 import { createSink, removeSink, startRecording, stopRecording } from "./audio";
 import { launchBrowser } from "./browser";
@@ -18,6 +20,8 @@ import type { BotAccount, BotIdentity } from "./identity";
 import { LeaveDecider } from "./leave";
 import { drivers } from "./platforms";
 import { JoinError, type JoinResult } from "./join";
+import type { SpeakerCollector } from "./speakers/collector";
+import { startSpeakerReader } from "./speakers/start";
 import { activeBots as active, removeBot, setBotStage } from "./state";
 
 export { activeBotCount, isBotActive } from "./state";
@@ -137,6 +141,7 @@ async function runBot(
   let recorder: ChildProcessWithoutNullStreams | null = null;
   let failure: string | null = null;
   let signedIn = false;
+  let speakers: SpeakerCollector | null = null;
 
   try {
     // Sem ícone cadastrado, a câmera fica desligada (a reunião mostra as iniciais).
@@ -228,7 +233,10 @@ async function runBot(
     const live = config.botLiveTranscription ? liveSession(meetingId, "mixed") : null;
     // O mesmo PCM serve para a transcrição ao vivo e para saber se ainda há som na chamada.
     let lastSoundAt = Date.now();
+    // Relógio da linha do tempo dos falantes = relógio do áudio gravado (spec 006).
+    const anchor = new ClockAnchor();
     recorder = startRecording(sinkName, audioPath, (pcm) => {
+      anchor.observe(pcm.length, performance.now());
       if (hasSound(pcm)) lastSoundAt = Date.now();
       live?.push(pcm);
     });
@@ -236,6 +244,18 @@ async function runBot(
     await markStarted(meetingId);
     await driver.ensureMuted(page);
     await screenshot(page, meetingId);
+    // Leitura dos nomes na tela: roda em timers próprios e qualquer falha dela é só log (nunca derruba a gravação).
+    speakers = startSpeakerReader({
+      page,
+      driver,
+      meetingId,
+      platform,
+      profile: signedIn ? "account" : "guest",
+      assistantName: identity.name,
+      anchor,
+      lastSoundAt: () => lastSoundAt,
+      log,
+    });
 
     const startedAt = Date.now();
     const decider = new LeaveDecider({
@@ -284,8 +304,10 @@ async function runBot(
     failure = err instanceof BotError ? err.message : `Erro no bot: ${(err as Error).message}`;
     console.error(`[bot ${meetingId}]`, err);
   } finally {
+    await stopSpeakers(speakers, log);
     if (recorder) await stopRecording(recorder);
     closeLiveSessions(meetingId);
+    dropTimeline(meetingId);
     dropRuntime(meetingId);
     if (signedIn && identity.account && page && !page.isClosed()) await keepSessionFresh(page, identity.account, log);
     if (page && !page.isClosed()) {
@@ -304,6 +326,27 @@ async function runBot(
     enqueueProcessing(meetingId);
   } else {
     await setMeetingStatus(meetingId, "error", failure ?? "Nenhum áudio foi gravado.");
+  }
+}
+
+const SPEAKERS_STOP_TIMEOUT_MS = 8000;
+
+// Fecha a leitura dos nomes (intervalos abertos, último lote e resumo) sem nunca atrasar nem derrubar a saída.
+async function stopSpeakers(collector: SpeakerCollector | null, log: (msg: string) => void): Promise<void> {
+  if (!collector) return;
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      log("leitura dos nomes: encerramento demorou; seguindo sem esperar");
+      resolve();
+    }, SPEAKERS_STOP_TIMEOUT_MS);
+  });
+  try {
+    await Promise.race([collector.stop().then(() => undefined), limit]);
+  } catch (err) {
+    log(`leitura dos nomes: erro ao encerrar (${(err as Error).name})`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

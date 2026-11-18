@@ -1,0 +1,12 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'><title>fixture</title><!-- FIXTURE SINTETICA: montada a partir das HIPOTESES de seletor do plano (R1), nao de uma captura real (T001 pendente). Nomes ficticios. Serve para testar o leitor, nao para provar que o Teams/Meet real usa estes seletores. -->
+<style>
+.stage{display:flex;flex-wrap:wrap;gap:8px}
+.tile{width:160px;height:90px;position:relative;background:#222}
+.tile video,.tile img{width:100%;height:100%}
+</style></head><body><div class='stage'><div class="tile" data-tid="video-stream-container" aria-label="Pessoa A" data-tile-name="Pessoa A"><video></video><div data-tid="voice-level-stream-outline" class="outline"></div></div><div class="tile" data-tid="video-stream-container" aria-label="Pessoa B" data-tile-name="Pessoa B"><video></video><div data-tid="voice-level-stream-outline" class="outline"></div></div><div class="tile" data-tid="video-stream-container" aria-label="Pessoa C" data-tile-name="Pessoa C"><video></video><div data-tid="voice-level-stream-outline" class="outline"></div></div><div class="tile" data-tid="video-stream-container" aria-label="Ata do Sérgio" data-tile-name="Ata do Sérgio"><video></video><div data-tid="voice-level-stream-outline" class="outline"></div></div><div class="tile" data-tid="video-stream-container" aria-label="Pessoa D (Guest)" data-tile-name="Pessoa D (Guest)"><video></video><div data-tid="voice-level-stream-outline" class="outline"></div></div></div><style>.outline{position:absolute;inset:0;border:3px solid transparent}.outline.on{border-color:rgb(98,100,167)}</style>
+<script>
+window.__setSpeaking = function (name, on) { var el = document.querySelector('[data-tile-name="' + name + '"]'); if (el) el.__apply(on); };
+window.__remove = function (name) { var el = document.querySelector('[data-tile-name="' + name + '"]'); if (el) el.remove(); };
+</script><script>
+document.querySelectorAll('[data-tile-name]').forEach(function (t) { t.__apply = function (on) { t.querySelector('.outline').classList.toggle('on', on); }; });
+</script></body></html>
