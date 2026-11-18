@@ -1,7 +1,7 @@
 import { Browser, BrowserContextOptions, chromium, Page } from "playwright";
 import { config } from "../config";
 
-/** `cameraFile`: cartão .y4m que a câmera falsa mostra (sem ele, a câmera fica desligada na reunião). */
+/** `cameraFile`: .y4m que a câmera falsa mostra (ícone do agente, ou quadro preto com a câmera desligada; sem ele o Chromium mostra o padrão verde de teste). */
 /** `storageState`: sessão da conta do agente (cookies e localStorage); sem ela, entra como convidado. */
 export async function launchBrowser(
   sinkName: string,

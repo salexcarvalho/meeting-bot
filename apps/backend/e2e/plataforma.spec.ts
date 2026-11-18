@@ -127,14 +127,14 @@ test.describe.serial("plataforma multiusuário", () => {
     await login(page, BIA);
     await page.goto("/configuracoes?aba=consumo");
     await expect(page.getByRole("heading", { name: "Consumo de IA" })).toBeVisible();
-    await expect(page.getByText("Nada gerado neste mês")).toBeVisible();
+    await expect(page.getByText("Nenhum consumo neste período")).toBeVisible();
     const usage = await page.evaluate(async () => {
-      const res = await fetch("/api/llm/usage");
+      const res = await fetch("/api/usage/me");
       return { status: res.status, body: (await res.json()) as { totals: { calls: number } } };
     });
     expect(usage.status).toBe(200);
     expect(usage.body.totals.calls).toBe(0);
-    const invalido = await page.evaluate(async () => (await fetch("/api/llm/usage?month=2026-13")).status);
+    const invalido = await page.evaluate(async () => (await fetch("/api/usage/me?month=2026-13")).status);
     expect(invalido).toBe(400);
     await shot(page, "config-consumo");
   });
@@ -286,12 +286,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("tab", { name: "Ata" }).click();
     await page.getByRole("button", { name: "Gerar ata" }).click();
     const ataDialog = page.getByRole("dialog", { name: "Gerar ata" });
-    await expect(ataDialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(ataDialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     const claude = ataDialog.getByRole("radio", { name: /Claude \(sua assinatura\)/ });
     await expect(claude).toBeDisabled();
     await expect(ataDialog.getByText(/vale só para as reuniões dele/)).toBeVisible();
-    await expect(page.getByRole("note").filter({ hasText: /OpenRouter/ })).toHaveCount(0);
-    await ataDialog.getByRole("radio", { name: /OpenRouter/ }).check();
     await expect(ataDialog.getByRole("note")).toContainText("OpenRouter");
     await shot(page, "gerar-ata-openrouter");
     await ataDialog.getByRole("button", { name: "Cancelar" }).click();
@@ -304,14 +302,14 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("tab", { name: /^Itens/ }).click();
     await page.getByRole("button", { name: "Gerar ADR", exact: true }).click();
     const adrDialog = page.getByRole("dialog", { name: "Gerar ADR" });
-    await expect(adrDialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(adrDialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     await adrDialog.getByRole("button", { name: "Gerar ADR" }).click();
     await expect(adrDialog).toBeHidden();
-    // sem Ollama no E2E a geração falha; o aviso chega pelo WebSocket e não é coberto pelo "Gerando…"
+    // o OpenRouter do E2E aponta para uma porta fechada: a geração falha; o aviso chega pelo WebSocket e não é coberto pelo "Gerando…"
     await expect(page.getByRole("status").filter({ hasText: /Falha no processamento/ })).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);
     await expect(page.getByRole("status")).toContainText("Falha no processamento");
-    expect(generations).toEqual([{ llm: "local", itemId: item.json.id }]);
+    expect(generations).toEqual([{ llm: "openrouter", itemId: item.json.id }]);
     await shot(page, "gerar-adr-falha");
   });
 
@@ -337,19 +335,19 @@ test.describe.serial("plataforma multiusuário", () => {
     // cancelar não envia nada
     await chave.getByRole("button", { name: "Gerar itens" }).click();
     const dialog = page.getByRole("dialog", { name: "Gerar itens" });
-    await expect(dialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     await dialog.getByRole("button", { name: "Cancelar" }).click();
     await expect(dialog).toBeHidden();
     expect(calls).toEqual([]);
     await expect(chave).toContainText("Itens desligados");
 
-    // confirmar liga a chave e pede a análise; sem Ollama no E2E ela falha, mas a chave fica ligada
+    // confirmar liga a chave e pede a análise; o OpenRouter do E2E está inacessível: ela falha, mas a chave fica ligada
     await chave.getByRole("button", { name: "Gerar itens" }).click();
     await dialog.getByRole("button", { name: "Gerar itens" }).click();
     await expect(chave).toContainText("Itens ligados", { timeout: 30_000 });
     expect(calls).toEqual([
       { method: "PUT", path: "extract-items", body: { enabled: true } },
-      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "local" } },
+      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "openrouter" } },
     ]);
 
     // desligar (quando o processamento acaba) não apaga o que existe
@@ -575,6 +573,74 @@ test.describe.serial("plataforma multiusuário", () => {
     await expect(admin.getByRole("row", { name: /@e2e-bia/ }).getByText("Ativo")).toBeVisible();
     await biaContext.close();
     await adminContext.close();
+  });
+
+  test("compartilhar: Ana concede, Bia vê e abre, Ana muda o nível e revoga, e a tela da Bia reage ao vivo @mobile", async ({ browser, isMobile }) => {
+    const title = `Compartilhada E2E ${Date.now()}`;
+    const anaContext = await browser.newContext();
+    const ana = await anaContext.newPage();
+    await login(ana, ANA);
+    const created = await postJson(ana, "/api/meetings/scheduled", {
+      title,
+      start: new Date(Date.now() + 3600_000).toISOString(),
+      durationMinutes: 30,
+    });
+    expect(created.status).toBe(201);
+    const meetingPath = `/reunioes/${created.json.id}`;
+
+    const biaContext = await browser.newContext();
+    const bia = await biaContext.newPage();
+    await login(bia, BIA);
+    await bia.goto("/reunioes");
+    await expect(bia.getByRole("heading", { name: "Reuniões", level: 1 })).toBeVisible();
+    await expect(bia.getByText(title)).toHaveCount(0);
+
+    // Ana compartilha com leitura: busca (mínimo de 3 letras), escolhe a pessoa e confirma
+    await ana.goto(meetingPath);
+    await ana.getByRole("button", { name: "Compartilhar" }).click();
+    const dialog = ana.getByRole("dialog", { name: "Compartilhar reunião" });
+    await dialog.getByLabel("Buscar pessoa (nome ou usuário)").fill("e2");
+    await expect(dialog.getByText("Digite ao menos 3 caracteres.")).toBeVisible();
+    await dialog.getByLabel("Buscar pessoa (nome ou usuário)").fill("e2e-bia");
+    await dialog.getByRole("option", { name: /Beatriz Lima/ }).getByRole("button").click();
+    await dialog.getByRole("button", { name: "Compartilhar", exact: true }).click();
+    await expect(dialog.getByRole("list", { name: "Quem tem acesso" }).getByText("Beatriz Lima")).toBeVisible();
+    await shot(ana, "compartilhar-dialogo");
+    if (isMobile) {
+      expect(await ana.evaluate<boolean>("document.documentElement.scrollWidth > window.innerWidth")).toBe(false);
+    }
+
+    // Bia: aviso ao vivo, aba "Compartilhadas comigo", selo com o nível e a marca "Nova"
+    await expect(bia.getByRole("status").filter({ hasText: /compartilhou/ })).toBeVisible();
+    await bia.getByRole("button", { name: /Compartilhadas comigo/ }).click();
+    const row = bia.getByRole("row", { name: new RegExp(title) });
+    await expect(row.getByText(/Compartilhada por Ana · leitura/)).toBeVisible();
+    await expect(row.getByText("Nova")).toBeVisible();
+    await shot(bia, "compartilhadas-comigo");
+    await bia.getByRole("button", { name: /^Minhas/ }).click();
+    await expect(bia.getByText(title)).toHaveCount(0);
+    await bia.getByRole("button", { name: /Compartilhadas comigo/ }).click();
+    await bia.getByRole("link", { name: title }).click();
+    await expect(bia.getByRole("heading", { name: title })).toBeVisible();
+    await expect(bia.getByText(/Compartilhada por Ana · leitura/)).toBeVisible();
+    await expect(bia.getByRole("button", { name: "Compartilhar" })).toHaveCount(0);
+    await expect(bia.getByRole("button", { name: "Sair desta reunião" })).toBeVisible();
+
+    // Ana sobe para edição: a página aberta da Bia troca o selo sem recarregar
+    await dialog.getByLabel("Nível de Beatriz Lima").selectOption("edit");
+    await expect(bia.getByText(/Compartilhada por Ana · edição/)).toBeVisible();
+
+    // Ana revoga: a Bia é avisada, sai da página e a reunião some da lista dela
+    await dialog.getByRole("button", { name: "Remover o acesso de Beatriz Lima" }).click();
+    await dialog.getByRole("group", { name: "Remover o acesso de Beatriz Lima" }).getByRole("button", { name: "Remover" }).click();
+    await expect(dialog.getByText("Só você tem acesso a esta reunião.")).toBeVisible();
+    await expect(bia.getByRole("status").filter({ hasText: "Seu acesso a esta reunião foi removido." })).toBeVisible();
+    await expect(bia).toHaveURL(/\/reunioes$/);
+    await expect(bia.getByText(title)).toHaveCount(0);
+    const gone = await bia.evaluate(async (url) => (await fetch(url)).status, `/api${meetingPath.replace("/reunioes", "/meetings")}`);
+    expect(gone).toBe(404);
+    await biaContext.close();
+    await anaContext.close();
   });
 
   test("tema escuro persiste e o menu móvel abre @mobile", async ({ page, isMobile }) => {

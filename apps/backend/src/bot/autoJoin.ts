@@ -1,3 +1,4 @@
+import { autoSuppressed } from "../calendar/offDay";
 import { config } from "../config";
 import { emitMeetingChanged, pool } from "../db";
 import { resolveBotIdentity } from "../users/identity";
@@ -29,6 +30,7 @@ interface Candidate {
   created_by: string | null;
   scheduled_start: Date | null;
   scheduled_end: Date | null;
+  auto_on_off_day?: boolean;
   error_message?: string | null;
 }
 
@@ -87,19 +89,24 @@ const networkRetries = new Map<string, number>();
 
 let ticking = false;
 
+function canAutoJoin(m: Candidate): boolean {
+  return !autoSuppressed(m.scheduled_start, m.auto_on_off_day ?? false);
+}
+
 /** Ciclo do agendador: põe o assistente nas reuniões que começaram e ainda não terminaram. */
 export async function tickAutoAssistant(now = new Date()): Promise<void> {
   if (!config.autoAssistant || ticking) return;
   ticking = true;
   try {
     const { rows } = await pool.query<Candidate>(
-      `SELECT id, url, created_by, scheduled_start, scheduled_end FROM meetings
+      `SELECT id, url, created_by, scheduled_start, scheduled_end, auto_on_off_day FROM meetings
        WHERE source = ANY($1) AND status = 'scheduled' AND NOT skip_recording AND url IS NOT NULL
          AND scheduled_start <= $2 AND scheduled_end > $2
        ORDER BY scheduled_start, id`,
       [AGENDA_SOURCES, now],
     );
-    for (const m of rows) {
+    // Dia sem agenda (WORKING_DAYS): o assistente só entra se o usuário pediu.
+    for (const m of rows.filter(canAutoJoin)) {
       const result = await launch(m, ["scheduled"]);
       if (result === "started") console.log(`[assistente] entrando na reunião da agenda ${m.id}`);
       const message = NOTES[result];
@@ -108,7 +115,7 @@ export async function tickAutoAssistant(now = new Date()): Promise<void> {
 
     // Falha de rede ao abrir o link (sem ter entrado): tenta de novo enquanto a reunião dura.
     const { rows: failed } = await pool.query<Candidate>(
-      `SELECT id, url, created_by, scheduled_start, scheduled_end, error_message FROM meetings
+      `SELECT id, url, created_by, scheduled_start, scheduled_end, auto_on_off_day, error_message FROM meetings
        WHERE source = ANY($1) AND status = 'error' AND NOT skip_recording AND url IS NOT NULL
          AND started_at IS NULL AND ended_at <= $3
          AND scheduled_start <= $2 AND scheduled_end > $2
@@ -116,7 +123,7 @@ export async function tickAutoAssistant(now = new Date()): Promise<void> {
        ORDER BY scheduled_start, id`,
       [AGENDA_SOURCES, now, new Date(now.getTime() - NETWORK_RETRY_WAIT_MS)],
     );
-    for (const m of failed) {
+    for (const m of failed.filter(canAutoJoin)) {
       if (!isTransientNetworkError(m.error_message)) continue;
       const used = networkRetries.get(m.id) ?? 0;
       if (used >= NETWORK_RETRIES) continue;

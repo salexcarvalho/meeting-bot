@@ -27,8 +27,10 @@ services:
     stop_grace_period: 40s
     restart: unless-stopped
 
+  # postgres:16-alpine + pgvector (docker/postgres/Dockerfile): mesma major e mesma libc, o pgdata existente abre sem migração de dados.
   postgres:
-    image: postgres:16-alpine
+    build: ./docker/postgres
+    image: meeting-bot-postgres:16-pgvector
     environment:
       POSTGRES_DB: meetingbot
       POSTGRES_USER: meetingbot
@@ -57,11 +59,10 @@ services:
       - models:/models
     restart: unless-stopped
 
-  # LLM local (LOCAL_ONLY). Modelos ficam no volume "ollama".
+  # Só embeddings da busca (bge-m3, em CPU: sem reserva de GPU). Não há LLM local; modelos ficam no volume "ollama".
   ollama:
     image: ollama/ollama:0.32.14
     environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       OLLAMA_MAX_LOADED_MODELS: "1"
     volumes:
       - ollama:/root/.ollama

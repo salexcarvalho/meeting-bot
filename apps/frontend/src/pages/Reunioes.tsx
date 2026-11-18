@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Bot, FileAudio, Inbox, ListVideo } from "lucide-react";
-import type { IdentityChoice, MeResponse, MeetingSummary } from "@meeting-bot/contracts";
-import { api, errorMessage } from "../api";
+import type { IdentityChoice, MeResponse, MeetingListItem, MeetingSummary } from "@meeting-bot/contracts";
+import { api, errorMessage, ignoreError } from "../api";
 import { sendBot } from "../bot";
 import { BotIdentityField } from "../components/BotIdentityField";
 import { useToast } from "../components/Toast";
+import { ShareBadge } from "../components/ShareBadge";
 import { StatusBadge } from "../components/StatusBadge";
 import { CardHead, EmptyState, PageHeader, SkeletonLines } from "../components/ui";
 import { formatDateTime, recurrenceLabel } from "../format";
 import { useLive, useProjects } from "../hooks";
 import { live } from "../live";
+import { applyAccessEvent, applySummary, scopeOf, SCOPES } from "../shares";
 import { EXTERNAL_ASR_WARNING, useCan, useSession } from "../session";
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -34,6 +36,8 @@ export function Reunioes() {
   const [params, setParams] = useSearchParams();
   const projectId = params.get("projeto") ?? "";
   const status = params.get("status") ?? "";
+  const scopeKey = params.get("escopo") ?? "";
+  const scope = scopeOf(scopeKey);
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -42,17 +46,21 @@ export function Reunioes() {
   };
   const { projects } = useProjects();
   const can = useCan();
-  const [meetings, setMeetings] = useState<MeetingSummary[] | null>(null);
+  const { user } = useSession();
+  const [meetings, setMeetings] = useState<MeetingListItem[] | null>(null);
+  const meetingsRef = useRef(meetings);
+  meetingsRef.current = meetings;
+  const unseen = useUnseenShared();
   const [more, setMore] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(
     (before?: string) => {
-      const q = new URLSearchParams({ limit: String(PAGE) });
+      const q = new URLSearchParams({ limit: String(PAGE), scope });
       if (projectId) q.set("projectId", projectId);
       if (status) q.set("status", status);
       if (before) q.set("before", before);
-      api<{ meetings: MeetingSummary[] }>(`/meetings?${q}`)
+      api<{ meetings: MeetingListItem[] }>(`/meetings?${q}`)
         .then((r) => {
           setMeetings((prev) => (before && prev ? [...prev, ...r.meetings] : r.meetings));
           setMore(r.meetings.length === PAGE);
@@ -60,7 +68,7 @@ export function Reunioes() {
         })
         .catch((err) => setError(errorMessage(err)));
     },
-    [projectId, status],
+    [projectId, status, scope],
   );
 
   useEffect(() => load(), [load]);
@@ -68,17 +76,16 @@ export function Reunioes() {
   useEffect(() => live.onReconnect(() => load()), [load]);
   useLive(
     (msg) => {
-      if (msg.type !== "meeting") return;
-      setMeetings((list) => {
-        if (!list) return list;
-        const idx = list.findIndex((m) => m.id === msg.meeting.id);
-        if (idx >= 0) return list.map((m) => (m.id === msg.meeting.id ? msg.meeting : m));
-        if (projectId && msg.meeting.project?.id !== projectId) return list;
-        if (status && !status.split(",").includes(msg.meeting.status)) return list;
-        return [msg.meeting, ...list].sort((a, b) => when(b).localeCompare(when(a)));
-      });
+      if (msg.type === "meeting") {
+        // O resumo difundido é igual para todos: access, ownerName, shareCount e shareUnseen vêm do item que já temos.
+        const out = applySummary(meetingsRef.current, msg.meeting, user.username, { projectId, status, scope });
+        if (out.reload) load();
+        else setMeetings(out.list);
+      } else if (msg.type === "meeting_access") {
+        setMeetings((list) => applyAccessEvent(list, msg, { projectId, status, scope }));
+      }
     },
-    [projectId, status],
+    [projectId, status, scope, user.username, load],
   );
 
   return (
@@ -98,7 +105,7 @@ export function Reunioes() {
       <section className="card flush">
         <div className="card-head">
           <h2>
-            <ListVideo size={16} /> Todas as reuniões
+            <ListVideo size={16} /> Reuniões
           </h2>
           <div className="row">
             <label className="sr-only" htmlFor="filtro-status">Status</label>
@@ -116,6 +123,19 @@ export function Reunioes() {
             </select>
           </div>
         </div>
+        <div className="scope-tabs" role="group" aria-label="Quais reuniões mostrar">
+          {SCOPES.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              aria-pressed={scopeKey === s.key}
+              onClick={() => setFilter("escopo", s.key)}
+            >
+              {s.label}
+              {s.scope === "shared" && unseen > 0 && <span className="badge primary small" aria-label={`${unseen} nova(s)`}>{unseen}</span>}
+            </button>
+          ))}
+        </div>
         {error && <div className="banner error" style={{ margin: "12px 20px 0" }}>{error}</div>}
         {!meetings ? (
           error ? null : (
@@ -125,8 +145,8 @@ export function Reunioes() {
           )
         ) : meetings.length === 0 ? (
           <div style={{ padding: 20 }}>
-            <EmptyState icon={Inbox} title={projectId || status ? "Nenhuma reunião com estes filtros" : "Nenhuma reunião ainda"}>
-              {projectId || status
+            <EmptyState icon={Inbox} title={projectId || status || scope !== "all" ? "Nenhuma reunião com estes filtros" : "Nenhuma reunião ainda"}>
+              {projectId || status || scope !== "all"
                 ? "Troque os filtros para ver outras reuniões."
                 : "Envie o bot para uma reunião, transcreva um arquivo ou importe convites na tela Hoje."}
             </EmptyState>
@@ -149,6 +169,9 @@ export function Reunioes() {
                     <td className="tabular" style={{ whiteSpace: "nowrap" }}>{formatDateTime(when(m))}</td>
                     <td>
                       <Link className="cell-title" to={`/reunioes/${m.id}`}>{m.title}</Link>
+                      <span className="share-badges">
+                        <ShareBadge access={m.access} ownerName={m.ownerName} shareCount={m.shareCount} shareUnseen={m.shareUnseen} />
+                      </span>
                       {m.recurrence && (
                         <span className="badge small" title="Reunião recorrente" style={{ marginLeft: 6 }}>
                           {recurrenceLabel(m.recurrence)}
@@ -175,6 +198,20 @@ export function Reunioes() {
       </section>
     </main>
   );
+}
+
+/** Quantas reuniões compartilhadas ainda estão marcadas como "Nova" (contador da aba). */
+function useUnseenShared(): number {
+  const [count, setCount] = useState(0);
+  const load = useCallback(() => {
+    api<{ meetings: MeetingListItem[] }>("/meetings?scope=shared&limit=200")
+      .then((r) => setCount(r.meetings.filter((m) => m.shareUnseen).length))
+      .catch(ignoreError);
+  }, []);
+  useEffect(load, [load]);
+  useEffect(() => live.onReconnect(load), [load]);
+  useLive((msg) => msg.type === "meeting_access" && load(), [load]);
+  return count;
 }
 
 function BotForm({ onOpen }: { onOpen: (meetingId: string) => void }) {

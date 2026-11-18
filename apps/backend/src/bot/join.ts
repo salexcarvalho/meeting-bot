@@ -189,6 +189,8 @@ export async function driveJoin(screen: JoinScreen, identity: JoinIdentity, opts
         : camera !== "on" || waited >= graceMs;
       const ready = nameOk && muteOk && cameraOk && (await safe(screen.join.enabled));
       if (ready && (await screen.join.click().then(() => true, () => false))) {
+        // Sem a chave a câmera fica como o navegador a abriu: deixa o rastro no log.
+        if (!cameraSeen) log(`câmera: controle não encontrado na pré-entrada (${now() - start} ms)`);
         const cameraOn = identity.camera && camera === "on";
         log(`pedido de entrada enviado, câmera ${cameraOn ? "com o ícone" : "desligada"} (${now() - start} ms)`);
         return { camera: cameraOn, guestForm };

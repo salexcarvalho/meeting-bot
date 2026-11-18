@@ -150,6 +150,22 @@ describe("driveJoin", () => {
     expect(result.camera).toBe(false);
   });
 
+  it("sem controle de câmera na pré-entrada, avisa uma vez no log e entra mesmo assim", async () => {
+    const h = harness({ nameAt: 0, micAt: 0, cameraAt: null, joinAt: 0, joinNeedsName: true });
+    const logs: string[] = [];
+    const result = await driveJoin(h.screen, noCamera, { ...h.opts, log: (m) => logs.push(m) });
+    expect(logs.filter((m) => m.startsWith("câmera: controle não encontrado na pré-entrada"))).toHaveLength(1);
+    expect(h.events.some((e) => e.startsWith(`join:${NAME}@`))).toBe(true);
+    expect(result).toEqual({ camera: false, guestForm: true });
+  });
+
+  it("com o controle de câmera visível, não avisa de controle ausente", async () => {
+    const h = harness({ nameAt: 0, micAt: 0, cameraAt: 0, cameraStartsOn: false, joinAt: 0, joinNeedsName: true });
+    const logs: string[] = [];
+    await driveJoin(h.screen, noCamera, { ...h.opts, log: (m) => logs.push(m) });
+    expect(logs.some((m) => m.includes("controle não encontrado"))).toBe(false);
+  });
+
   it("espera o campo de nome quando o Entrar ainda está desabilitado", async () => {
     const h = harness({ nameAt: 3000, micAt: null, cameraAt: null, joinAt: 0, joinNeedsName: true });
     await driveJoin(h.screen, noCamera, h.opts);

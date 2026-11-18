@@ -6,6 +6,8 @@ const LABEL: Record<Channel, string> = { mic: "Microfone", remote: "Áudio da re
 
 export interface AudioPlayersHandle {
   seek: (channel: Channel, seconds: number) => void;
+  /** posiciona o áudio no instante, sem tocar */
+  cue: (channel: Channel, seconds: number) => void;
 }
 
 export const AudioPlayers = forwardRef<AudioPlayersHandle, { meetingId: string; audio: AudioChannelInfo[]; version: string }>(
@@ -13,12 +15,18 @@ export const AudioPlayers = forwardRef<AudioPlayersHandle, { meetingId: string; 
     const players = useRef(new Map<Channel, HTMLAudioElement>());
     const ready = audio.filter((a) => a.format !== "pcm_s16le_16k");
 
+    const playerFor = (channel: Channel) => players.current.get(channel) ?? players.current.values().next().value;
+
     useImperativeHandle(ref, () => ({
       seek(channel, seconds) {
-        const el = players.current.get(channel) ?? players.current.values().next().value;
+        const el = playerFor(channel);
         if (!el) return;
         el.currentTime = Math.max(0, seconds - 0.5);
         void el.play().catch(() => {});
+      },
+      cue(channel, seconds) {
+        const el = playerFor(channel);
+        if (el) el.currentTime = Math.max(0, seconds - 0.5);
       },
     }));
 

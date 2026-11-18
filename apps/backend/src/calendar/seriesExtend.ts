@@ -1,5 +1,6 @@
 import type { RecurrenceRule } from "@meeting-bot/contracts";
 import { emitMeetingChanged, pool, withTransaction } from "../db";
+import { isAgendaWorkingDay } from "./offDay";
 import { addInterval, RECURRENCE_MAX_DAYS, RECURRENCE_MAX_OCCURRENCES } from "./service";
 
 // Trava dura pra série sem fim definido ("pra sempre") não crescer sem limite.
@@ -35,7 +36,8 @@ async function extendOne(series: SeriesTemplate, horizon: Date): Promise<void> {
   const starts: Date[] = [];
   let cursor = addInterval(series.last_start, series.recurrence_rule.freq, series.recurrence_rule.interval);
   while (cursor.getTime() <= cap && starts.length < RECURRENCE_MAX_OCCURRENCES && starts.length < remaining) {
-    starts.push(cursor);
+    // Série não se espalha pelo fim de semana (dia fora de WORKING_DAYS não ganha ocorrência).
+    if (isAgendaWorkingDay(cursor)) starts.push(cursor);
     cursor = addInterval(cursor, series.recurrence_rule.freq, series.recurrence_rule.interval);
   }
   if (!starts.length) return;

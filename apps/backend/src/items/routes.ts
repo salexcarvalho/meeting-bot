@@ -1,12 +1,15 @@
 import type { Router } from "express";
-import { AdrPatch, ItemPatch, NewItemInput } from "@meeting-bot/contracts";
+import { AdrPatch, ItemPatch, NewItemInput, type Item, type ItemReviewTask } from "@meeting-bot/contracts";
 import { flushLiveAgent, startLiveAgents, stopLiveAgents } from "../agent/liveAgent";
-import { childParamGuard } from "../authz";
+import { can, childParamGuard } from "../authz";
 import { getMeeting } from "../db";
 import { features } from "../features";
+import type { User } from "../types";
 import { setBeforeFinalPass, setGlossaryProvider } from "../pipeline";
 import { glossaryFor } from "../recording/glossary";
 import { parseBody, wrap } from "../routes";
+import { createFromApproval } from "../tasks/fromItem";
+import { taskContext } from "../tasks/service";
 import {
   createManualItem,
   editAdr,
@@ -19,6 +22,21 @@ import {
   reviewItem,
 } from "./service";
 
+
+/**
+ * Aprovar uma pendência cria a tarefa de quem aprovou (specs/002). Roda depois do commit da revisão e nunca a
+ * desfaz: falha da tarefa é registrada e vira `task: null` (o usuário ainda tem "Virar tarefa").
+ */
+async function approvedWithTask(item: Item, user: User): Promise<Item | (Item & ItemReviewTask)> {
+  if (!can(user, "tasks.manage")) return item;
+  try {
+    const { task, notice } = await createFromApproval(await taskContext(user), item.id);
+    return { ...item, task, ...(notice ? { taskNotice: notice } : {}) };
+  } catch (err) {
+    console.error("[tasks] falha ao criar a tarefa da aprovação:", err instanceof Error ? err.message : err);
+    return { ...item, task: null };
+  }
+}
 
 function register(router: Router): void {
   router.param("itemId", childParamGuard());
@@ -75,7 +93,10 @@ function register(router: Router): void {
     router.post(
       `/items/:itemId/${op}`,
       wrap(async (req, res) => {
-        await guard(() => reviewItem(String(req.params.itemId), op, req.user!.id))(res);
+        await guard(async () => {
+          const item = await reviewItem(String(req.params.itemId), op, req.user!.id);
+          return op === "approve" ? approvedWithTask(item, req.user!) : item;
+        })(res);
       }),
     );
   }

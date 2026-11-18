@@ -3,12 +3,18 @@ import { Navigate, Route, Routes } from "react-router";
 import { api, onUnauthorized } from "./api";
 import { PasswordDialog } from "./components/PasswordDialog";
 import { AppShell } from "./components/shell/AppShell";
+import { SearchShortcut } from "./components/SearchShortcut";
+import { ShareNotifier } from "./components/ShareNotifier";
 import { ToastProvider } from "./components/Toast";
 import { live } from "./live";
+import { Busca } from "./pages/Busca";
 import { Configuracoes } from "./pages/Configuracoes";
 import { Hoje } from "./pages/Hoje";
+import { Auditoria } from "./pages/admin/Auditoria";
+import { UsoIA } from "./pages/admin/UsoIA";
 import { Usuarios } from "./pages/admin/Usuarios";
 import { Login } from "./pages/Login";
+import { Pendencias } from "./pages/Pendencias";
 import { Projetos } from "./pages/Projetos";
 import { Reuniao } from "./pages/Reuniao";
 import { Reunioes } from "./pages/Reunioes";
@@ -65,14 +71,20 @@ export function App() {
           >
             <Routes>
               <Route path="/" element={<Hoje />} />
+              <Route path="/pendencias" element={can("tasks.read") ? <Pendencias /> : <Navigate to="/" replace />} />
               <Route path="/reunioes" element={<Reunioes />} />
               <Route path="/reunioes/:id" element={<Reuniao />} />
+              <Route path="/busca" element={<Busca />} />
               <Route path="/projetos" element={<Projetos />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
               <Route path="/admin/usuarios" element={can("users.read") ? <Usuarios /> : <Navigate to="/" replace />} />
+              <Route path="/admin/uso" element={can("ai_usage.read") ? <UsoIA /> : <Navigate to="/" replace />} />
+              <Route path="/admin/auditoria" element={can("audit.read") ? <Auditoria /> : <Navigate to="/" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>
+          <SearchShortcut />
+          <ShareNotifier />
           <PasswordDialog open={passwordOpen} onClose={() => setPasswordOpen(false)} />
           </SessionRefreshContext.Provider>
         </SessionContext.Provider>

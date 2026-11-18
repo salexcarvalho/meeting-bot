@@ -29,6 +29,7 @@ sessão válida, a resposta é HTTP 401 e não há WebSocket.
 | `processing` | meeting | `{meetingId, step: "convertendo"\|"transcrevendo"\|"diarizando"\|"analisando"\|"ata"\|"adrs", progress?: 0..1}` |
 | `gpu` | meeting + agenda | `{utilization, memoryUsedMb, memoryTotalMb}` (a cada 5 s, se houver atividade) |
 | `host_agent` | agenda + meeting | `{online, lastSeenAt}` quando o estado muda |
+| `meeting_access` | só o usuário afetado | `{meetingId, change: "granted"\|"changed"\|"revoked"\|"deleted", access, by, title, meeting: MeetingListItem\|null, silent?}`: mudança de compartilhamento, nunca difundida (ver `specs/005-compartilhamento/contracts/ws-live.md`) |
 | `pong` | — | `{}` |
 
 ## Regras

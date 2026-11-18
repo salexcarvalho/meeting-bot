@@ -12,8 +12,12 @@
 - generates the meeting minutes (19-section template; just the summary when items are off) and ADR suggestions;
 - leaves everything as **proposed** until you review it.
 
-Everything runs on the machine: Whisper (faster-whisper) and LLM (Ollama, `qwen3.5:4b`) on the local GPU. The
-only exception is the **test external ASR**, which is off by default
+Audio and transcription stay on the machine: Whisper (faster-whisper) runs on the local GPU. There is **no
+local LLM**: minutes, items, ADRs, and the search chat depend on an external LLM (your Claude or Codex subscription, or
+OpenRouter), which only works with `ALLOW_EXTERNAL_LLM=true` ([see below](#external-llm)). Without it,
+recording and transcription work as usual, but minutes and items are not generated (the interface says
+so); search keeps working. Ollama exists only for the search embeddings (`bge-m3`, on CPU).
+There is also the **test external ASR**, off by default
 ([see below](#test-external-asr-optional)).
 
 The **audio/video upload** and **Agent Mode**, where a guest bot joins Meet/Teams, are also still
@@ -32,9 +36,9 @@ available.
 │ host-agent (systemd)     │ ───────────────► │ backend (Node 24) :3000                │
 │  alertas, som, xdg-open  │   WS PCM 16 kHz  │  agenda, gravação, agente, ata, UI     │
 │  parec: mic + monitor    │ ───────────────► │   │            │             │         │
-└──────────────────────────┘                  │ postgres   worker-gpu      ollama      │
- navegador → http://127.0.0.1:3000            │            (whisper,       (qwen3.5:4b)│
-                                              │             pyannote)                  │
+└──────────────────────────┘                  │ postgres   worker-gpu                  │
+ navegador → http://127.0.0.1:3000            │            (whisper, pyannote)         │
+                                              │                                        │
                                               └────────────────────────────────────────┘
 ```
 
@@ -59,7 +63,6 @@ sudo bash scripts/setup-host.sh          # NVIDIA Container Toolkit + pulseaudio
 cp .env.example .env                     # fill in POSTGRES_PASSWORD and AGENT_TOKEN
 export DOCKER_CONTEXT=default            # always the native Engine
 docker compose up -d --build
-docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec backend npm run user:create -- sergio --role=SUPER_ADMIN
 apps/host-agent/install.sh               # desktop service (systemd --user)
 ```
@@ -109,7 +112,21 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
 
 - **Importar convites** ("Import invites"): in Outlook, save the invite as `.ics` and drag it onto the
   **Hoje** ("Today") screen. Re-importing updates the meeting without duplicating it; a cancellation marks it as canceled.
+- **Agenda from Aurora (Outlook)**: the external assistant sends the day's agenda to
+  `POST /api/agent/calendar/import` (`AGENT_TOKEN`, on behalf of `AGENT_OWNER`). Same `uid` + start
+  updates instead of duplicating (a single event is the same as one from an `.ics`; a series occurrence rescheduled within the day keeps the meeting and its choices); a future same-day meeting
+  missing from the list is canceled (it comes back if it reappears), but an empty list only clears the day with
+  `confirmEmpty: true` and an event outside the day is skipped without failing the upload. An event that already exists in the owner's agenda (manual entry or `.ics`, same title and start ±5 min) is linked instead of duplicated: the manual one gets the upload's `uid`, an `.ics` with its own UID is just recognized. Other days, manual/`.ics` meetings and the user's choices (do not record, generate items) are
+  untouched, and the upload enables no extra recording: the usual rules apply. Details in
+  [`rest-api.md`](specs/001-agente-reunioes-mvp/contracts/rest-api.md) (Portuguese).
+  The same day's agenda can be read with `GET /api/agent/meetings?date=YYYY-MM-DD` (same token; defaults to
+  today; read-only, scoped to `AGENT_OWNER`; returns `icalUid`, times, link, platform, "do not record", status and
+  `recurring`).
 - **Nova reunião** ("New meeting"): manual registration with title, start time, duration, link, and project.
+- **No agenda on weekends** (`WORKING_DAYS`, default Monday to Friday, in the agenda timezone): series (manual
+  recurrence, `.ics` and Aurora) generate no occurrence on Saturday and Sunday. A single meeting on those days shows
+  up in the agenda, but with no reminder and no assistant joining on its own; use **Avisar e gravar neste dia**
+  ("Remind and record on this day") on it (or **Enviar assistente agora**).
 - The project is **suggested** based on keywords in the title. Confirm it under **Editar** ("Edit").
 - **Não gravar** ("Don't record"): available on the screen or in the desktop alert; the assistant doesn't join.
 - **Enviar assistente agora** ("Send assistant now"): sends the assistant before the scheduled time, or again after a failure.
@@ -159,7 +176,7 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
   requirements and ADRs are only generated in meetings where you turn the switch on. It starts **off**;
   a test-assist or delivery meeting ends up with just the transcript and minutes with the summary.
   - Off: live extraction does not run, and the post-meeting analysis produces only the summary (no items, no ADR).
-  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (local, OpenRouter or subscription), like Gerar ata.
+  - **Gerar itens** ("Generate items") turns the switch on and asks where to generate (subscription or OpenRouter), like Gerar ata.
     Turned on mid-meeting, live extraction starts from that point.
   - **Desligar itens** ("Turn items off") deletes nothing: what exists stays, and creating items by hand still works.
   - Meetings that predate this switch and already had items or an analysis are marked as on.
@@ -170,9 +187,44 @@ Without a token, the meeting audio shows up as "Remoto" ("Remote"). The micropho
     reviewed one (the evidence transfers to the approved one; a duplicate of a rejected one is discarded).
 - **Gerar ADRs** ("Generate ADRs") (ADRs tab) and **Gerar ADR** ("Generate ADR") (on each architectural decision, on the Itens ("Items") tab): generate or
   redo the suggested ADRs. ADRs that are approved, rejected, or manually edited aren't overwritten.
-- Each button asks where to generate: **modelo local** ("local model"), **OpenRouter**, or **sua assinatura** ("your subscription")
-  (Claude Code or Codex), depending on what's enabled. What was generated externally shows up flagged
+- Each button asks where to generate: **sua assinatura** ("your subscription", Claude Code or Codex) or **OpenRouter**,
+  depending on what's enabled (without `ALLOW_EXTERNAL_LLM=true`, the button warns that there is no LLM). What was generated externally shows up flagged
   ("OpenRouter", "Claude", or "Codex" on the item, the ADR, and the meeting minutes).
+
+### Sharing a meeting
+
+On the meeting page, the owner clicks **Compartilhar** ("Share"), searches for a person by name or username (3 letters minimum) and picks **Leitura** (read) or **Edição** (edit):
+
+- **Read:** the person sees the meeting (link, participants, transcript, audio, items and minutes).
+- **Edit:** also edits items, ADRs and speaker names. Recording, stopping, reprocessing, rescheduling, changing the link, "do not record", "no-agenda day", cancelling, generating minutes/ADRs, turning items on and deleting stay owner-only. Users who cannot manage meetings (VIEWER) only receive read access.
+- The owner sees **Quem tem acesso** ("Who has access"), changes the level and removes people. It applies immediately, even to someone with the meeting open (the live transcript stops arriving). Only the owner sees the list; a recipient sees their own level and the owner's name.
+- For a recurring meeting, the dialog offers **this occurrence only** or **this and the following ones already on the agenda**. Past occurrences are left out and occurrences created later do not inherit access.
+- Under **Reuniões**, the filters **Todas** (all), **Minhas** (mine), **Compartilhadas comigo** (shared with me) and **Compartilhadas por mim** (shared by me) (`?escopo=`); a badge with the level and owner, a **Nova** ("New") mark until opened, and an on-screen notice. Nothing leaves the machine (no e-mail).
+- **Sair desta reunião** ("Leave this meeting") removes your own access. Admins do not read other people's content, and deactivating the owner does not remove recipients' access.
+- Sharing, changing, revoking and leaving are recorded in `audit_log` with ids only (never title or content).
+
+### My tasks (pending items)
+
+**Minhas pendências** menu (`tasks.read`/`tasks.manage`; the Viewer role does not have them). A task is **personal**: only the person who owns it sees or changes it. Administrators and super administrators cannot read someone else's task either.
+
+- **Approving creates a task:** approving a meeting **pending item** (`pendencia`) creates your task, without duplicates (approving again, reopening and approving, or regenerating the minutes keeps a single one). It is only created automatically when the owner is you ("eu", your username or your name) or empty, and then it shows as **Unconfirmed owner**. A pending item that belongs to someone else does not become a task by itself: the notice says whose it is.
+- **Turn into task:** on any approved item (risk, requirement, decision...) the button creates the task, with editable title, due date and priority. Proposed or rejected items cannot become tasks. If a similar task already exists in the meeting, the dialog warns and lets you create it anyway.
+- **Due date:** it is only filled in when the text is unambiguous (`30/11`, `until 12/5`, `today`, `tomorrow`); "Friday" or "next week" stay as the **spoken due date** next to the field, so you decide.
+- **Screen:** clickable counters (open, overdue, due today, unconfirmed owner) and filters by status, project, due date, owner, priority, meeting and search; the filter lives in the URL (`?status=...&prazo=overdue`). Status changes inline. "Today" and "overdue" use the user's timezone.
+- **Manual task:** **Nova tarefa** (also inside a meeting) with project, due date, priority and owner; edit, delete and see the history (before and after, who and when).
+- **Shared meeting:** whoever received the meeting creates their own tasks from the items they can see. If access is revoked, the task stays, without the link to the meeting, item and audio (what was copied while access existed remains). Deleting the meeting does not delete the tasks.
+- **Today screen:** card with overdue, due today, open and proposed pending items to review.
+- Nothing leaves the machine and no AI is called. The migration is additive (`tasks`, `task_history`) and does not create tasks from old meetings; use **Virar tarefa**.
+
+### Searching and asking your meetings
+
+**Search** menu (shortcut `Ctrl+K`). Requires `meetings.read`; transcripts also need `transcripts.read`, and minutes, items and ADRs need `documents.read`.
+
+- **Search:** **hybrid** by default (Portuguese full text, accent- and inflection-insensitive, plus **semantic** search by meaning, fused with RRF). Filters by project, period, content type and mode; each result shows the highlighted snippet and whether it was found by text or semantics. Clicking opens the meeting at the segment and time (`?seg=`, `?t=`, `?item=`, `?adr=`) with the audio cued but not playing. Rejected items never appear; proposed items and ADRs appear flagged.
+- **Ask:** the **Ask** tab (local RAG). The answer uses only snippets from meetings you can read, each claim carries a clickable citation checked against the snippet, and without evidence the answer is **"I found no record"**. Items and ADRs not yet approved are labeled "proposed by the AI". The conversation history stays in the browser only. The chat uses the **external LLM** (the same `LLM_GENERATION_PROVIDER`: subscription or OpenRouter; the question and the retrieved snippets leave the machine, indexing does not) and requires `ALLOW_EXTERNAL_LLM=true`: without it search keeps working and the chat answers with a notice. A subscription only answers when the cited meetings belong to the host-agent owner. During a live meeting it uses a smaller context.
+- **Privacy:** permission is applied inside the query itself (owner or share); revoking a share removes the meeting from the results immediately; administrators do not read other people's content; search text, questions, answers and snippets never reach logs or the audit trail. Usage shows in **AI usage** (purposes "Search (embeddings)" and "Chat on meetings").
+- **Index:** pgvector in the same Postgres; embeddings (`bge-m3`) run on Ollama **on CPU** (0 MiB of VRAM) and wait while a recording or call is in progress; text search works even with Ollama (embeddings) down. Old meetings are indexed in the background (newest first, resumable after a restart). **Settings > Search** shows the state and **Reindex my meetings**; from the terminal: `docker compose exec backend npm run search:reindex`.
+- **Test server (VPS):** text search only; semantic search and chat are off (`SEARCH_SEMANTIC=off`).
 
 ### Upload and Agent Mode
 
@@ -213,9 +265,21 @@ Each user has their own settings:
 - **Meu agente** ("My agent"): architect agent persona, technologies, decision types, base prompt, avatar, spoken name recording, and the agent's Teams account.
 - **Reuniões:** identity in the room.
 - **Documentação** ("Documentation"): level of detail and formats.
-- **Consumo de IA** ("AI usage"): tokens and cost for the month per provider, model, and meeting, plus the latest calls.
-  It comes from `audit_log`, is read-only, and doesn't block generation. The subscription doesn't charge per call: only
-  tokens. Each person sees the usage for the meetings they can see.
+- **Consumo de IA** ("AI usage"): every LLM call (OpenRouter, subscription), the search embeddings (Ollama, on CPU) and every transcription (local
+  Whisper or external Deepgram) is recorded with purpose, provider, model, tokens, audio minutes, time and result
+  (failures too, with a short code only). The panel shows the month or a free range (up to 24 months): totals, by
+  purpose, provider, model and day, local x external ASR minutes, the meetings that consumed the most and the latest
+  calls, with a failures filter. The cost is what the provider reported (never estimated): the subscription and
+  Ollama show "sem custo por chamada" (no cost per call). It is read-only and doesn't block generation. Each person
+  sees only the usage of the meetings they created: the cost is the owner's, and a shared meeting does not count.
+- **Segurança** ("Security"): the events that concern you (sign-ins and refused attempts, with the IP only on refusals,
+  password change, Teams account, administrator actions on your account and anything sent off the machine on your
+  behalf), without meeting content.
+- **Administration > Uso de IA** (`ai_usage.read`) shows usage aggregated by user, provider, model, purpose and day,
+  with no meeting title or id; **Administration > Auditoria** (`audit.read`) shows system events, always through an
+  allow-list of fields.
+- **Retention:** AI usage is kept for 24 months (`USAGE_RETENTION_DAYS=730`) and the audit log for 12 months
+  (`AUDIT_RETENTION_DAYS=365`), pruned daily; `0` keeps everything. Audio stays indefinite.
 
 ## Main Configuration (`.env`)
 
@@ -224,9 +288,16 @@ Each user has their own settings:
 | `AGENT_TOKEN` | — | Secret shared with the host-agent (≥ 32 characters) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Microphone channel name |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Timezone for the agenda and the meeting minutes |
+| `WORKING_DAYS` | `1,2,3,4,5` | Days with an agenda (ISO, 1 = Monday … 7 = Sunday). Outside them there is no reminder or automatic recording |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper on the worker |
 | `HF_TOKEN` | empty | Speaker diarization |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | Local LLM |
+| `ALLOW_EXTERNAL_LLM` / `LLM_GENERATION_PROVIDER` | `false` / `claude` | Turns on the external LLM (required for minutes and items) and picks the provider for automatic generation and live analysis: `claude`, `codex`, or `openrouter` ([see below](#external-llm)) |
+| `SEARCH_ENABLED` / `SEARCH_SEMANTIC` | `true` / `auto` | Turns search on; `auto`/`on` require pgvector (boot fails with a clear message without it), `off` = text only |
+| `EMBED_MODEL` / `EMBED_DIM` | `bge-m3` / `1024` | Embedding model (Ollama, on CPU) and the `vector` column dimension |
+| `EMBED_KEEP_ALIVE` / `EMBED_BATCH` | `10m` / `16` | How long the model stays in RAM and texts per request |
+| `SEARCH_INDEX_DEBOUNCE_SECONDS` | 20 | Groups nearby edits before reindexing the meeting |
+| `CHAT_MIN_SIMILARITY` | `0.45` | Minimum relevance for the chat to answer (below it: "no record found") |
+| `CHAT_MAX_CONTEXT_TOKENS` / `CHAT_MAX_CONTEXT_TOKENS_LIVE` | 3500 / 2000 | Chat context (normal / with a live meeting) |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Live extraction every N s of new speech… |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | …or at most every M s |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Running summary and deduplication |
@@ -246,8 +317,7 @@ To compare quality, the final pass and uploads can use **Deepgram nova-3 via
 OpenRouter**.
 
 > **Warning:** with this option, the **audio leaves the machine**. Only use it with audio that your
-> organization's policy allows sending to third parties. The live transcription and the entire LLM
-> remain local.
+> organization's policy allows sending to third parties. The live transcription remains local.
 
 ```bash
 # .env
@@ -266,31 +336,35 @@ Then, `docker compose up -d backend`.
 - Speakers are renumbered every 20 min of audio, because the provider doesn't keep identity
   across requests.
 
-### External LLM (Optional)
+### External LLM
 
-The meeting minutes and ADRs can be generated by an **OpenRouter** model (better quality than the local
-4B, with a cost per use).
+The LLM is always external (there is no local model) and stays off until `ALLOW_EXTERNAL_LLM=true`. The
+minutes, items, and ADRs come from **your subscription** (Claude or Codex, [see below](#your-subscription-claude-code-or-codex-optional))
+or from an **OpenRouter** model (cost per use). The **live analysis** (item extraction, only with the
+**Itens** switch on) and the **search chat** use the same provider as `LLM_GENERATION_PROVIDER`.
 
-> **Warning:** with this option, the **entire meeting transcription leaves the machine**. Only use it
-> with content that your organization's policy allows sending to third parties. The live analysis
-> always remains local.
+> **Warning:** with this option, the **meeting transcription leaves the machine**, including excerpts
+> sent during the meeting by the live analysis, and the question and snippets retrieved by the search chat. Only use it with content that your organization's policy
+> allows sending to third parties. The live transcription (Whisper) remains local. Without
+> `ALLOW_EXTERNAL_LLM=true`, nothing is generated: recording and transcription continue and the interface
+> warns that minutes and items are unavailable.
 
 ```bash
 # .env
 ALLOW_EXTERNAL_LLM=true
 OPENROUTER_API_KEY=sk-or-...                    # the same key as the external ASR
 OPENROUTER_LLM_MODEL=anthropic/claude-sonnet-5  # any model with structured outputs
-LLM_GENERATION_PROVIDER=local                   # "openrouter" = automatic post-meeting analysis is also external
+LLM_GENERATION_PROVIDER=openrouter              # default is "claude" (subscription); also "codex"
 OPENROUTER_LLM_TIMEOUT_SECONDS=180
 OPENROUTER_LLM_MAX_TOKENS=32000             # reasoning models spend part of this
 ```
 
 Then, `docker --context default compose up -d backend`.
 
-- The **Gerar ata**, **Gerar ADRs**, and **Gerar ADR** buttons ask, on every click, whether the generation
-  is local or on OpenRouter, and warn before sending.
-- With `LLM_GENERATION_PROVIDER=openrouter`, the automatic processing after each meeting
-  also uses OpenRouter. Without `ALLOW_EXTERNAL_LLM=true`, the backend won't start with this option.
+- The **Gerar ata**, **Gerar ADRs**, and **Gerar ADR** buttons ask, on every click, where to generate
+  (subscription or OpenRouter), and warn before sending.
+- With `LLM_GENERATION_PROVIDER=openrouter`, the automatic processing (post-meeting and live)
+  uses OpenRouter. The default is `claude`. Without `ALLOW_EXTERNAL_LLM=true`, there is no LLM.
 - The response follows a strict JSON Schema (`response_format`) and only goes to providers that
   support it (`provider.require_parameters`).
 - Each call is logged in `audit_log` (`external_llm`), with tokens and cost, without content. Each request
@@ -300,7 +374,7 @@ Then, `docker --context default compose up -d backend`.
 
 ### Your Subscription: Claude Code or Codex (Optional)
 
-Instead of paying per use on OpenRouter, the meeting minutes and ADRs can come from **your subscription** to
+Instead of paying per use on OpenRouter, the meeting minutes, items, and ADRs can come from **your subscription** to
 Claude (Pro/Max) or ChatGPT (Codex). The one that runs it is the **host-agent**, with `claude` or `codex`
 installed on your machine and your login; the backend never sees credentials.
 
@@ -314,7 +388,7 @@ CLAUDE_CLI_ENABLED=true
 CLAUDE_CLI_MODEL=sonnet          # sonnet, opus, or the full model name
 CODEX_CLI_ENABLED=true
 CODEX_CLI_MODEL=                 # empty = Codex default
-LLM_GENERATION_PROVIDER=claude   # optional: automatic analysis via the subscription
+LLM_GENERATION_PROVIDER=claude   # default: automatic analysis via the subscription
 ```
 
 1. Install the host-agent (`apps/host-agent/install.sh`); it needs to be running.
@@ -332,8 +406,9 @@ Rules:
 - In automatic analysis, if the subscription is unavailable for a while (host-agent restarting, CLI
   not logged in), the meeting waits up to `SUBSCRIPTION_WAIT_MINUTES` (30) with the warning "Aguardando a
   assinatura" ("Waiting for the subscription"). If it doesn't come back, it's left with an error and the
-  transcription saved; the meeting minutes come out via **Gerar ata**. It never falls back to the local model
-  for this reason. Only another person's meeting uses the local model.
+  transcription saved; the meeting minutes come out via **Gerar ata**. It never switches provider
+  for this reason. Another person's meeting never uses your subscription: it is only generated if another
+  allowed provider (OpenRouter) is set up; otherwise it is left without minutes or items.
 - The CLI runs isolated: no tools, hooks, MCP, or user instructions, in a
   temporary folder, with the text passed via stdin. It consumes your plan's limit (no per-use cost).
 - Each call is logged in `audit_log` (`external_llm`, with tokens), without content.
@@ -346,6 +421,23 @@ Don't expose port 3000 without TLS. With the included Caddy:
 # .env: DOMAIN=ata.suaempresa.com.br, COOKIE_SECURE=true, TRUST_PROXY=1
 docker compose --profile https up -d
 ```
+
+### Upgrading an existing installation for search (pgvector)
+
+Postgres now uses its own image (`docker/postgres`: `postgres:16-alpine` with pgvector compiled in). It is the **same major version and the same Alpine base**, so the `pgdata` volume opens as is: no `pg_upgrade`, no dump/restore and no `REINDEX`. Do it with the backend **idle** (nothing recording or processing):
+
+```bash
+export DOCKER_CONTEXT=default
+mkdir -p ~/backups && docker compose exec postgres pg_dump -U meetingbot -Fc meetingbot > ~/backups/meetingbot-$(date +%F).dump
+docker compose build postgres                       # image with pgvector
+docker compose up -d postgres ollama                # recreates both with the existing volumes
+docker compose exec ollama ollama pull bge-m3       # one-time download of the embedding model
+docker compose up -d --build backend                # the migration creates the extension and tables; indexing runs in the background
+```
+
+- The migration is idempotent (`CREATE EXTENSION IF NOT EXISTS vector`) and **fails with a clear message** if Postgres is not yet the new image (or use `SEARCH_SEMANTIC=off` for text only).
+- The `ollama` container serves only the embedding (CPU, no GPU reservation); there is no local LLM.
+- Restoring the dump needs Postgres of the same major version (16). **Rollback:** `SEARCH_ENABLED=false` in `.env` and `docker compose up -d backend`; to go back to the old image, run `DROP EXTENSION vector CASCADE;` before switching to `postgres:16-alpine` (the `search_*` tables are rebuildable).
 
 ### Test Server (VPS with Dokploy)
 
@@ -368,7 +460,7 @@ E2E_SHOTS=/tmp/capturas npm run test:e2e -w @meeting-bot/backend   # keeps scree
 # worker without downloading torch: only the test dependencies
 (cd apps/worker-gpu && uv run --no-project --python 3.12 --with fastapi --with numpy \
   --with httpx --with pytest --with pydantic python -m pytest -q)
-npm run dev:backend            # needs Postgres, worker-gpu, and Ollama accessible
+npm run dev:backend            # needs Postgres and worker-gpu accessible
 npm run dev:frontend           # Vite with proxy to /api
 scripts/fixture-ics.sh 20      # test invite starting in 20 min
 ```
@@ -384,15 +476,13 @@ scripts/fixture-ics.sh 20      # test invite starting in 20 min
   meeting immediately following another, the second one waits for the first to stop (3 min without speech
   past the scheduled time) or for **Parar**; the host-agent warns about the conflict. The assistant inside
   the call doesn't have this limit: it joins up to `MAX_CONCURRENT_BOTS` meetings at the same time.
-- **The live analysis uses the local 4B model**, which makes mistakes and repeats items. That's why every
+- **The live analysis uses the same external LLM as the generation** (`LLM_GENERATION_PROVIDER`) and only runs
+  with the **Itens** switch on. Any LLM makes mistakes and repeats items; that's why every
   item is born proposed, with validated evidence, and duplicate items are merged in the final analysis.
-  Meeting minutes and ADRs come out better with the external LLM or the subscription
-  (`LLM_GENERATION_PROVIDER`).
 - **A manually created architectural decision** has no associated transcript excerpt: its ADR is
   generated using only the description and the meeting summary.
 - **One host-agent per machine**, tied to a single user (`AGENT_OWNER`). Other users use the
   upload or the guest assistant.
-- **Sharing a meeting** doesn't have a screen yet (the `meeting_shares` structure already exists in the backend).
 - **The guest assistant only shows initials** in the meeting: an anonymous guest has no photo on Meet
   or Teams. The virtual camera (`BOT_CAMERA`) shows the icon, but as a video frame. On Teams, the
   agent account replaces the guest with the account's name.

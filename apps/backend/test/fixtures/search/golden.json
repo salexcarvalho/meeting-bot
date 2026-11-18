@@ -1,0 +1,130 @@
+{
+  "_comment": "Conjunto sintético (nenhum dado real). Reuniões fictícias em pt-BR, consultas com o trecho esperado e perguntas sem resposta no acervo.",
+  "meetings": [
+    {
+      "key": "auth",
+      "title": "Revisão de autenticação do portal",
+      "date": "2026-10-05T13:00:00Z",
+      "project": "Portal do Cliente",
+      "segments": [
+        { "speaker": "Marina", "start": 0, "end": 22, "text": "Bom dia a todos. Hoje vamos revisar como o login do portal funciona e o que precisa mudar antes da entrega de dezembro." },
+        { "speaker": "Rafael", "start": 24, "end": 51, "text": "O fluxo atual pede usuário e senha e depois um código de seis dígitos por mensagem. Os clientes reclamam que o código demora a chegar." },
+        { "speaker": "Marina", "start": 53, "end": 80, "text": "Proponho adotar autenticação única com o provedor corporativo, assim ninguém precisa decorar outra senha." },
+        { "speaker": "Rafael", "start": 82, "end": 110, "text": "Concordo. Mas os certificados digitais do provedor vencem em janeiro e alguém precisa renovar os certificados antes da virada." },
+        { "speaker": "Camila", "start": 112, "end": 140, "text": "Eu assumo a renovação dos certificados. Vou abrir o chamado com o fornecedor ainda nesta semana e aviso no canal." },
+        { "speaker": "Marina", "start": 142, "end": 170, "text": "Também precisamos definir a validade dos tokens de sessão. Hoje eles duram doze horas, o que é tempo demais para quem usa computador compartilhado." },
+        { "speaker": "Rafael", "start": 172, "end": 199, "text": "Sugiro reduzir para duas horas com renovação silenciosa enquanto a pessoa estiver ativa na tela." },
+        { "speaker": "Camila", "start": 201, "end": 226, "text": "Fica decidido: tokens de duas horas com renovação automática. Marina atualiza o documento de requisitos até sexta." },
+        { "speaker": "Marina", "start": 228, "end": 252, "text": "Risco que vejo: se o provedor corporativo ficar fora do ar ninguém entra no portal. Precisamos de um acesso de emergência." },
+        { "speaker": "Rafael", "start": 254, "end": 280, "text": "Posso preparar um acesso de contingência com senha de uso único guardada no cofre, só para os administradores." }
+      ],
+      "items": [
+        { "id": "auth-dec-1", "type": "decisao", "description": "Tokens de sessão passam a durar duas horas com renovação automática enquanto o usuário estiver ativo.", "status": "aprovado" },
+        { "id": "auth-pen-1", "type": "pendencia", "description": "Camila renova os certificados digitais do provedor antes de janeiro.", "status": "proposto" },
+        { "id": "auth-rej-1", "type": "pendencia", "description": "Trocar a cor do botão de entrada para azul escuro.", "status": "rejeitado" }
+      ],
+      "adr": { "id": "auth-adr-1", "title": "Adotar autenticação única com o provedor corporativo", "text": "Contexto: o login próprio exige código por mensagem e os clientes reclamam da demora. Decisão: delegar a autenticação ao provedor corporativo com acesso de contingência para administradores.", "status": "proposto" },
+      "analysis": [
+        { "section": "resumo_executivo", "text": "A equipe decidiu adotar autenticação única com o provedor corporativo, reduzir a validade dos tokens para duas horas e renovar os certificados digitais antes de janeiro." }
+      ]
+    },
+    {
+      "key": "banco",
+      "title": "Planejamento do banco de dados",
+      "date": "2026-10-12T13:00:00Z",
+      "project": "Plataforma de Dados",
+      "segments": [
+        { "speaker": "Julia", "start": 0, "end": 24, "text": "Vamos falar da migração do banco de dados. A versão atual sai de suporte no próximo semestre e precisamos de um plano." },
+        { "speaker": "Pedro", "start": 26, "end": 55, "text": "A melhor janela é o fim de semana de feriado, quando o volume de acessos cai quase a zero. Eu estimo quatro horas de indisponibilidade." },
+        { "speaker": "Julia", "start": 57, "end": 84, "text": "Antes disso quero um ensaio completo numa cópia, medindo o tempo da restauração do backup e a validação dos dados." },
+        { "speaker": "Pedro", "start": 86, "end": 113, "text": "Combinado. O backup noturno hoje fica no mesmo servidor, o que é arriscado. Sugiro enviar uma cópia para armazenamento externo." },
+        { "speaker": "Lucas", "start": 115, "end": 143, "text": "Sobre desempenho, as consultas de relatório estão lentas. Faltam índices na tabela de pedidos e algumas junções varrem a tabela inteira." },
+        { "speaker": "Julia", "start": 145, "end": 171, "text": "Lucas, você levanta as dez consultas mais lentas e propõe os índices. Prazo de duas semanas." },
+        { "speaker": "Lucas", "start": 173, "end": 198, "text": "Fechado. Também sugiro particionar a tabela de eventos por mês, porque ela já passa de duzentos milhões de linhas." },
+        { "speaker": "Pedro", "start": 200, "end": 226, "text": "Particionar muda a rotina de limpeza. Prefiro deixar para depois da migração para não somar dois riscos na mesma janela." }
+      ],
+      "items": [
+        { "id": "banco-dec-1", "type": "decisao", "description": "A migração do banco acontece no fim de semana de feriado, depois de um ensaio completo numa cópia.", "status": "aprovado" },
+        { "id": "banco-pen-1", "type": "pendencia", "description": "Lucas levanta as dez consultas mais lentas e propõe os índices em duas semanas.", "status": "aprovado" },
+        { "id": "banco-risco-1", "type": "risco", "description": "O backup noturno fica no mesmo servidor do banco; falha do disco perderia dados e cópia.", "status": "proposto" }
+      ],
+      "adr": null,
+      "analysis": [
+        { "section": "resumo_executivo", "text": "Definido o plano de migração do banco: ensaio numa cópia, janela no feriado, cópia do backup em armazenamento externo e revisão de índices antes de qualquer particionamento." }
+      ]
+    },
+    {
+      "key": "retro",
+      "title": "Retrospectiva da sprint 14",
+      "date": "2026-10-19T13:00:00Z",
+      "project": "Portal do Cliente",
+      "segments": [
+        { "speaker": "Aline", "start": 0, "end": 23, "text": "Vamos começar pelo que deu certo na sprint. O time entregou todas as histórias comprometidas, a primeira vez em meses." },
+        { "speaker": "Bruno", "start": 25, "end": 52, "text": "O que mais atrapalhou foi a esteira de integração. Os testes automáticos levam quarenta minutos e metade do tempo é espera na fila." },
+        { "speaker": "Aline", "start": 54, "end": 80, "text": "Dá para rodar os testes em paralelo? Se o tempo cair para quinze minutos já melhora muito o dia a dia." },
+        { "speaker": "Bruno", "start": 82, "end": 109, "text": "Dá, mas precisa de mais agentes de execução. Posso pedir ao time de infraestrutura mais dois agentes." },
+        { "speaker": "Davi", "start": 111, "end": 138, "text": "A cobertura de testes do módulo de pagamentos está em trinta por cento. Qualquer mudança ali é um susto." },
+        { "speaker": "Aline", "start": 140, "end": 166, "text": "Vamos reservar um dia da próxima sprint só para aumentar a cobertura de pagamentos. Davi coordena." },
+        { "speaker": "Bruno", "start": 168, "end": 194, "text": "Um ponto positivo: as revisões de código estão saindo em menos de um dia, bem melhor que o mês passado." }
+      ],
+      "items": [
+        { "id": "retro-dec-1", "type": "decisao", "description": "Reservar um dia da próxima sprint para aumentar a cobertura de testes do módulo de pagamentos.", "status": "aprovado" },
+        { "id": "retro-pen-1", "type": "pendencia", "description": "Bruno pede ao time de infraestrutura mais dois agentes de execução para paralelizar os testes.", "status": "proposto" }
+      ],
+      "adr": null,
+      "analysis": [
+        { "section": "resumo_executivo", "text": "Sprint 14 entregou tudo o que prometeu. O principal gargalo foi o tempo dos testes automáticos; a equipe vai paralelizar a execução e reforçar a cobertura de pagamentos." }
+      ]
+    },
+    {
+      "key": "orcamento",
+      "title": "Orçamento e fornecedores",
+      "date": "2026-10-26T13:00:00Z",
+      "project": null,
+      "segments": [
+        { "speaker": "Helena", "start": 0, "end": 25, "text": "Preciso fechar o orçamento do próximo ano. O maior custo continua sendo as licenças de software, que subiram quinze por cento." },
+        { "speaker": "Otávio", "start": 27, "end": 55, "text": "O fornecedor de monitoramento ofereceu desconto se assinarmos por três anos, mas isso nos prende a uma ferramenta que mal usamos." },
+        { "speaker": "Helena", "start": 57, "end": 83, "text": "Não gosto de contrato longo. Vamos renegociar para um ano com opção de renovação e pedir desconto menor." },
+        { "speaker": "Otávio", "start": 85, "end": 112, "text": "Outro ponto é o prazo de pagamento. Hoje pagamos em trinta dias e o fornecedor quer antecipar para quinze, com abatimento." },
+        { "speaker": "Helena", "start": 114, "end": 140, "text": "Só aceito se o abatimento for maior que o custo do dinheiro. Peça uma proposta por escrito e me mande até quinta." }
+      ],
+      "items": [
+        { "id": "orc-dec-1", "type": "decisao", "description": "Renegociar o contrato de monitoramento para um ano com opção de renovação, sem compromisso de três anos.", "status": "aprovado" }
+      ],
+      "adr": null,
+      "analysis": [
+        { "section": "resumo_executivo", "text": "O orçamento do próximo ano está pressionado pelas licenças de software. A diretoria prefere contratos curtos e só antecipa pagamentos com abatimento compensador." }
+      ]
+    }
+  ],
+  "queries": [
+    { "q": "certificados", "meeting": "auth", "contains": "renovar os certificados", "group": "literal" },
+    { "q": "tokens de sessão", "meeting": "auth", "contains": "tokens de sessão", "group": "literal" },
+    { "q": "backup noturno", "meeting": "banco", "contains": "backup noturno", "group": "literal" },
+    { "q": "índices tabela de pedidos", "meeting": "banco", "contains": "índices na tabela de pedidos", "group": "literal" },
+    { "q": "cobertura de pagamentos", "meeting": "retro", "contains": "cobertura", "group": "literal" },
+    { "q": "licenças de software", "meeting": "orcamento", "contains": "licenças de software", "group": "literal" },
+    { "q": "prazo de pagamento fornecedor", "meeting": "orcamento", "contains": "prazo de pagamento", "group": "literal" },
+    { "q": "\"código de seis dígitos\"", "meeting": "auth", "contains": "código de seis dígitos", "group": "literal" },
+    { "q": "particionar a tabela de eventos", "meeting": "banco", "contains": "particionar a tabela de eventos", "group": "literal" },
+    { "q": "agentes de execução", "meeting": "retro", "contains": "agentes de execução", "group": "literal" },
+    { "q": "autenticacao", "meeting": "auth", "contains": "autenticação", "group": "acento" },
+    { "q": "migração", "meeting": "banco", "contains": "migração", "group": "acento" },
+    { "q": "renovacao dos certificado", "meeting": "auth", "contains": "renovação dos certificados", "group": "flexao" },
+    { "q": "revisões de codigo", "meeting": "retro", "contains": "revisões de código", "group": "acento" },
+    { "q": "contratos longos", "meeting": "orcamento", "contains": "contrato longo", "group": "flexao" },
+    { "q": "como as pessoas entram no sistema sem decorar outra senha", "meeting": "auth", "contains": "autenticação única", "group": "semantico" },
+    { "q": "onde guardar as cópias de segurança com mais proteção", "meeting": "banco", "contains": "armazenamento externo", "group": "semantico" },
+    { "q": "acelerar a verificação automática do código", "meeting": "retro", "contains": "testes", "group": "semantico" },
+    { "q": "negociação de preço com quem vende ferramentas", "meeting": "orcamento", "contains": "fornecedor", "group": "semantico" },
+    { "q": "e se o serviço de identidade cair", "meeting": "auth", "contains": "contingência", "group": "semantico" }
+  ],
+  "noAnswer": [
+    "Qual foi o resultado do último campeonato de futebol?",
+    "Quem foi contratado para a vaga de designer?",
+    "Qual o valor da multa do contrato de aluguel do escritório?",
+    "Que horas a reunião de diretoria começa amanhã?",
+    "Como funciona a política de férias da empresa?",
+    "Qual foi a nota de satisfação do cliente no mês passado?"
+  ]
+}

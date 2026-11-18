@@ -71,6 +71,7 @@ export function createApp(): express.Express {
       return res.status(status).json({ error: message });
     }
     const status = (err as { status?: number })?.status;
+    if (status === 413) return res.status(413).json({ error: "Corpo da requisição excede o limite." });
     if (status && status >= 400 && status < 500) {
       return res.status(status).json({ error: "Requisição inválida." });
     }

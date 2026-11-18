@@ -24,6 +24,8 @@ const meeting: MeetingSummary = {
   endedAt: "2026-09-16T13:47:00Z",
   project: { id: "p", name: "Portal SES", suggested: false },
   skipRecording: false,
+  offDay: false,
+  autoOnOffDay: false,
   organizer: null,
   attendees: [{ name: "Ana Souza", email: "ana@example.com" }],
   errorMessage: null,
