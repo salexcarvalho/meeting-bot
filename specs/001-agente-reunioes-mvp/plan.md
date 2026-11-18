@@ -1,5 +1,9 @@
 # Implementation Plan: Agente Local de Reuniões — MVP
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido (constituição 3.0.0); todo LLM é externo e
+> exige `ALLOW_EXTERNAL_LLM=true`. As menções a Ollama, `qwen3.5:4b` e "LLM local" neste documento são o
+> histórico do MVP.
+
 **Branch**: `001-agente-reunioes-mvp` | **Date**: 2026-09-16 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/001-agente-reunioes-mvp/spec.md`

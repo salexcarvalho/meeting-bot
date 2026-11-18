@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { afterAll, describe, expect, it } from "vitest";
-import { CARD_HEIGHT, CARD_WIDTH, createCameraCard } from "../src/bot/card";
+import { BLANK_HEIGHT, BLANK_WIDTH, CARD_HEIGHT, CARD_WIDTH, createBlankCard, createCameraCard } from "../src/bot/card";
 
 const hasFfmpeg = (() => {
   try {
@@ -35,6 +35,19 @@ describe.skipIf(!hasFfmpeg)("ícone do agente na câmera", () => {
 
     await card.dispose();
     expect(existsSync(path.dirname(card.file))).toBe(false);
+  });
+
+  it("quadro preto para a câmera desligada: .y4m todo preto e apaga ao descartar", async () => {
+    const blank = await createBlankCard();
+    const head = readFileSync(blank.file).subarray(0, 64).toString("latin1");
+    expect(head).toMatch(new RegExp(`^YUV4MPEG2 W${BLANK_WIDTH} H${BLANK_HEIGHT} F15:1`));
+    const pixel = (x: number, y: number) =>
+      execFileSync("ffmpeg", ["-loglevel", "error", "-i", blank.file, "-vf", `format=rgb24,crop=2:2:${x}:${y}`, "-f", "rawvideo", "-"]).subarray(0, 3);
+    for (const [x, y] of [[0, 0], [BLANK_WIDTH / 2, BLANK_HEIGHT / 2], [BLANK_WIDTH - 4, BLANK_HEIGHT - 4]]) {
+      expect(Math.max(...pixel(x, y))).toBeLessThan(30);
+    }
+    await blank.dispose();
+    expect(existsSync(path.dirname(blank.file))).toBe(false);
   });
 
   it("imagem inválida falha sem deixar arquivo para trás", async () => {

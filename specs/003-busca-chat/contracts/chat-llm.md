@@ -1,4 +1,6 @@
-# Contrato — Saída do LLM no chat (RAG local)
+# Contrato — Saída do LLM no chat (RAG)
+
+> **Atualização 2026-11-18:** o chat usa o LLM externo de `LLM_GENERATION_PROVIDER` (`generate()` de `llm/index.ts`), não o Ollama; o schema vai no formato do provedor (OpenRouter ou CLI da assinatura). Sem `ALLOW_EXTERNAL_LLM=true` ou com assinatura indisponível/de outro dono, o chat responde 503 com o motivo e a busca segue.
 
 Mesmo padrão de `specs/001-agente-reunioes-mvp/contracts/llm-schemas.md`: schema em zod
 (`packages/contracts/src/search.ts`), convertido para JSON Schema e passado ao Ollama em `format`;

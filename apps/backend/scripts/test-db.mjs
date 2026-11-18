@@ -66,12 +66,16 @@ try {
   const files = process.argv.slice(2);
   const result = spawnSync("npx", ["vitest", "run", ...(files.length ? files : ["test/db"])], {
     stdio: "inherit",
-    // LLM externo desligado: os testes nunca chamam a rede. Assistente automático só no teste dele.
+    // OpenRouter como padrão só para a geração estar habilitada: os testes trocam a geração por
+    // stubs e nunca chamam a rede (a chave é falsa). Assistente automático só no teste dele.
     env: {
       ...process.env,
       TEST_DATABASE_URL: url,
-      ALLOW_EXTERNAL_LLM: "false",
-      LLM_GENERATION_PROVIDER: "local",
+      ALLOW_EXTERNAL_LLM: "true",
+      LLM_GENERATION_PROVIDER: "openrouter",
+      OPENROUTER_API_KEY: "chave-falsa-de-teste",
+      CLAUDE_CLI_ENABLED: "false",
+      CODEX_CLI_ENABLED: "false",
       AUTO_ASSISTANT: "false",
     },
   });

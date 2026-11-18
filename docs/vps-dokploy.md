@@ -20,7 +20,7 @@ desta máquina para começar.
 | Gravação | assistente na chamada + "Gravar agora" no PC | só o assistente na chamada (servidor não tem desktop) |
 | Alertas no desktop | sim | não |
 | Acesso | `127.0.0.1:3000` | domínio com HTTPS pelo Traefik do Dokploy |
-| Busca nas reuniões | híbrida (texto + semântica) e chat local | **só texto** (`SEARCH_SEMANTIC=off`): sem Ollama não há onde calcular embeddings, e o chat fica desligado |
+| Busca nas reuniões | híbrida (texto + semântica) e chat sobre as reuniões | **só texto** (`SEARCH_SEMANTIC=off`): sem Ollama não há onde calcular embeddings, e o chat fica desligado |
 
 O assistente entra nas reuniões a partir do servidor: funciona mesmo com o computador desligado.
 

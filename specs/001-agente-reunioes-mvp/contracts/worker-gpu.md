@@ -99,3 +99,4 @@ Parâmetros do passe final:
 - A pipeline de diarização é carregada no início do job com `diarize` e liberada no fim
   (`del` + `torch.cuda.empty_cache()`).
 - Antes de um job com diarização, o backend descarrega o Ollama (`keep_alive: 0`).
+  (Atualização 2026-11-18: o Ollama foi removido; não há mais LLM para descarregar.)

@@ -14,13 +14,13 @@ data-model.md, contracts/).
 │  uploader com retomada       │ /api/agent/  │  postAnalysis → ata (render na leitura)      │
 └──────────────────────────────┘   audio      │  UI React estática + WS /api/live            │
                                               │  Modo Agente (Playwright + PulseAudio)       │
- navegador ── cookie ── 127.0.0.1:3000 ──────►│  egress guard (LOCAL_ONLY + exceção de ASR)  │
+ navegador ── cookie ── 127.0.0.1:3000 ──────►│  egress guard (LOCAL_ONLY + exceções ASR/LLM)│
                                               └───────┬──────────────┬──────────────┬────────┘
                                                       │              │              │
-                                               postgres 16    worker-gpu        ollama
-                                                              FastAPI           qwen3.5:4b
-                                                              faster-whisper    JSON Schema
-                                                              pyannote          (format)
+                                               postgres 16    worker-gpu
+                                                              FastAPI
+                                                              faster-whisper
+                                                              pyannote
 ```
 
 ## Serviços
@@ -30,14 +30,16 @@ data-model.md, contracts/).
 | `backend` | build de `apps/backend/Dockerfile` sobre `mcr.microsoft.com/playwright:v1.63.0-noble` | API, UI, WebSockets, agendador, agente, ata, Modo Agente |
 | `postgres` | build de `docker/postgres` (`meeting-bot-postgres:16-pgvector`: `postgres:16-alpine` + pgvector 0.8.7) | persistência (`pgdata`), busca de texto e vetorial |
 | `worker-gpu` | build de `apps/worker-gpu` sobre `nvidia/cuda:12.8.1-base` | `/transcribe/chunk` (ao vivo) e `/jobs/transcribe` (passe final + diarização) |
-| `ollama` | `ollama/ollama:0.32.14` | LLM local (`qwen3.5:4b`, GPU) e embeddings (`bge-m3`, CPU); `OLLAMA_MAX_LOADED_MODELS=2` |
+| `ollama` | `ollama/ollama:0.32.14` | só embeddings da busca (`bge-m3`, CPU, sem reserva de GPU; `OLLAMA_MAX_LOADED_MODELS=1`); nenhum modelo generativo |
 | `caddy` | `caddy:2-alpine` (profile `https`) | TLS quando exposto em rede |
 
-Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama`, `pgdata`.
+Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata`.
 
 ## Fluxos
 
-> Servidor de teste (Dokploy): `docker-compose.vps.yml` troca worker-gpu e Ollama pelo ASR externo
+> Não há LLM local: o LLM (ata, itens, ADR, análise ao vivo e chat) é sempre externo (constituição 3.0.0). O `ollama` existe só para os embeddings da busca, em CPU.
+>
+> Servidor de teste (Dokploy): `docker-compose.vps.yml` troca o worker-gpu pelo ASR externo
 > e pelo container `agent-cli` (host-agent em `AGENTE_MODE=llm`, só geração). Ver `docs/vps-dokploy.md`.
 
 1. **Agenda**
@@ -68,7 +70,8 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
 3. **Ao vivo**
    - O chunker corta por energia: pausa ≥ 500 ms depois de 8 s, ou força o corte em 30 s.
    - O worker aplica o VAD e o Whisper; os segmentos `live` são publicados no WS.
-   - O LiveAgent roda a cada 90 s de fala ou 180 s e valida a evidência (ids `S<n>` + citação).
+   - O LiveAgent (só com a chave "Itens" ligada e `ALLOW_EXTERNAL_LLM=true`) roda a cada 90 s de fala ou 180 s,
+     pelo provedor de `LLM_GENERATION_PROVIDER`, e valida a evidência (ids `S<n>` + citação).
    - A deduplicação usa Jaccard; a consolidação roda a cada 15 min.
 4. **Pós-reunião**
    - O finalize converte para Opus e confere a duração com o ffprobe.
@@ -88,9 +91,9 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `ollama
 6. **Busca e chat** (`apps/backend/src/search/`, specs/003)
    - Índice: `search_chunks` (trechos de transcrição `final` em janelas de ~180 palavras, narrativa da ata, itens, ADRs e metadados) e `search_index_state` (fila durável, um estado por reunião), no mesmo Postgres. Texto: `tsvector` com a configuração `pt_unaccent`; vetor: `vector(1024)` com HNSW parcial.
    - Indexação em duas fases (`indexer.ts`, `worker.ts`): **texto** (só banco, a qualquer momento) e **vetores** (`bge-m3` no Ollama com `num_gpu: 0`, 0 MiB de VRAM, RAM extra < 2,5 GB). O worker pega uma reunião por vez (alteração mais recente primeiro, depois a reunião mais recente), espera o debounce (`SEARCH_INDEX_DEBOUNCE_SECONDS`), **não calcula embeddings com reunião em `recording`/`stopping`/`joining`/`waiting_admission`/`in_call`**, usa hash do conteúdo mais o modelo para só recalcular o que mudou, espera 30 s, 2 min, 10 min, 1 h e 6 h entre falhas e marca `failed` na 5ª. No boot, `indexing` volta a `pending`; o backfill das reuniões antigas é o seed da migração (mais recente primeiro, retomável). Gatilhos: fim do pipeline e dos ADRs, passe final (a invalidação dos trechos de transcrição entra na mesma transação de `replaceWithFinal`), itens, ADRs, falantes, título, projeto.
-   - Consulta (`query.ts`): léxica (`websearch_to_tsquery`, AND com reserva em OR) e vetorial (`hnsw.iterative_scan = relaxed_order`), fundidas por RRF (k = 60). **A permissão é aplicada na consulta**: `visibleMeetingsSql` + tipos permitidos pelo papel + item/ADR rejeitado fora, antes do `LIMIT`; o índice não guarda dono, e a hidratação do resultado reaplica a permissão. Sem Ollama, pgvector ou modelo, a busca cai para texto e informa o motivo.
-   - Chat (`chat/`): recupera pela mesma consulta, descarta o que não passa de `CHAT_MIN_SIMILARITY` (ou de acerto léxico estrito), monta o prompt com trechos delimitados como dados, chama o **LLM local** pela fila única (`generate("post", …, "local")`, atrás do ao vivo, `num_ctx` 4096 com reunião ao vivo, senão 8192), e **valida** cada citação (`ref` existente, `quote` literal conferida); sem citação válida, "não encontrei". Histórico só no cliente.
-   - Consumo: embeddings (`busca`) e chat (`chat`) entram em `ai_usage_logs` (provedor `ollama`), sem conteúdo.
+   - Consulta (`query.ts`): léxica (`websearch_to_tsquery`, AND com reserva em OR) e vetorial (`hnsw.iterative_scan = relaxed_order`), fundidas por RRF (k = 60). **A permissão é aplicada na consulta**: `visibleMeetingsSql` + tipos permitidos pelo papel + item/ADR rejeitado fora, antes do `LIMIT`; o índice não guarda dono, e a hidratação do resultado reaplica a permissão. Sem Ollama (embeddings), pgvector ou modelo, a busca cai para texto e informa o motivo.
+   - Chat (`chat/`): recupera pela mesma consulta, descarta o que não passa de `CHAT_MIN_SIMILARITY` (ou de acerto léxico estrito), monta o prompt com trechos delimitados como dados, chama o **LLM externo** do `LLM_GENERATION_PROVIDER` (`generate("post", …, provider)`; exige `ALLOW_EXTERNAL_LLM=true`; assinatura `claude`/`codex` só vale se o dono de cada reunião citada é o dono do host-agent, e entra na fila de um CLI por vez; sem LLM utilizável a busca segue e o chat responde 503 com o motivo), e **valida** cada citação (`ref` existente, `quote` literal conferida); sem citação válida, "não encontrei". Histórico só no cliente.
+   - Consumo: embeddings (`busca`) e chat (`chat`) entram em `ai_usage_logs` (embeddings: provedor `ollama`; chat: o provedor do LLM externo), sem conteúdo.
 
 O detalhamento do agente arquiteto (prompts, janelas, validação, deduplicação, schemas e onde alterar)
 está em [`agente-arquiteto.md`](agente-arquiteto.md).
@@ -148,15 +151,16 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
     OpenRouter (só https);
   - com `ALLOW_EXTERNAL_LLM=true`, também `/api/v1/chat/completions`;
   - bloqueios e envios externos vão para `audit_log`, sem conteúdo.
-- LLM local por padrão (`LLM_PROVIDER=ollama`; outros nomes são recusados e auditados).
-  - Exceção opt-in (constituição 1.4.0): ata e ADRs podem ir ao OpenRouter
-    (`llm/openrouter.ts`) ou à assinatura pessoal do dono (`llm/hostCli.ts`), escolhido a cada
-    pedido ou por `LLM_GENERATION_PROVIDER`.
+- Não há LLM local: todo LLM é externo e exige `ALLOW_EXTERNAL_LLM=true` (constituição 3.0.0). Sem a
+  flag, ata, itens e ADRs não são gerados (a transcrição e a gravação seguem) e a interface avisa.
+  - Provedores: `claude` (padrão de `LLM_GENERATION_PROVIDER`) e `codex`, pela assinatura pessoal do dono
+    (`llm/hostCli.ts`), ou `openrouter` (`llm/openrouter.ts`); escolhido a cada pedido ou por
+    `LLM_GENERATION_PROVIDER`.
   - Assinatura: o backend põe o pedido numa fila em memória (`llm/hostJobs.ts`); o host-agent
     busca por long-poll (`GET /api/agent/llm/next`), roda `claude -p` ou `codex exec` isolado
     (`host_agent/llm_runner.py`) e devolve o JSON (`POST /api/agent/llm/:id/result`). O backend
     nunca vê credenciais, e só as reuniões do `AGENT_OWNER` usam a assinatura.
-  - A análise ao vivo é sempre local; a geração externa não entra na fila da GPU.
+  - A análise ao vivo usa o mesmo provedor da geração; nenhum LLM entra na fila da GPU.
 - Caminhos de áudio montados a partir de UUID e canal validados; o worker recusa caminhos fora
   de `/data/audio`.
 
@@ -165,5 +169,4 @@ está em [`agente-arquiteto.md`](agente-arquiteto.md).
 | Carga | VRAM medida |
 |---|---|
 | faster-whisper large-v3-turbo int8_float16 | ~1,4 GB |
-| qwen3.5:4b ctx 8k | ~3,0 GB na GPU (3,9 GB total) |
-| pyannote community-1 (só no passe final) | carregado sob demanda; o LLM é descarregado antes |
+| pyannote community-1 (só no passe final) | carregado sob demanda |

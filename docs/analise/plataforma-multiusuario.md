@@ -4,6 +4,12 @@
 - **Base:** código em `apps/*` depois do MVP (`specs/001-agente-reunioes-mvp`) e da constituição 1.1.0.
 - **Referência visual:** `/home/salexcarvalho/Pessoal/Financeiro/web`. O app se chama "Bússola"; a cor principal é teal, e os neutros puxam para o mesmo matiz.
 
+> **Atualização 2026-11-18:** o `OllamaProvider` (LLM local) foi removido (constituição 3.0.0). Todo LLM é
+> externo e exige `ALLOW_EXTERNAL_LLM=true`; os provedores são `claude` (assinatura, padrão), `codex` e
+> `openrouter`, e a análise ao vivo e o chat da busca usam o mesmo provedor da geração; o Ollama fica só para
+> os embeddings da busca (CPU). As menções a Ollama, fila de GPU para
+> LLM e "análise ao vivo sempre local" abaixo são o histórico da auditoria.
+
 **Legenda de classificação:**
 
 | Sigla | Significado |

@@ -17,7 +17,7 @@ describe("egress guard (LOCAL_ONLY)", () => {
     inner = vi.fn(async () => new Response("ok"));
     globalThis.fetch = inner as unknown as typeof fetch;
     blocked = vi.fn();
-    uninstall = installEgressGuard({ allowlist: ["ollama", "worker-gpu", "localhost", "127.0.0.1"], onBlocked: blocked });
+    uninstall = installEgressGuard({ allowlist: ["worker-gpu", "localhost", "127.0.0.1"], onBlocked: blocked });
   });
 
   afterEach(() => {
@@ -26,7 +26,7 @@ describe("egress guard (LOCAL_ONLY)", () => {
   });
 
   it("deixa passar hosts permitidos", async () => {
-    const res = await fetch("http://ollama:11434/api/ps");
+    const res = await fetch("http://worker-gpu:8000/health");
     expect(await res.text()).toBe("ok");
     expect(inner).toHaveBeenCalledTimes(1);
     expect(blocked).not.toHaveBeenCalled();
@@ -51,10 +51,10 @@ describe("egress guard (LOCAL_ONLY)", () => {
   });
 
   it("não aceita sufixos parecidos", () => {
-    const allow = ["ollama", "localhost"];
-    expect(isAllowedHost("ollama", allow)).toBe(true);
-    expect(isAllowedHost("OLLAMA", allow)).toBe(true);
-    expect(isAllowedHost("ollama.evil.com", allow)).toBe(false);
+    const allow = ["worker-gpu", "localhost"];
+    expect(isAllowedHost("worker-gpu", allow)).toBe(true);
+    expect(isAllowedHost("WORKER-GPU", allow)).toBe(true);
+    expect(isAllowedHost("worker-gpu.evil.com", allow)).toBe(false);
     expect(isAllowedHost("evil-localhost", allow)).toBe(false);
   });
 });
@@ -70,7 +70,7 @@ describe("egress guard — exceção de ASR externo", () => {
     globalThis.fetch = inner as unknown as typeof fetch;
     blocked = vi.fn();
     uninstall = installEgressGuard({
-      allowlist: ["ollama"],
+      allowlist: ["worker-gpu"],
       endpoints: [{ host: "openrouter.ai", pathPrefix: "/api/v1/audio/transcriptions" }],
       onBlocked: blocked,
     });

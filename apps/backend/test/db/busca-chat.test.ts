@@ -16,8 +16,8 @@ interface Prompt {
 const QUESTION = "O que ficou decidido sobre os certificados digitais do provedor?";
 const SECRET = "ultrassecreto zebrafish";
 
-// Chat RAG local (US3) com o LLM simulado: recuperação com permissão, limiar, citações validadas,
-// escopo, reunião ao vivo e defesa contra injeção. O Ollama nunca é chamado.
+// Chat RAG (US3) com o LLM externo simulado: recuperação com permissão, limiar, citações validadas,
+// escopo, reunião ao vivo e defesa contra injeção. Nenhum provedor é chamado de verdade.
 describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTTP, LLM simulado)", async () => {
   const { startSearchHarness, loadGolden, golden } = await import("./busca-harness");
   const { setChatGenerator } = await import("../../src/search/chat/service");
@@ -30,7 +30,7 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
   /** LLM simulado: cita o primeiro trecho de transcrição do prompt, com uma frase literal dele. */
   async function fakeGenerate(priority: string, req: any, provider: string) {
     prompts.push({ priority, provider, numCtx: req.numCtx, purpose: req.purpose, label: req.label, system: req.system, user: req.user });
-    if (behaviour === "fail") throw new Error("Ollama fora");
+    if (behaviour === "fail") throw new Error("LLM fora");
     if (behaviour === "refuse") return { answered: false, answer: "", citations: [] };
     if (behaviour === "invent") return { answered: true, answer: "Resposta inventada [42].", citations: [{ ref: 42, quote: "nada" }] };
     const match = /\[(\d+)\] [^\n]*transcrição[^\n]*\n([^\n]*)/.exec(req.user);
@@ -55,6 +55,10 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
     await h.index(secret, ...Object.values(loaded.meetings));
     const { config } = await import("../../src/config");
     config.search.chatMinSimilarity = 0.25;
+    // o chat usa o provedor de geração: OpenRouter habilitado (a chamada em si é simulada)
+    config.externalLlm.allowed = true;
+    config.externalLlm.apiKey = "sk-teste";
+    config.generationProvider = "openrouter";
     setChatGenerator(fakeGenerate as never);
   });
 
@@ -80,14 +84,14 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
     expect(citation.label).toContain("Reunião ");
     // a fonte citada é um trecho que estava no prompt, na ordem de [n]
     expect(res.json.sources[citation.ref - 1].target.meetingId).toBe(citation.target.meetingId);
-    expect(res.json.model).toBe("local:qwen3.5:4b");
+    expect(res.json.model).toBe("openrouter:anthropic/claude-sonnet-5");
     expect(res.json.retrieval.belowThreshold).toBe(false);
   });
 
-  it("o chat é sempre local, na fila 'post', com o contexto cheio fora da reunião ao vivo", async () => {
+  it("o chat usa o provedor da geração (OpenRouter), na fila 'post', com o contexto cheio fora da reunião ao vivo", async () => {
     await ask("bc-ana", {});
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toMatchObject({ priority: "post", provider: "local", numCtx: 8192, purpose: "chat", label: "chat" });
+    expect(prompts[0]).toMatchObject({ priority: "post", provider: "openrouter", numCtx: 8192, purpose: "chat", label: "chat" });
     expect(prompts[0].user).toContain("PERGUNTA: ");
   });
 
@@ -99,7 +103,7 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
     try {
       const res = await ask("bc-ana", {});
       expect(res.json.liveBusy).toBe(true);
-      expect(prompts[0]).toMatchObject({ numCtx: 4096, priority: "post", provider: "local" });
+      expect(prompts[0]).toMatchObject({ numCtx: 4096, priority: "post", provider: "openrouter" });
       expect(prompts[0].user.length).toBeLessThanOrEqual(idleTokens);
     } finally {
       await h.pool.query(`UPDATE meetings SET status = 'done' WHERE id = $1`, [live]);
@@ -130,11 +134,40 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
     expect(res.json).toMatchObject({ answered: false, sources: [] });
   });
 
-  it("modelo local fora do ar: 503 sem conteúdo de reunião", async () => {
+  it("LLM fora do ar: 503 sem conteúdo de reunião", async () => {
     behaviour = "fail";
     const res = await ask("bc-ana", {});
     expect(res.status).toBe(503);
     expect(JSON.stringify(res.json)).not.toMatch(/certificados|zebrafish/);
+  });
+
+  describe("sem LLM utilizável a busca segue e o chat recusa com erro claro", () => {
+    afterEach(async () => {
+      const { config } = await import("../../src/config");
+      config.externalLlm.allowed = true;
+      config.generationProvider = "openrouter";
+      config.subscriptionLlm.claude.enabled = false;
+    });
+
+    it("ALLOW_EXTERNAL_LLM desligado: 503 com a mensagem do .env, sem chamar o LLM, e a busca funciona", async () => {
+      const { config } = await import("../../src/config");
+      config.externalLlm.allowed = false;
+      const res = await ask("bc-ana", {});
+      expect(res.status).toBe(503);
+      expect(res.json.error).toMatch(/LLM externo desabilitado: ative ALLOW_EXTERNAL_LLM=true/);
+      expect(prompts).toEqual([]);
+      expect((await h.search("bc-ana", "certificados")).status).toBe(200);
+    });
+
+    it("assinatura (claude) só vale para as reuniões do dono do host-agent: reunião de outra pessoa recusa", async () => {
+      const { config } = await import("../../src/config");
+      config.generationProvider = "claude";
+      config.subscriptionLlm.claude.enabled = true;
+      const res = await ask("bc-ana", {});
+      expect(res.status).toBe(503);
+      expect(res.json.error).toMatch(/assinatura|host-agent/i);
+      expect(prompts).toEqual([]);
+    });
   });
 
   it("escopo por projeto, período e reunião restringe as fontes", async () => {
@@ -315,25 +348,27 @@ describe.skipIf(!enabled)("busca: perguntar às minhas reuniões (Postgres + HTT
       setChatGenerator(fakeGenerate as never);
     });
 
-    it("o chat entra no painel de consumo (purpose 'chat', provedor local) com o LLM real e o Ollama simulado", async () => {
+    it("o chat entra no painel de consumo (purpose 'chat', provedor OpenRouter) com o LLM real e a resposta do provedor simulada", async () => {
       setChatGenerator(null);
       const fetched: { url: string; body: any }[] = [];
       const realFetch = globalThis.fetch;
       vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-        if (!String(url).includes("ollama:11434")) return realFetch(url, init);
+        if (!String(url).endsWith("/chat/completions")) return realFetch(url, init);
         fetched.push({ url: String(url), body: JSON.parse(String(init?.body)) });
         const content = JSON.stringify({ answered: false, answer: "", citations: [] });
-        return new Response(JSON.stringify({ message: { content }, prompt_eval_count: 321, eval_count: 12, eval_duration: 1e9 }), { status: 200 });
+        return new Response(
+          JSON.stringify({ model: "anthropic/claude-sonnet-5", choices: [{ message: { content }, finish_reason: "stop" }], usage: { prompt_tokens: 321, completion_tokens: 12, cost: 0.001 } }),
+          { status: 200 },
+        );
       });
       await h.pool.query(`DELETE FROM ai_usage_logs WHERE purpose = 'chat'`);
       const res = await ask("bc-ana", {});
       expect(res.status).toBe(200);
-      expect(fetched[0].url).toContain("/api/chat");
-      expect(fetched[0].body.options.num_ctx).toBe(8192);
+      expect(fetched[0].url).toContain("/chat/completions");
       await new Promise((r) => setTimeout(r, 120));
       const rows = (await h.pool.query(`SELECT * FROM ai_usage_logs WHERE purpose = 'chat'`)).rows;
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ category: "llm", provider: "ollama", success: true, user_id: h.ids["bc-ana"], meeting_id: null, input_tokens: "321", label: "chat" });
+      expect(rows[0]).toMatchObject({ category: "llm", provider: "openrouter", success: true, user_id: h.ids["bc-ana"], meeting_id: null, input_tokens: "321", label: "chat" });
       expect(JSON.stringify(rows)).not.toContain("certificados");
       const own = await h.call("bc-ana", "GET", "/usage/me");
       expect(JSON.stringify(own.json)).toContain("Chat sobre reuniões");

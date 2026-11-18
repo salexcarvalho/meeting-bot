@@ -95,35 +95,6 @@ describe.skipIf(!enabled)("registro de uso de LLM e ASR (Postgres)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("modelo local: tokens e tempo de inferência do Ollama, sem custo", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({ message: { content: '{"ok":true}' }, prompt_eval_count: 500, eval_count: 60, prompt_eval_duration: 1e9, eval_duration: 2e9 }),
-          { status: 200 },
-        ),
-      ),
-    );
-    await m.llm.generate("post", request());
-    const [row] = await waitFor(1);
-    expect(row).toMatchObject({
-      user_id: ownerId,
-      meeting_id: meetingId,
-      category: "llm",
-      purpose: "ata",
-      provider: "ollama",
-      input_tokens: "500",
-      output_tokens: "60",
-      cost_usd: null,
-      compute_ms: 3000,
-      attempts: 1,
-      success: true,
-      error_code: null,
-      source: "live",
-    });
-  });
-
   it("OpenRouter: custo informado pelo provedor e modelo efetivo", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => openrouterReply()));
     await m.llm.generate("post", request(), "openrouter");
@@ -174,9 +145,9 @@ describe.skipIf(!enabled)("registro de uso de LLM e ASR (Postgres)", () => {
   });
 
   it("chamada sem reunião fica sem dono (grupo instância)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ message: { content: '{"ok":true}' } }), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn(async () => openrouterReply()));
     const before = Number((await m.pool.query(`SELECT count(*) FROM ai_usage_logs WHERE user_id IS NULL AND meeting_id IS NULL`)).rows[0].count);
-    await m.llm.generate("post", { ...request(), meetingId: undefined, label: "teste avulso" });
+    await m.llm.generate("post", { ...request(), meetingId: undefined, label: "teste avulso" }, "openrouter");
     for (let i = 0; i < 60; i++) {
       const n = Number((await m.pool.query(`SELECT count(*) FROM ai_usage_logs WHERE user_id IS NULL AND meeting_id IS NULL`)).rows[0].count);
       if (n > before) break;

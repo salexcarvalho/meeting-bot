@@ -12,8 +12,12 @@ Agente **local** de reuniões e arquitetura de software. Ele:
 - gera a ata (template de 19 seções; só o resumo quando os itens estão desligados) e sugestões de ADR;
 - deixa tudo como **proposto** até você revisar.
 
-Tudo roda na máquina: Whisper (faster-whisper) e LLM (Ollama, `qwen3.5:4b`) na GPU local. A
-única exceção é o **ASR externo de teste**, que fica desligado por padrão
+Áudio e transcrição ficam na máquina: o Whisper (faster-whisper) roda na GPU local. **Não há LLM
+local**: ata, itens, ADRs e o chat da busca dependem de um LLM externo (sua assinatura do Claude ou do Codex, ou o
+OpenRouter), que só funciona com `ALLOW_EXTERNAL_LLM=true` ([ver abaixo](#llm-externo)). Sem ele,
+a gravação e a transcrição seguem normalmente, mas a ata e os itens não são gerados (a interface
+avisa); a busca segue funcionando. O Ollama existe só para os embeddings da busca (`bge-m3`, em CPU).
+Há ainda o **ASR externo de teste**, desligado por padrão
 ([ver abaixo](#asr-externo-de-teste-opcional)).
 
 Também continuam disponíveis o **upload de áudio/vídeo** e o **Modo Agente**, em que um bot
@@ -32,9 +36,9 @@ convidado entra no Meet/Teams.
 │ host-agent (systemd)     │ ───────────────► │ backend (Node 24) :3000                │
 │  alertas, som, xdg-open  │   WS PCM 16 kHz  │  agenda, gravação, agente, ata, UI     │
 │  parec: mic + monitor    │ ───────────────► │   │            │             │         │
-└──────────────────────────┘                  │ postgres   worker-gpu      ollama      │
- navegador → http://127.0.0.1:3000            │            (whisper,       (qwen3.5:4b)│
-                                              │             pyannote)                  │
+└──────────────────────────┘                  │ postgres   worker-gpu                  │
+ navegador → http://127.0.0.1:3000            │            (whisper, pyannote)         │
+                                              │                                        │
                                               └────────────────────────────────────────┘
 ```
 
@@ -59,7 +63,6 @@ sudo bash scripts/setup-host.sh          # NVIDIA Container Toolkit + pulseaudio
 cp .env.example .env                     # preencha POSTGRES_PASSWORD e AGENT_TOKEN
 export DOCKER_CONTEXT=default            # sempre o Engine nativo
 docker compose up -d --build
-docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec backend npm run user:create -- sergio --role=SUPER_ADMIN
 apps/host-agent/install.sh               # serviço do desktop (systemd --user)
 ```
@@ -172,7 +175,7 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
   riscos, requisitos e ADRs só são gerados nas reuniões em que você liga a chave. Vem **desligada**;
   reunião de teste assistido ou de entrega fica só com transcrição e ata com o resumo.
   - Desligada: a extração ao vivo não roda, e a análise pós-reunião gera só o resumo (sem itens, sem ADR).
-  - **Gerar itens** liga a chave e pergunta onde gerar (local, OpenRouter ou assinatura), como o Gerar ata.
+  - **Gerar itens** liga a chave e pergunta onde gerar (assinatura ou OpenRouter), como o Gerar ata.
     Ligada no meio da reunião, a extração ao vivo começa dali.
   - **Desligar itens** não apaga nada: o que já existe fica, e criar item à mão continua valendo.
   - Reuniões anteriores a esta chave que já tinham itens ou análise entram como ligadas.
@@ -183,8 +186,8 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
     revisado (a evidência passa para o aprovado; repetido de um rejeitado é descartado).
 - **Gerar ADRs** (aba ADRs) e **Gerar ADR** (em cada decisão arquitetural, na aba Itens): geram ou
   refazem os ADRs sugeridos. ADRs aprovados, rejeitados ou editados à mão não são sobrescritos.
-- Cada botão pergunta onde gerar: **modelo local**, **OpenRouter** ou **sua assinatura**
-  (Claude Code ou Codex), conforme o que estiver habilitado. O que foi gerado fora aparece marcado
+- Cada botão pergunta onde gerar: **sua assinatura** (Claude Code ou Codex) ou **OpenRouter**,
+  conforme o que estiver habilitado (sem `ALLOW_EXTERNAL_LLM=true`, o botão avisa que não há LLM). O que foi gerado fora aparece marcado
   ("OpenRouter", "Claude" ou "Codex" no item, no ADR e na ata).
 
 ### Compartilhar uma reunião
@@ -217,9 +220,9 @@ Menu **Minhas pendências** (permissão `tasks.read`/`tasks.manage`; o papel Lei
 Menu **Busca** (atalho `Ctrl+K`). Exige `meetings.read`; a transcrição também exige `transcripts.read`, e ata, itens e ADRs exigem `documents.read`.
 
 - **Buscar:** modo **híbrido** por padrão (texto em português, sem acento nem flexão, mais busca **semântica** por sentido, fundidos por RRF). Filtros por projeto, período, tipo de conteúdo e modo; o resultado mostra o trecho destacado e se foi achado por texto ou por semântica. Clicar abre a reunião no segmento e no horário (`?seg=`, `?t=`, `?item=`, `?adr=`), com o áudio posicionado sem tocar. Item rejeitado nunca aparece; item ou ADR proposto aparece sinalizado.
-- **Perguntar:** aba **Perguntar** (RAG local). A resposta usa só trechos das reuniões que você pode ler, cada afirmação traz uma citação clicável conferida contra o trecho, e sem evidência a resposta é **"Não encontrei registro"**. Itens e ADRs ainda não aprovados entram rotulados como "proposto pela IA". O histórico da conversa fica só no navegador. O chat roda **sempre no Ollama local** (nunca OpenRouter nem assinatura), entra na fila atrás da análise ao vivo e, com reunião ao vivo, usa contexto menor e avisa que pode demorar.
+- **Perguntar:** aba **Perguntar** (RAG local). A resposta usa só trechos das reuniões que você pode ler, cada afirmação traz uma citação clicável conferida contra o trecho, e sem evidência a resposta é **"Não encontrei registro"**. Itens e ADRs ainda não aprovados entram rotulados como "proposto pela IA". O histórico da conversa fica só no navegador. O chat usa o **LLM externo** (o mesmo `LLM_GENERATION_PROVIDER`: assinatura ou OpenRouter; a pergunta e os trechos recuperados saem da máquina, a indexação não) e exige `ALLOW_EXTERNAL_LLM=true`: sem ele a busca continua e o chat responde com o aviso. A assinatura só atende quando as reuniões citadas são do dono do host-agent. Com reunião ao vivo, usa contexto menor.
 - **Privacidade:** a permissão é aplicada dentro da própria consulta (dono ou compartilhamento); revogar um compartilhamento tira a reunião dos resultados na hora; administrador não lê conteúdo alheio; texto de busca, pergunta, resposta e trechos nunca vão para log nem para auditoria. O consumo aparece em **Consumo de IA** (finalidades "Busca (embeddings)" e "Chat sobre reuniões").
-- **Índice:** pgvector no mesmo Postgres; os embeddings (`bge-m3`) rodam no Ollama **em CPU** (0 MiB de VRAM) e esperam enquanto houver gravação ou chamada; a busca de texto funciona mesmo com o Ollama fora. Reuniões antigas são indexadas em segundo plano (da mais recente para a mais antiga, retomável após reinício). **Configurações > Busca** mostra o estado e **Reindexar minhas reuniões**; no terminal: `docker compose exec backend npm run search:reindex`.
+- **Índice:** pgvector no mesmo Postgres; os embeddings (`bge-m3`) rodam no Ollama **em CPU** (0 MiB de VRAM) e esperam enquanto houver gravação ou chamada; a busca de texto funciona mesmo com o Ollama (embeddings) fora. Reuniões antigas são indexadas em segundo plano (da mais recente para a mais antiga, retomável após reinício). **Configurações > Busca** mostra o estado e **Reindexar minhas reuniões**; no terminal: `docker compose exec backend npm run search:reindex`.
 - **Servidor de teste (VPS):** só busca de texto; semântica e chat ficam desligados (`SEARCH_SEMANTIC=off`).
 
 ### Upload e Modo Agente
@@ -256,11 +259,11 @@ Cada usuário tem as próprias configurações:
 - **Meu agente:** persona do agente arquiteto, tecnologias, tipos de decisão, prompt base, avatar, gravação do nome falado e conta do agente no Teams.
 - **Reuniões:** identidade na sala.
 - **Documentação:** nível de detalhe e formatos.
-- **Consumo de IA:** cada chamada de LLM (modelo local, OpenRouter, assinatura) e cada transcrição (Whisper local ou
+- **Consumo de IA:** cada chamada de LLM (OpenRouter, assinatura), os embeddings da busca (Ollama, em CPU) e cada transcrição (Whisper local ou
   Deepgram externo) fica registrada com finalidade, provedor, modelo, tokens, minutos de áudio, tempo e resultado
   (inclusive falhas, só com um código curto). O painel mostra o mês ou um intervalo (até 24 meses): totais, por
   finalidade, provedor, modelo e dia, minutos de ASR local × externo, as reuniões que mais consumiram e as últimas
-  chamadas, com filtro de falhas. O custo é o que o provedor informou (nunca estimado): assinatura e modelo local
+  chamadas, com filtro de falhas. O custo é o que o provedor informou (nunca estimado): assinatura e Ollama
   mostram "sem custo por chamada". É só leitura e não bloqueia geração. Cada um vê só o consumo das reuniões que
   criou: o custo é do dono, e reunião compartilhada não entra.
 - **Segurança:** os eventos que dizem respeito a você (entradas e tentativas recusadas, com IP só nas recusas, troca de
@@ -282,7 +285,7 @@ Cada usuário tem as próprias configurações:
 | `WORKING_DAYS` | `1,2,3,4,5` | Dias com agenda (ISO, 1 = segunda … 7 = domingo). Fora deles não há lembrete nem gravação automática |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper no worker |
 | `HF_TOKEN` | vazio | Separação de falantes |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | LLM local |
+| `ALLOW_EXTERNAL_LLM` / `LLM_GENERATION_PROVIDER` | `false` / `claude` | Liga o LLM externo (obrigatório para ata e itens) e escolhe o provedor da geração automática e da análise ao vivo: `claude`, `codex` ou `openrouter` ([ver abaixo](#llm-externo)) |
 | `SEARCH_ENABLED` / `SEARCH_SEMANTIC` | `true` / `auto` | Liga a busca; `auto`/`on` exigem pgvector (o boot falha com mensagem clara sem ele), `off` = só texto |
 | `EMBED_MODEL` / `EMBED_DIM` | `bge-m3` / `1024` | Modelo de embedding (Ollama, em CPU) e dimensão da coluna `vector` |
 | `EMBED_KEEP_ALIVE` / `EMBED_BATCH` | `10m` / `16` | Permanência do modelo em RAM e textos por requisição |
@@ -308,8 +311,7 @@ Para comparar a qualidade, o passe final e os uploads podem usar o **Deepgram no
 OpenRouter**.
 
 > **Atenção:** com essa opção, o **áudio sai da máquina**. Use apenas com áudio que a política
-> da organização permite enviar para terceiros. A transcrição ao vivo e todo o LLM continuam
-> locais.
+> da organização permite enviar para terceiros. A transcrição ao vivo continua local.
 
 ```bash
 # .env
@@ -328,31 +330,35 @@ Depois, `docker compose up -d backend`.
 - Os falantes são numerados a cada 20 min de áudio, porque o provedor não mantém a identidade
   entre requisições.
 
-### LLM externo (opcional)
+### LLM externo
 
-A ata e os ADRs podem ser gerados por um modelo do **OpenRouter** (melhor qualidade que o 4B
-local, com custo por uso).
+O LLM é sempre externo (não há modelo local) e fica desligado até `ALLOW_EXTERNAL_LLM=true`. A ata,
+os itens e os ADRs saem da **sua assinatura** (Claude ou Codex, [ver abaixo](#sua-assinatura-claude-code-ou-codex-opcional))
+ou de um modelo do **OpenRouter** (com custo por uso). A **análise ao vivo** (extração de itens,
+só com a chave **Itens** ligada) e o **chat da busca** usam o mesmo provedor de `LLM_GENERATION_PROVIDER`.
 
-> **Atenção:** com essa opção, a **transcrição inteira da reunião sai da máquina**. Use apenas
-> com conteúdo que a política da organização permite enviar para terceiros. A análise ao vivo
-> continua sempre local.
+> **Atenção:** com essa opção, a **transcrição da reunião sai da máquina**, inclusive trechos
+> enviados durante a reunião pela análise ao vivo, e a pergunta e os trechos recuperados pelo chat da busca. Use apenas com conteúdo que a política da
+> organização permite enviar para terceiros. A transcrição ao vivo (Whisper) continua local.
+> Sem `ALLOW_EXTERNAL_LLM=true`, nada é gerado: a gravação e a transcrição seguem e a interface
+> avisa que ata e itens estão indisponíveis.
 
 ```bash
 # .env
 ALLOW_EXTERNAL_LLM=true
 OPENROUTER_API_KEY=sk-or-...                    # a mesma chave do ASR externo
 OPENROUTER_LLM_MODEL=anthropic/claude-sonnet-5  # qualquer modelo com structured outputs
-LLM_GENERATION_PROVIDER=local                   # "openrouter" = análise automática pós-reunião também externa
+LLM_GENERATION_PROVIDER=openrouter              # padrão é "claude" (assinatura); também "codex"
 OPENROUTER_LLM_TIMEOUT_SECONDS=180
 OPENROUTER_LLM_MAX_TOKENS=32000             # modelos que raciocinam gastam parte disso
 ```
 
 Depois, `docker --context default compose up -d backend`.
 
-- Os botões **Gerar ata**, **Gerar ADRs** e **Gerar ADR** perguntam, a cada clique, se a geração
-  é local ou no OpenRouter, e avisam antes de enviar.
-- Com `LLM_GENERATION_PROVIDER=openrouter`, o processamento automático depois de cada reunião
-  também usa o OpenRouter. Sem `ALLOW_EXTERNAL_LLM=true`, o backend não sobe com essa opção.
+- Os botões **Gerar ata**, **Gerar ADRs** e **Gerar ADR** perguntam, a cada clique, onde gerar
+  (assinatura ou OpenRouter), e avisam antes de enviar.
+- Com `LLM_GENERATION_PROVIDER=openrouter`, o processamento automático (pós-reunião e ao vivo)
+  usa o OpenRouter. O padrão é `claude`. Sem `ALLOW_EXTERNAL_LLM=true`, não há LLM.
 - A resposta segue um JSON Schema estrito (`response_format`) e só vai a provedores que o
   suportam (`provider.require_parameters`).
 - Cada chamada fica em `audit_log` (`external_llm`), com tokens e custo, sem conteúdo. Cada pedido
@@ -362,7 +368,7 @@ Depois, `docker --context default compose up -d backend`.
 
 ### Sua assinatura: Claude Code ou Codex (opcional)
 
-Em vez de pagar por uso no OpenRouter, a ata e os ADRs podem sair da **sua assinatura** do Claude
+Em vez de pagar por uso no OpenRouter, a ata, os itens e os ADRs podem sair da **sua assinatura** do Claude
 (Pro/Max) ou do ChatGPT (Codex). Quem executa é o **host-agent**, com o `claude` ou o `codex`
 instalados na sua máquina e o seu login; o backend nunca vê credenciais.
 
@@ -376,7 +382,7 @@ CLAUDE_CLI_ENABLED=true
 CLAUDE_CLI_MODEL=sonnet          # sonnet, opus ou o nome completo do modelo
 CODEX_CLI_ENABLED=true
 CODEX_CLI_MODEL=                 # vazio = padrão do Codex
-LLM_GENERATION_PROVIDER=claude   # opcional: análise automática pela assinatura
+LLM_GENERATION_PROVIDER=claude   # padrão: análise automática pela assinatura
 ```
 
 1. Instale o host-agent (`apps/host-agent/install.sh`); ele precisa estar rodando.
@@ -394,7 +400,8 @@ Regras:
 - Na análise automática, se a assinatura estiver fora por um tempo (host-agent reiniciando, CLI
   sem login), a reunião espera até `SUBSCRIPTION_WAIT_MINUTES` (30) com o aviso "Aguardando a
   assinatura". Se não voltar, fica com erro e a transcrição salva; a ata sai pelo **Gerar ata**.
-  Nunca cai no modelo local por isso. Só reunião de outra pessoa usa o modelo local.
+  Nunca troca de provedor por isso. Reunião de outra pessoa nunca usa a sua assinatura: só gera
+  se houver outro provedor permitido (OpenRouter); sem ele, fica sem ata e sem itens.
 - O CLI roda isolado: sem ferramentas, hooks, MCP ou instruções do usuário, numa pasta
   temporária, com o texto por stdin. Consome o limite do seu plano (não tem custo por uso).
 - Cada chamada fica em `audit_log` (`external_llm`, com tokens), sem conteúdo.
@@ -422,7 +429,7 @@ docker compose up -d --build backend                # a migração cria a extens
 ```
 
 - A migração é idempotente (`CREATE EXTENSION IF NOT EXISTS vector`) e **falha com mensagem clara** se o Postgres ainda não for a imagem nova (ou use `SEARCH_SEMANTIC=off` para só texto).
-- O `OLLAMA_MAX_LOADED_MODELS` passa a 2 (embedding em CPU e LLM na GPU carregados juntos).
+- O container `ollama` serve só o embedding (CPU, sem reserva de GPU); não há LLM local.
 - Restaurar o dump exige o Postgres da mesma versão major (16). **Rollback:** `SEARCH_ENABLED=false` no `.env` e `docker compose up -d backend`; para voltar a imagem, `DROP EXTENSION vector CASCADE;` antes de trocar para `postgres:16-alpine` (as tabelas `search_*` são reconstruíveis).
 
 ### Servidor de teste (VPS com Dokploy)
@@ -446,7 +453,7 @@ E2E_SHOTS=/tmp/capturas npm run test:e2e -w @meeting-bot/backend   # guarda capt
 # worker sem baixar torch: só as dependências dos testes
 (cd apps/worker-gpu && uv run --no-project --python 3.12 --with fastapi --with numpy \
   --with httpx --with pytest --with pydantic python -m pytest -q)
-npm run dev:backend            # precisa de Postgres, worker-gpu e Ollama acessíveis
+npm run dev:backend            # precisa de Postgres e worker-gpu acessíveis
 npm run dev:frontend           # Vite com proxy para /api
 scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
 ```
@@ -462,9 +469,9 @@ scripts/fixture-ics.sh 20      # convite de teste começando em 20 min
   reunião emendada na outra, a segunda espera a primeira parar (3 min sem fala depois do horário)
   ou o **Parar**; o host-agent avisa o conflito. O assistente dentro da chamada não tem esse
   limite: entra em até `MAX_CONCURRENT_BOTS` reuniões ao mesmo tempo.
-- **A análise ao vivo usa o modelo local de 4B**, que erra e repete itens. Por isso todo item nasce
-  proposto, com evidência validada, e itens repetidos são mesclados na análise final. Ata e ADRs
-  saem melhores com o LLM externo ou a assinatura (`LLM_GENERATION_PROVIDER`).
+- **A análise ao vivo usa o mesmo LLM externo da geração** (`LLM_GENERATION_PROVIDER`) e só roda
+  com a chave **Itens** ligada. Qualquer LLM erra e repete itens; por isso todo item nasce
+  proposto, com evidência validada, e itens repetidos são mesclados na análise final.
 - **Decisão arquitetural criada à mão** não tem trecho da transcrição associado: o ADR dela é
   gerado só com a descrição e o resumo da reunião.
 - **Um host-agent por máquina**, ligado a um só usuário (`AGENT_OWNER`). Outros usuários usam o

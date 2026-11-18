@@ -153,7 +153,7 @@ export function Reuniao() {
   // Conta os fins de processamento: sem GPU a falha pode chegar antes da resposta do pedido.
   const finishedRuns = useRef(0);
   const [reprocessAsr, setReprocessAsr] = useState("local");
-  const [reprocessLlm, setReprocessLlm] = useState<LlmChoice>("local");
+  const [reprocessLlm, setReprocessLlm] = useState<LlmChoice>(llm.default);
   const [generation, setGeneration] = useState<Generation | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [adrs, setAdrs] = useState<Adr[]>([]);
@@ -813,7 +813,7 @@ export function Reuniao() {
           </label>
         )}
         {reprocessAsr === "openrouter" && <p className="banner warn small">{EXTERNAL_ASR_WARNING}</p>}
-        {reprocessOptions.length > 1 && (
+        {reprocessOptions.length > 0 && (
           <label>
             Análise (itens, ata e ADRs)
             <select value={reprocessLlm} onChange={(e) => setReprocessLlm(e.target.value as LlmChoice)}>
@@ -825,7 +825,10 @@ export function Reuniao() {
             </select>
           </label>
         )}
-        {reprocessWarning && <p className="banner warn small">{reprocessWarning}</p>}
+        {reprocessOptions.length === 0 && (
+          <p className="banner warn small">LLM externo desabilitado: sem ele a análise não roda (a transcrição segue). Ative ALLOW_EXTERNAL_LLM no .env.</p>
+        )}
+        {reprocessOptions.length > 0 && <p className="banner warn small">{reprocessWarning}</p>}
         <div className="dialog-actions">
           <button type="button" onClick={() => setConfirm(null)}>Cancelar</button>
           <button
@@ -840,7 +843,7 @@ export function Reuniao() {
                 {
                   step: "all",
                   ...(asr.external ? { asr: reprocessAsr } : {}),
-                  ...(reprocessOptions.length > 1 ? { llm: reprocessLlm } : {}),
+                  ...(reprocessOptions.length > 0 ? { llm: reprocessLlm } : {}),
                 },
                 () => (finishedRuns.current === before ? "Reunião na fila." : null),
               ).then((ok) => ok && load());

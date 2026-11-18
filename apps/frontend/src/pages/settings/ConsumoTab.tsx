@@ -159,8 +159,8 @@ export function ConsumoTab() {
     <section className="card">
       <CardHead title="Consumo de IA" icon={Coins} actions={<PeriodPicker value={period} onChange={setPeriod} />} />
       <p className="card-desc">
-        Cada chamada de IA das suas reuniões: modelo local, OpenRouter, assinatura (Claude/Codex) e transcrição. O custo é o que o
-        provedor informou; assinatura e modelo local não cobram por chamada, então mostram só tokens e tempo. Só você vê estes números, e
+        Cada chamada de IA das suas reuniões: OpenRouter, assinatura (Claude/Codex), transcrição e embeddings da busca (Ollama, em CPU). O custo é o que o
+        provedor informou; assinatura e Ollama não cobram por chamada, então mostram só tokens e tempo. Só você vê estes números, e
         nada aqui limita ou bloqueia uma geração.
       </p>
       {error && <div className="banner error">{error}</div>}

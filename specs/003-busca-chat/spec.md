@@ -6,6 +6,8 @@
 
 **Status**: Draft
 
+> **Atualização 2026-11-18 (constituição 3.0.0):** não há LLM local. O Ollama continua só para os embeddings (`bge-m3`, CPU); o chat usa o LLM externo de `LLM_GENERATION_PROVIDER` (exige `ALLOW_EXTERNAL_LLM=true`; assinatura só vale se as reuniões citadas são do dono do host-agent). Onde esta especificação diz "LLM local"/"sempre local" para o chat, vale isto.
+
 **Input**: User description: "Busca em todas as reuniões do usuário — texto (Postgres FTS pt-BR, sem acento) e semântica (pgvector com embeddings locais pelo Ollama) — sobre transcrições, atas, itens e ADRs; e chat 'pergunte às suas reuniões' que responde com citações clicáveis (reunião + timestamp do trecho), com RAG local. Respeitar LOCAL_ONLY, isolamento por dono, meeting_shares e RBAC (o admin não lê conteúdo alheio); indexar de forma incremental depois do passe final e do reprocessamento; fazer backfill das reuniões existentes; não competir com a GPU durante a reunião ao vivo."
 
 Item do backlog V1 em `docs/analise/agente-local.md` §10 ("Busca semântica (pgvector + texto) e chat com

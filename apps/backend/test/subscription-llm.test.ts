@@ -238,9 +238,9 @@ describe("escolha da assinatura", () => {
 
   it("sem a flag de LLM externo a assinatura impede a subida", async () => {
     await expect(load({ ALLOW_EXTERNAL_LLM: "false", CLAUDE_CLI_ENABLED: "true" })).rejects.toThrow(/exigem ALLOW_EXTERNAL_LLM/);
-    await expect(load({ ALLOW_EXTERNAL_LLM: "true", LLM_GENERATION_PROVIDER: "codex" })).rejects.toThrow(
-      /exige CODEX_CLI_ENABLED/,
-    );
+    // padrão com o CLI desligado não impede a subida: a geração é que é recusada, com o motivo
+    const { llm } = await load({ ALLOW_EXTERNAL_LLM: "true", LLM_GENERATION_PROVIDER: "codex" });
+    expect(llm.parseLlmChoice("default")).toMatchObject({ ok: false, error: expect.stringMatching(/CODEX_CLI_ENABLED/) });
     await expect(load({ ...ON, CLAUDE_CLI_MODEL: "sonnet; rm -rf" })).rejects.toThrow(/CLAUDE_CLI_MODEL inválido/);
   });
 
@@ -260,6 +260,7 @@ describe("escolha da assinatura", () => {
       },
     });
     expect(await llm.subscriptionUnavailable("claude", "dono")).toBeNull();
+    expect(await llm.generationBlock("claude", "dono")).toBeNull();
     expect(await llm.subscriptionUnavailable("claude", "outra-pessoa")).toMatch(/só para as reuniões dele/);
     expect(await llm.subscriptionUnavailable("codex", "dono")).toBe("faça login");
     expect((await llm.llmOptions("dono")).subscriptions).toEqual([
@@ -268,10 +269,11 @@ describe("escolha da assinatura", () => {
     ]);
     owner.current = null;
     expect(await llm.subscriptionUnavailable("claude", "dono")).toMatch(/só para as reuniões dele/);
-    await expect(llm.generate("live", request, "claude")).rejects.toThrow(/ao vivo é sempre local/);
+    expect(await llm.generationBlock("claude", "dono")).toMatch(/só para as reuniões dele/);
+    expect(await llm.generationBlock("claude", "outra-pessoa")).toMatch(/só para as reuniões dele/);
   });
 
-  it("geração automática: espera a assinatura voltar e nunca cai no local por falha passageira", async () => {
+  it("geração automática: espera a assinatura voltar e, sem ela, falha com erro claro (não há modelo local)", async () => {
     const { llm, state } = await load({ ...ON, LLM_GENERATION_PROVIDER: "claude" });
     const heartbeat = () =>
       state.recordHeartbeat({ version: "t", capture: null, llm: { claude: { available: true, reason: null, version: null } } });
@@ -292,12 +294,12 @@ describe("escolha da assinatura", () => {
         if (t === 15_000) heartbeat();
       },
     });
-    expect(chosen).toEqual({ provider: "claude", note: null });
+    expect(chosen).toBe("claude");
     expect(waits).toEqual([expect.stringMatching(/desligado/)]);
     expect(t).toBe(15_000);
 
     // pronto de cara: sem espera
-    expect(await llm.automaticProvider("dono")).toEqual({ provider: "claude", note: null });
+    expect(await llm.automaticProvider("dono")).toBe("claude");
 
     // CLI sem login não volta dentro do prazo: desiste com erro
     state.recordHeartbeat({ version: "t", capture: null, llm: { claude: { available: false, reason: "faça login", version: null } } });
@@ -307,12 +309,11 @@ describe("escolha da assinatura", () => {
     ).rejects.toThrow(/claude indisponível há 2 min \(faça login\)/);
     expect(u).toBe(120_000);
 
-    // reunião de outra pessoa: a assinatura é pessoal, então vai para o local (sem esperar)
+    // reunião de outra pessoa: a assinatura é pessoal, então falha sem esperar (não há local para cair)
     heartbeat();
-    expect(await llm.automaticProvider("socio", { waitMs: 60_000 })).toEqual({
-      provider: "local",
-      note: expect.stringMatching(/só para as reuniões dele/),
-    });
+    await expect(llm.automaticProvider("socio", { waitMs: 60_000 })).rejects.toThrow(
+      /claude indisponível \(.*só para as reuniões dele\.\).*escolha outro modelo/,
+    );
   });
 
   it("desligada no .env não aparece e é recusada", async () => {

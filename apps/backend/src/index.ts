@@ -21,6 +21,7 @@ import { createApp } from "./app";
 import { onBotProgress } from "./bot/state";
 import { stopAllBots } from "./bot/runner";
 import { meetingEvents, pool, purgeExpiredSessions, recoverInterruptedMeetings } from "./db";
+import { llmSummary } from "./llm";
 import { hub } from "./live/hub";
 import { notifyMeeting } from "./live/notify";
 import { enqueueProcessing } from "./pipeline";
@@ -73,7 +74,9 @@ async function main() {
   for (const start of features.starters) await start();
 
   server.listen(config.port, () => {
-    console.log(`agente de reuniões ouvindo na porta ${config.port} (LLM: ${config.ollamaModel}, worker: ${config.workerUrl})`);
+    const llm = llmSummary();
+    console.log(`agente de reuniões ouvindo na porta ${config.port} (LLM: ${llm.model}, worker: ${config.workerUrl})`);
+    if (!llm.ok) console.warn(`[llm] geração desligada: ${llm.error}`);
   });
 
   const shutdown = async (signal: string) => {

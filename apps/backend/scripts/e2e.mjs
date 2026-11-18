@@ -22,12 +22,18 @@ const stopDb = () => {
 };
 
 const fakeOllamaPort = process.env.E2E_FAKE_OLLAMA ? process.env.E2E_OLLAMA_PORT || "55435" : "";
-// processo à parte: o spawnSync do Playwright bloqueia o laço de eventos deste
-const fakeOllama = fakeOllamaPort
-  ? spawn(process.execPath, [path.join(import.meta.dirname, "fake-ollama.mjs"), fakeOllamaPort, "bge-m3", process.env.OLLAMA_MODEL || "qwen3.5:4b"], { stdio: "ignore" })
-  : null;
+const fakeRouterPort = fakeOllamaPort ? process.env.E2E_OPENROUTER_PORT || "55436" : "";
 
 const work = mkdtempSync(path.join(tmpdir(), "agente-e2e-"));
+// OpenRouter de mentira em HTTPS (o backend exige https): certificado autoassinado só deste E2E
+let fakeOllama = null;
+if (fakeOllamaPort) {
+  const key = path.join(work, "fake-key.pem");
+  const cert = path.join(work, "fake-cert.pem");
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-subj", "/CN=127.0.0.1", "-days", "1"], { stdio: "ignore" });
+  // processo à parte: o spawnSync do Playwright bloqueia o laço de eventos deste
+  fakeOllama = spawn(process.execPath, [path.join(import.meta.dirname, "fake-ollama.mjs"), fakeOllamaPort, fakeRouterPort, key, cert, "bge-m3"], { stdio: "ignore" });
+}
 // pactl falso: o bot falha na hora em vez de criar sinks e abrir Chromium no desktop.
 const fakeBin = path.join(work, "bin");
 mkdirSync(fakeBin);
@@ -42,7 +48,7 @@ const env = {
   PUBLIC_DIR: path.resolve(root, "../frontend/dist"),
   PORT: APP_PORT,
   WORKER_URL: "http://127.0.0.1:9",
-  // Com E2E_FAKE_OLLAMA=1 um Ollama de mentira atende embeddings e chat (só para o spec do chat); senão fica fora do ar.
+  // Com E2E_FAKE_OLLAMA=1 um Ollama de mentira atende os embeddings e um OpenRouter de mentira (HTTPS autoassinado) atende o chat (só para o spec do chat); senão ficam fora do ar.
   OLLAMA_URL: fakeOllamaPort ? `http://127.0.0.1:${fakeOllamaPort}` : "http://127.0.0.1:9",
   SEARCH_INDEX_DEBOUNCE_SECONDS: "0",
   LOCAL_ONLY: "true",
@@ -55,9 +61,11 @@ const env = {
   AUTO_ASSISTANT: "false",
   // as reuniões do E2E nascem em torno de "agora": todo dia vale, senão o resultado dependeria do dia da semana
   WORKING_DAYS: "1,2,3,4,5,6,7",
-  LLM_GENERATION_PROVIDER: "local",
+  LLM_GENERATION_PROVIDER: "openrouter",
   OPENROUTER_API_KEY: `e2e-${randomUUID()}`,
-  OPENROUTER_URL: "https://127.0.0.1:9/api/v1",
+  OPENROUTER_URL: fakeRouterPort ? `https://127.0.0.1:${fakeRouterPort}/api/v1` : "https://127.0.0.1:9/api/v1",
+  // o certificado do OpenRouter de mentira é autoassinado
+  ...(fakeRouterPort ? { NODE_TLS_REJECT_UNAUTHORIZED: "0" } : {}),
   // Assinatura ligada: a Ana não é dona do host-agent, então a opção aparece desabilitada.
   CLAUDE_CLI_ENABLED: "true",
   PATH: `${fakeBin}:${process.env.PATH}`,

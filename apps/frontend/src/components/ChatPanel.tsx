@@ -252,12 +252,12 @@ export function ChatPanel({
   return (
     <section className="card chat-panel" aria-label="Perguntar sobre as reuniões">
       <p className="card-desc">
-        Pergunte em linguagem natural. A resposta usa só trechos das reuniões que você pode ler, é gerada por um modelo local e
-        traz as fontes. Itens e ADRs ainda não aprovados aparecem como propostos pela IA.
+        Pergunte em linguagem natural. A resposta usa só trechos das reuniões que você pode ler, é gerada pelo LLM externo configurado (os trechos e a
+        pergunta saem da máquina) e traz as fontes. Itens e ADRs ainda não aprovados aparecem como propostos pela IA.
       </p>
       {livePaused && (
         <div className="banner warn small" role="note">
-          Há uma reunião ao vivo: as respostas podem demorar mais.
+          Há uma reunião ao vivo: a indexação de novas reuniões fica em pausa.
         </div>
       )}
       <div className="chat-log" role="log" aria-live="polite" aria-label="Conversa">

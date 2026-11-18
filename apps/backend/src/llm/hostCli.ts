@@ -4,7 +4,7 @@ import { audit } from "../security/audit";
 import { classifyError } from "../usage/errorCode";
 import { ownerOfMeeting } from "../usage/recorder";
 import { HostJobError, type HostJobQueue } from "./hostJobs";
-import { toJsonSchema } from "./ollama";
+import { toJsonSchema } from "./schema";
 import { UsageMeter, type Generation, type GenerateRequest, type LLMProvider } from "./provider";
 
 // Geração com a assinatura pessoal (Constituição 1.4.0, princípio I): o host-agent roda o CLI
@@ -142,14 +142,6 @@ export class HostCliLlm implements LLMProvider {
     const parsed = req.schema.safeParse(output);
     if (parsed.success) return { ok: true, data: parsed.data };
     return { ok: false, problem: z.prettifyError(parsed.error).slice(0, 800), previous: JSON.stringify(output) };
-  }
-
-  async unload(): Promise<void> {
-    // nada a liberar: roda fora da GPU
-  }
-
-  async health(): Promise<{ ok: boolean; model: string; error?: string }> {
-    return { ok: true, model: this.model };
   }
 
   private async run<T>(req: GenerateRequest<T>, user: string, schema: Record<string, unknown>): Promise<AgentLlmResult> {

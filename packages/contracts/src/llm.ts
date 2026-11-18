@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { ITEM_TYPES, RISK_CATEGORIES } from "./domain";
 
-// Saídas estruturadas do LLM local (contracts/llm-schemas.md).
-// Convertidas com z.toJSONSchema() para o campo `format` do Ollama.
+// Saídas estruturadas do LLM (contracts/llm-schemas.md).
+// Convertidas com z.toJSONSchema() para o schema enviado ao provedor (OpenRouter ou CLI da assinatura).
 
 const nullableText = (max: number) => z.string().max(max).nullable();
 

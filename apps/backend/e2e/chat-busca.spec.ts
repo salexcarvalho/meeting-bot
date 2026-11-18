@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { apiJson, login, seedMeeting, shot, withDb } from "./tarefas-helpers";
 
-// F3 (specs/003-busca-chat, T056): chat com citação clicável. Roda só com E2E_FAKE_OLLAMA=1 (scripts/e2e.mjs sobe um Ollama
-// de mentira para embeddings e chat): `E2E_FAKE_OLLAMA=1 npm run test:e2e -w @meeting-bot/backend -- chat-busca`.
-// O playwright.config.ts ignora este spec sem E2E_FAKE_OLLAMA. Não depende de outros specs: o dono é o administrador criado pelo próprio scripts/e2e.mjs.
+// F3 (specs/003-busca-chat, T056): chat com citação clicável. Roda só com E2E_FAKE_OLLAMA=1 (scripts/e2e.mjs sobe um Ollama de
+// mentira para os embeddings e um OpenRouter de mentira para o chat): `E2E_FAKE_OLLAMA=1 npm run test:e2e -w @meeting-bot/backend -- chat-busca`.
+// O playwright.config.ts ignora este spec sem E2E_FAKE_OLLAMA. O chat usa LLM_GENERATION_PROVIDER=openrouter (já definido pelo e2e.mjs). Não depende de outros specs: o dono é o administrador criado pelo próprio scripts/e2e.mjs.
 const ADMIN = { username: "e2e-admin", password: "senha-e2e-admin" };
 const TITLE = `Reunião do chat ${Date.now()}`;
 const SENTENCE = "Ficou combinado que o fornecedor de armazenamento entrega o contrato assinado até dia vinte.";

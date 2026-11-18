@@ -9,7 +9,7 @@ import { answerQuestion, ChatUnavailableError } from "./service";
 
 // POST /search/chat (specs/003-busca-chat/contracts/rest-api.md). Pergunta, resposta e trechos
 // nunca vão para log nem para auditoria (FR-033). O corpo é estrito: `llm`, `provider` e qualquer
-// campo desconhecido são recusados (o chat é sempre local, Q1-A).
+// campo desconhecido são recusados (o chat usa o provedor de LLM_GENERATION_PROVIDER).
 
 const chatLimiter = rateLimit({
   windowMs: 60_000,

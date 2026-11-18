@@ -59,13 +59,11 @@ services:
       - models:/models
     restart: unless-stopped
 
-  # LLM local (LOCAL_ONLY). Modelos ficam no volume "ollama".
+  # Só embeddings da busca (bge-m3, em CPU: sem reserva de GPU). Não há LLM local; modelos ficam no volume "ollama".
   ollama:
     image: ollama/ollama:0.32.14
     environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-      # 2: o embedding da busca (CPU) e o LLM (GPU) ficam carregados juntos, sem se descarregarem
-      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_MAX_LOADED_MODELS: "1"
     volumes:
       - ollama:/root/.ollama
     restart: unless-stopped

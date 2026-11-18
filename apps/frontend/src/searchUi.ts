@@ -16,7 +16,7 @@ export const MODE_LABELS: Record<SearchModeValue, string> = {
 };
 
 const SEMANTIC_REASON_TEXT: Record<SearchSemanticReason, string> = {
-  ollama_indisponivel: "o modelo local (Ollama) não está respondendo",
+  ollama_indisponivel: "o Ollama (embeddings) não está respondendo",
   modelo_ausente: "o modelo de busca semântica não está instalado",
   sem_pgvector: "o banco de dados não tem a extensão pgvector",
   desligada: "a busca semântica está desligada neste servidor",
@@ -29,7 +29,7 @@ export function semanticReasonText(reason: SearchSemanticReason | null | undefin
 
 const CHAT_UNAVAILABLE_TEXT: Record<string, string> = {
   desligado: "o chat está desligado neste servidor",
-  ollama_indisponivel: "o modelo local (Ollama) está indisponível",
+  ollama_indisponivel: "o Ollama (embeddings) está indisponível",
 };
 
 export function chatUnavailableText(reason: string | null | undefined): string {

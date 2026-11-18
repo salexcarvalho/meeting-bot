@@ -3,7 +3,7 @@ import { workerHealth } from "../asr/workerClient";
 import { requirePermission, visibleMeetingId } from "../authz";
 import { getMeeting } from "../db";
 import { features } from "../features";
-import { getLlm } from "../llm";
+import { llmSummary } from "../llm";
 import { toMeetingSummary } from "../meetings/summary";
 import { queueState } from "../pipeline";
 import { wrap } from "../routes";
@@ -48,11 +48,10 @@ function register(router: Router): void {
     requirePermission("meetings.read"),
     wrap(async (req, res) => {
       const user = req.user!;
-      const llm = getLlm();
       const queue = queueState();
-      const [worker, llmHealth, gpu] = await Promise.all([
+      const llm = llmSummary();
+      const [worker, gpu] = await Promise.all([
         workerHealth(),
-        llm.health().catch((err: Error) => ({ ok: false, model: "", error: err.message })),
         lastGpu() ? Promise.resolve(lastGpu()) : sampleGpu(),
       ]);
       res.json({
@@ -60,7 +59,7 @@ function register(router: Router): void {
         worker: worker
           ? { ok: worker.ok, model: worker.model, diarization: worker.diarization, error: worker.error }
           : { ok: false, model: null, diarization: "unavailable", error: "worker-gpu indisponível" },
-        llm: { ok: llmHealth.ok, model: llmHealth.model, error: llmHealth.error ?? null },
+        llm,
         gpu,
         recordingMeetingId: await visibleMeetingId(user, activeRecordingId()),
         queue: { ...queue, current: await visibleMeetingId(user, queue.current) },

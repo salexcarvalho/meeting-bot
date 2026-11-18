@@ -286,12 +286,10 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("tab", { name: "Ata" }).click();
     await page.getByRole("button", { name: "Gerar ata" }).click();
     const ataDialog = page.getByRole("dialog", { name: "Gerar ata" });
-    await expect(ataDialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(ataDialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     const claude = ataDialog.getByRole("radio", { name: /Claude \(sua assinatura\)/ });
     await expect(claude).toBeDisabled();
     await expect(ataDialog.getByText(/vale só para as reuniões dele/)).toBeVisible();
-    await expect(page.getByRole("note").filter({ hasText: /OpenRouter/ })).toHaveCount(0);
-    await ataDialog.getByRole("radio", { name: /OpenRouter/ }).check();
     await expect(ataDialog.getByRole("note")).toContainText("OpenRouter");
     await shot(page, "gerar-ata-openrouter");
     await ataDialog.getByRole("button", { name: "Cancelar" }).click();
@@ -304,14 +302,14 @@ test.describe.serial("plataforma multiusuário", () => {
     await page.getByRole("tab", { name: /^Itens/ }).click();
     await page.getByRole("button", { name: "Gerar ADR", exact: true }).click();
     const adrDialog = page.getByRole("dialog", { name: "Gerar ADR" });
-    await expect(adrDialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(adrDialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     await adrDialog.getByRole("button", { name: "Gerar ADR" }).click();
     await expect(adrDialog).toBeHidden();
-    // sem Ollama no E2E a geração falha; o aviso chega pelo WebSocket e não é coberto pelo "Gerando…"
+    // o OpenRouter do E2E aponta para uma porta fechada: a geração falha; o aviso chega pelo WebSocket e não é coberto pelo "Gerando…"
     await expect(page.getByRole("status").filter({ hasText: /Falha no processamento/ })).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(500);
     await expect(page.getByRole("status")).toContainText("Falha no processamento");
-    expect(generations).toEqual([{ llm: "local", itemId: item.json.id }]);
+    expect(generations).toEqual([{ llm: "openrouter", itemId: item.json.id }]);
     await shot(page, "gerar-adr-falha");
   });
 
@@ -337,19 +335,19 @@ test.describe.serial("plataforma multiusuário", () => {
     // cancelar não envia nada
     await chave.getByRole("button", { name: "Gerar itens" }).click();
     const dialog = page.getByRole("dialog", { name: "Gerar itens" });
-    await expect(dialog.getByRole("radio", { name: /Modelo local/ })).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: /OpenRouter/ })).toBeChecked();
     await dialog.getByRole("button", { name: "Cancelar" }).click();
     await expect(dialog).toBeHidden();
     expect(calls).toEqual([]);
     await expect(chave).toContainText("Itens desligados");
 
-    // confirmar liga a chave e pede a análise; sem Ollama no E2E ela falha, mas a chave fica ligada
+    // confirmar liga a chave e pede a análise; o OpenRouter do E2E está inacessível: ela falha, mas a chave fica ligada
     await chave.getByRole("button", { name: "Gerar itens" }).click();
     await dialog.getByRole("button", { name: "Gerar itens" }).click();
     await expect(chave).toContainText("Itens ligados", { timeout: 30_000 });
     expect(calls).toEqual([
       { method: "PUT", path: "extract-items", body: { enabled: true } },
-      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "local" } },
+      { method: "POST", path: "reprocess", body: { step: "analysis", llm: "openrouter" } },
     ]);
 
     // desligar (quando o processamento acaba) não apaga o que existe

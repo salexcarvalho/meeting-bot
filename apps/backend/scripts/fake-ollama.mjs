@@ -1,7 +1,10 @@
-// Ollama de mentira para o E2E do chat (E2E_FAKE_OLLAMA=1): sem rede, sem modelo, determinístico.
-// Atende só o que o backend usa: /api/tags, /api/embed, /api/chat (chat sobre reuniões) e /api/generate (descarregar).
+// Serviços de mentira para o E2E do chat (E2E_FAKE_OLLAMA=1): sem rede, sem modelo, determinístico.
+// - Ollama (HTTP): só os embeddings da busca, /api/tags e /api/embed.
+// - OpenRouter (HTTPS, certificado autoassinado do e2e.mjs): /chat/completions para o chat sobre reuniões.
 import { createHash } from "node:crypto";
 import http from "node:http";
+import https from "node:https";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const DIM = 1024;
@@ -58,17 +61,31 @@ export function startFakeOllama(port, models) {
     if (req.method === "GET" && req.url === "/api/tags") return send(200, { models: models.map((name) => ({ name })) });
     const body = await readBody(req);
     if (req.url === "/api/embed") return send(200, { embeddings: (body.input ?? []).map(embed), prompt_eval_count: 8 });
-    if (req.url === "/api/chat") {
-      const user = (body.messages ?? []).find((m) => m.role === "user")?.content ?? "";
-      return send(200, { message: { role: "assistant", content: JSON.stringify(chatAnswer(user)) }, prompt_eval_count: 100, eval_count: 20 });
-    }
     return send(200, {});
   });
   return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
 }
 
-// Uso como processo à parte (o e2e.mjs bloqueia o laço de eventos com spawnSync): node fake-ollama.mjs <porta> <modelo...>
+/** OpenRouter de mentira: responde o chat no formato /chat/completions, com a mesma regra de citação. */
+export function startFakeOpenRouter(port, tls) {
+  const server = https.createServer(tls, async (req, res) => {
+    const body = await readBody(req);
+    const user = (body.messages ?? []).find((m) => m.role === "user")?.content ?? "";
+    const reply = {
+      model: body.model ?? "fake",
+      choices: [{ message: { role: "assistant", content: JSON.stringify(chatAnswer(user)) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0 },
+    };
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(reply));
+  });
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
+}
+
+// Uso como processo à parte (o e2e.mjs bloqueia o laço de eventos com spawnSync):
+// node fake-ollama.mjs <porta do Ollama> <porta do OpenRouter> <chave.pem> <certificado.pem> <modelo...>
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [port, ...models] = process.argv.slice(2);
+  const [port, routerPort, keyFile, certFile, ...models] = process.argv.slice(2);
   await startFakeOllama(Number(port), models);
+  await startFakeOpenRouter(Number(routerPort), { key: readFileSync(keyFile), cert: readFileSync(certFile) });
 }

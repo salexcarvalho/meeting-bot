@@ -38,7 +38,7 @@ export function UsageKpis({ totals, asr }: { totals: UsageTotalsValue; asr: Usag
         foot={
           totals.calls === 0
             ? undefined
-            : `${formatCount(totals.pricedCalls)} de ${formatCount(totals.calls)} chamadas com custo (assinatura e modelo local: ${NO_COST_LABEL})`
+            : `${formatCount(totals.pricedCalls)} de ${formatCount(totals.calls)} chamadas com custo (assinatura e Ollama: ${NO_COST_LABEL})`
         }
       />
       <Kpi
@@ -51,7 +51,7 @@ export function UsageKpis({ totals, asr }: { totals: UsageTotalsValue; asr: Usag
         icon={Cpu}
         label="Inferência local"
         value={formatMs(totals.computeMs)}
-        foot="modelo local e Whisper; não é ocupação da GPU"
+        foot="Whisper e embeddings (Ollama); não é ocupação da GPU"
       />
     </div>
   );

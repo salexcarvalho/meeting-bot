@@ -25,7 +25,7 @@ export const UsageProvider = z.enum(USAGE_PROVIDERS);
 export type UsageProviderValue = z.infer<typeof UsageProvider>;
 
 export const USAGE_PROVIDER_LABELS: Record<UsageProviderValue, string> = {
-  ollama: "Modelo local (Ollama)",
+  ollama: "Ollama (embeddings, CPU)",
   openrouter: "OpenRouter",
   claude: "Claude (assinatura)",
   codex: "Codex (assinatura)",

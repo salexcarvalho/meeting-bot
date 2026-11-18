@@ -1,5 +1,9 @@
 # Research — Agente Local de Reuniões (MVP)
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido (constituição 3.0.0); todo LLM é externo e
+> exige `ALLOW_EXTERNAL_LLM=true`. As menções a Ollama, `qwen3.5:4b` e "LLM local" neste documento são o
+> histórico do MVP.
+
 Base: análise em `docs/analise/agente-local.md` (§4–§8, §14), decisões D1–D8 e medições feitas
 na RTX 4050. Cada item traz a decisão, o motivo e as alternativas avaliadas.
 

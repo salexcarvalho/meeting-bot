@@ -2,7 +2,7 @@ import { z } from "zod";
 import { audit } from "../security/audit";
 import { classifyError } from "../usage/errorCode";
 import { ownerOfMeeting } from "../usage/recorder";
-import { toOllamaSchema } from "./ollama";
+import { toJsonSchema } from "./schema";
 import { UsageMeter, type Generation, type GenerateRequest, type LLMProvider } from "./provider";
 
 // LLM externo opcional via OpenRouter /chat/completions (Constituição 1.3.0, princípio I).
@@ -93,7 +93,7 @@ export class OpenRouterLlm implements LLMProvider {
 
   private async attempts<T>(req: GenerateRequest<T>, meter: UsageMeter): Promise<T> {
     if (!this.settings.apiKey) throw new ExternalLlmError("OPENROUTER_API_KEY não configurada no .env.");
-    const schema = toOllamaSchema(req.schema);
+    const schema = toJsonSchema(req.schema);
     const messages: { role: string; content: string }[] = [
       { role: "system", content: req.system },
       { role: "user", content: req.user },
@@ -155,16 +155,6 @@ export class OpenRouterLlm implements LLMProvider {
       success: true,
     });
     return data;
-  }
-
-  async unload(): Promise<void> {
-    // nada a liberar: roda fora da máquina
-  }
-
-  async health(): Promise<{ ok: boolean; model: string; error?: string }> {
-    return this.settings.apiKey
-      ? { ok: true, model: this.model }
-      : { ok: false, model: this.model, error: "OPENROUTER_API_KEY não configurada" };
   }
 
   /** Uma ida ao OpenRouter: devolve a resposta ou o motivo da falha (com status HTTP e se foi timeout). */

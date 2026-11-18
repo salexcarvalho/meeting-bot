@@ -2,6 +2,10 @@
 description: "Tarefas do MVP do Agente Local de Reuniões"
 ---
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido (constituição 3.0.0); todo LLM é externo e
+> exige `ALLOW_EXTERNAL_LLM=true`. As menções a Ollama, `qwen3.5:4b` e "LLM local" neste documento são o
+> histórico do MVP.
+
 # Tasks: Agente Local de Reuniões — MVP
 
 **Input**: documentos de design em `specs/001-agente-reunioes-mvp/`
