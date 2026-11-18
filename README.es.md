@@ -127,6 +127,12 @@ Sin token, el audio de la reunión aparece como "Remoto". El micrófono siempre 
   series (recurrencia manual, `.ics` y Aurora) no generan ocurrencias en sábado y domingo. Una reunión única en esos
   días aparece en la agenda, pero sin recordatorio y sin que el asistente entre solo; usa **Avisar e gravar neste dia**
   ("Avisar y grabar este día") en ella (o **Enviar assistente agora**).
+- **Reunión sin enlace**: Aurora envía la agenda sin el enlace de Teams, y el asistente solo entra en reuniones con
+  enlace. Cuando una reunión de la agenda (sin "no grabar") está a `NO_LINK_ALERT_MINUTES` de su inicio (por defecto
+  10; `0` desactiva) y sigue sin enlace, el agente de escritorio muestra una única notificación ("está sin enlace:
+  pega el enlace de Teams/Meet para que el asistente entre"), y la agenda y la página de la reunión muestran el
+  distintivo **Sem link** ("Sin enlace") con **Adicionar link** ("Añadir enlace"). Importar el `.ics` de la misma
+  reunión completa el enlace en la reunión existente (sin duplicar).
 - El proyecto se **sugiere** según las palabras clave del título. Confírmalo en **Editar**.
 - **Não gravar** ("No grabar"): disponible en la pantalla o en la alerta de escritorio; el asistente no entra.
 - **Enviar assistente agora** ("Enviar asistente ahora"): envía al asistente antes de la hora programada o de nuevo después de un fallo.
@@ -284,6 +290,7 @@ Cada usuario tiene su propia configuración:
 | `AGENT_TOKEN` | — | Secreto compartido con el host-agent (≥ 32 caracteres) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Nombre del canal del micrófono |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Zona horaria de la agenda y del acta |
+| `NO_LINK_ALERT_MINUTES` | `10` | Aviso en el escritorio de una reunión de la agenda sin enlace, estos minutos antes del inicio (`0` desactiva) |
 | `WORKING_DAYS` | `1,2,3,4,5` | Días con agenda (ISO, 1 = lunes … 7 = domingo). Fuera de ellos no hay recordatorio ni grabación automática |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper en el worker |
 | `HF_TOKEN` | vacío | Separación de hablantes |

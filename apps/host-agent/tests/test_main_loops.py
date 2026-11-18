@@ -277,3 +277,38 @@ async def test_notify_send_cancelado_de_fora_e_morto(slow_notify_send):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert procs[0].returncode is not None
+
+
+# ---------- aviso de reunião sem link ----------
+
+
+async def test_aviso_sem_link_usa_config_do_heartbeat_e_notifica_uma_vez(tmp_path, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    agent = make_agent(tmp_path)
+    start = datetime.now(UTC) + timedelta(minutes=8)
+    raw = {
+        "id": "m1", "title": "Alinhamento", "start": start.isoformat(),
+        "end": (start + timedelta(hours=1)).isoformat(), "url": None, "status": "scheduled",
+    }
+    agent.api = FakeApi([{"meetings": [raw], "alerts": {"minutesBefore": [15, 5, 1], "noLinkMinutes": 10}}])
+    monkeypatch.setattr(hm.HostAgent, "converge", lambda self, desired: asyncio.sleep(0))
+    await agent._heartbeat_step()
+    assert agent.scheduler.no_link_minutes == 10
+
+    sent: list[str] = []
+
+    async def fake_info(title, body="", urgency="normal"):
+        sent.append(body)
+
+    async def no_sound():
+        return None
+
+    monkeypatch.setattr(agent.notifier, "info", fake_info)
+    monkeypatch.setattr(hm, "open_url", lambda url: None)
+    monkeypatch.setattr("host_agent.notifier.play_sound", lambda *a, **k: no_sound())
+    for _ in range(2):
+        await agent._alert_step()
+        await wait_until(lambda: not agent._background)
+    assert len(sent) == 1
+    assert "Alinhamento" in sent[0] and "sem link" in sent[0]

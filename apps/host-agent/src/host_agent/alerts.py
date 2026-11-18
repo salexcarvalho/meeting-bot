@@ -1,4 +1,4 @@
-"""Agenda dos alertas (T-15, T-5, T-1) — lógica pura, sem efeitos de desktop."""
+"""Agenda dos alertas (T-15, T-5, T-1 e aviso de reunião sem link) — lógica pura, sem efeitos de desktop."""
 
 from __future__ import annotations
 
@@ -47,6 +47,8 @@ class Alert:
     minutes: int
     key: str
     final: bool
+    # Aviso de reunião sem link (não é o lembrete de horário): só informa, sem ações.
+    no_link: bool = False
 
     @property
     def offer_join(self) -> bool:
@@ -58,9 +60,11 @@ class Alert:
 
 
 class AlertScheduler:
-    def __init__(self, state_file: Path, minutes_before: list[int]):
+    def __init__(self, state_file: Path, minutes_before: list[int], no_link_minutes: int = 0):
         self.state_file = Path(state_file)
         self.minutes_before = sorted(set(minutes_before), reverse=True)
+        # Minutos antes do início em que a reunião sem link é avisada; 0 desliga.
+        self.no_link_minutes = no_link_minutes
         self.fired: dict[str, str] = self._load()
 
     def _load(self) -> dict[str, str]:
@@ -96,6 +100,28 @@ class AlertScheduler:
                 if key not in self.fired and now - at <= LATE_TOLERANCE:
                     alerts.append(Alert(m, minutes, key, final=minutes == smallest))
                 break
+        return alerts
+
+    @staticmethod
+    def no_link_key(meeting: Meeting) -> str:
+        # O horário entra na chave: reunião remarcada sem link volta a avisar.
+        return f"nolink:{meeting.id}:{meeting.start.isoformat()}"
+
+    def due_no_link(self, now: datetime, meetings: list[Meeting]) -> list[Alert]:
+        """Reuniões a gravar, sem link, que começam em até `no_link_minutes`: um aviso por reunião e horário.
+
+        Vale até o início (não só no instante exato): reunião que chega sem link já perto do horário também avisa.
+        """
+        if self.no_link_minutes <= 0:
+            return []
+        window = timedelta(minutes=self.no_link_minutes)
+        alerts: list[Alert] = []
+        for m in meetings:
+            if m.status != "scheduled" or m.skip_recording or m.no_alerts or m.url:
+                continue
+            key = self.no_link_key(m)
+            if key not in self.fired and m.start - window <= now < m.start:
+                alerts.append(Alert(m, self.no_link_minutes, key, final=False, no_link=True))
         return alerts
 
     def mark(self, alert: Alert) -> None:

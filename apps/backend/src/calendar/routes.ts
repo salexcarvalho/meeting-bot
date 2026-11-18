@@ -232,7 +232,7 @@ features.agentRouters.push((app) => {
         now: new Date().toISOString(),
         userDisplayName: owner?.name ?? config.userDisplayName,
         timezone: config.appTimezone,
-        alerts: { minutesBefore: [15, 5, 1] },
+        alerts: { minutesBefore: [15, 5, 1], noLinkMinutes: config.noLinkAlertMinutes },
         meetings: owner ? await agentMeetings(owner.id) : [],
         recording: owner ? await desiredRecording(owner.id) : null,
       };

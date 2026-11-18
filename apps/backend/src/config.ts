@@ -162,6 +162,8 @@ export const config = {
   autoAssistant: bool("AUTO_ASSISTANT", true),
   /** o PC grava sozinho no horário (desligado: grava só quem está na chamada, o assistente) */
   autoLocalRecording: bool("AUTO_LOCAL_RECORDING", false),
+  /** aviso no desktop de reunião da agenda sem link, tantos minutos antes do início (0 desliga) */
+  noLinkAlertMinutes: Math.max(0, int("NO_LINK_ALERT_MINUTES", 10)),
   maxUploadMb: int("MAX_UPLOAD_MB", 500),
 
   // Privacidade

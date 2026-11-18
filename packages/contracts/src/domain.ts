@@ -677,7 +677,11 @@ export interface HeartbeatResponse {
   now: string;
   userDisplayName: string;
   timezone: string;
-  alerts: { minutesBefore: number[] };
+  alerts: {
+    minutesBefore: number[];
+    /** reunião sem link avisa tantos minutos antes do início; 0 desliga */
+    noLinkMinutes?: number;
+  };
   meetings: AgentMeeting[];
   recording: { meetingId: string; title: string; startedAt: string } | null;
 }

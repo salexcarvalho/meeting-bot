@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import type { MeetingListItem, MeetingSummary } from "@meeting-bot/contracts";
 import { api, errorMessage } from "../api";
 import { formatTime, recurrenceLabel } from "../format";
+import { NoLinkBadge } from "./NoLinkBadge";
 import { ShareBadge } from "./ShareBadge";
 import { StatusBadge } from "./StatusBadge";
 import { useToast } from "./Toast";
@@ -85,6 +86,7 @@ export function AgendaItem({
         </Link>
         <div className="row small" style={{ marginTop: 4 }}>
           <StatusBadge status={meeting.status} label={meeting.statusLabel} />
+          <NoLinkBadge meeting={meeting} onFix={canEdit ? () => onEdit(meeting) : undefined} />
           {meeting.project && (
             <span className="badge" title={meeting.project.suggested ? "Sugerido pelo título" : undefined}>
               {meeting.project.name}

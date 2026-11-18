@@ -8,7 +8,7 @@ data-model.md, contracts/).
 ┌──────────────────────────────┐              ┌──────────────────────────────────────────────┐
 │ host-agent (Python 3.12)     │ POST         │ backend (Node 24, Express 5, ws)             │
 │  heartbeat 5 s ◄─ recording ─┼─ /api/agent ►│  scheduler 5 s (advisory lock)               │
-│  alertas T-15/5/1 (notify,   │  heartbeat   │  audioIngest → PCM → LiveSession → chunker   │
+│  alertas T-15/5/1 e sem link │  heartbeat   │  audioIngest → PCM → LiveSession → chunker   │
 │   zenity, som, xdg-open)     │              │  LiveAgent (extração/consolidação)           │
 │  parec mic + monitor → spool │ WS PCM ─────►│  finalize (ffmpeg → Opus) → pipeline         │
 │  uploader com retomada       │ /api/agent/  │  postAnalysis → ata (render na leitura)      │
@@ -50,6 +50,12 @@ Volumes: `botdata` (áudio, `/data`), `models` (Whisper e Hugging Face), `pgdata
      e sua extensão, RRULE do `.ics`, `recurring: true` da Aurora). Reunião avulsa fica na agenda, mas sem lembrete
      (`AgentMeeting.noAlerts`) e sem entrada/gravação automática, salvo `meetings.auto_on_off_day` (`calendar/offDay.ts`).
    - O projeto é sugerido por palavra-chave.
+   - Importar `.ics` sobre reunião que uma importação automática (Aurora, sem link) criou casa por dono, título e
+     início (±5 min) e só completa o que está vazio (link, plataforma, organizador, local, descrição, participantes),
+     sem duplicar nem trocar o `ical_uid` da Aurora (`calendar/match.ts`, `adoptImported`).
+   - Reunião sem link: o heartbeat entrega ao host-agent `alerts.noLinkMinutes` (`NO_LINK_ALERT_MINUTES`, 0 desliga)
+     e a agenda do dono com `url` nula; o host-agent avisa uma vez por reunião e horário (`alerts.py`, estado em
+     `alerts.json`) e a UI mostra o selo "Sem link" (`NoLinkBadge`).
 2. **Gravação**
    - No horário, o scheduler põe o **assistente** (`bot/autoJoin.ts`) em toda reunião da agenda com link
      do Teams/Meet e sem "Não gravar": a reunião passa a `joining` e segue o Modo Agente (canal misto).
