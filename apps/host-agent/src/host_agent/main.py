@@ -171,8 +171,11 @@ class HostAgent:
         raw = resp.get("meetings", [])
         self.meetings = [Meeting.from_api(m) for m in raw]
         self._save_cached_meetings(raw)
-        if resp.get("alerts", {}).get("minutesBefore"):
-            self.scheduler.minutes_before = sorted(set(resp["alerts"]["minutesBefore"]), reverse=True)
+        alerts_cfg = resp.get("alerts", {})
+        if alerts_cfg.get("minutesBefore"):
+            self.scheduler.minutes_before = sorted(set(alerts_cfg["minutesBefore"]), reverse=True)
+        if isinstance(alerts_cfg.get("noLinkMinutes"), int):
+            self.scheduler.no_link_minutes = max(0, alerts_cfg["noLinkMinutes"])
         await self._bounded("converge", self.converge(resp.get("recording")), CONVERGE_TIMEOUT)
         self._check_conflicts()
 
@@ -204,7 +207,8 @@ class HostAgent:
 
     async def _alert_step(self) -> None:
         now = datetime.now(timezone.utc)
-        for alert in self.scheduler.due(now, self.meetings):
+        due = [*self.scheduler.due(now, self.meetings), *self.scheduler.due_no_link(now, self.meetings)]
+        for alert in due:
             self.scheduler.mark(alert)
             self._spawn(self.handle_alert(alert), "alerta")
         if time.monotonic() - self._last_prune > 3600:
@@ -212,6 +216,13 @@ class HostAgent:
             self._last_prune = time.monotonic()
 
     async def handle_alert(self, alert: Alert) -> None:
+        if alert.no_link:
+            log.info("aviso de reunião sem link (%d min): %s", alert.minutes, alert.meeting.title)
+            try:
+                await self.notifier.no_link(alert)
+            except Exception:  # noqa: BLE001
+                log.exception("falha ao exibir aviso de reunião sem link")
+            return
         log.info("alerta T-%d: %s", alert.minutes, alert.meeting.title)
         try:
             action = await (self.notifier.modal(alert) if alert.final else self.notifier.notify(alert))

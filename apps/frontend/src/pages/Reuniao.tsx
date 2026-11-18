@@ -31,6 +31,7 @@ import { MeetingForm } from "../components/MeetingForm";
 import { Markdown } from "../components/Markdown";
 import { ShareBadge } from "../components/ShareBadge";
 import { ShareDialog } from "../components/ShareDialog";
+import { NoLinkBadge } from "../components/NoLinkBadge";
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { Transcript } from "../components/Transcript";
@@ -504,6 +505,7 @@ export function Reuniao() {
             <h1 style={{ marginBottom: 8 }}>{m.title}</h1>
             <div className="row small muted">
               <StatusBadge status={m.status} label={m.statusLabel} />
+              <NoLinkBadge meeting={m} onFix={ownerActions ? () => setEditing(true) : undefined} />
               {m.scheduledStart && <span>{formatDateTime(m.scheduledStart)}{m.scheduledEnd ? `–${formatTime(m.scheduledEnd)}` : ""}</span>}
               {!m.scheduledStart && <span>{formatDateTime(m.startedAt ?? m.createdAt)}</span>}
               {duration !== null && !isLive && <span>{duration} min gravados</span>}

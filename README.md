@@ -126,6 +126,11 @@ Sem token, o áudio da reunião aparece como "Remoto". O microfone é sempre voc
 - **Sem agenda no fim de semana** (`WORKING_DAYS`, padrão segunda a sexta, no fuso da agenda): séries (recorrência
   manual, `.ics` e Aurora) não geram ocorrência em sábado e domingo. Uma reunião avulsa nesses dias aparece na agenda,
   mas sem lembrete e sem o assistente entrar sozinho; use **Avisar e gravar neste dia** nela (ou **Enviar assistente agora**).
+- **Reunião sem link**: a Aurora envia a agenda sem o link do Teams, e o assistente só entra em reunião com link.
+  Quando uma reunião da agenda (sem "Não gravar") está a `NO_LINK_ALERT_MINUTES` do início (padrão 10; `0` desliga)
+  sem link, o agente do desktop mostra uma notificação única ("está sem link — cole o link do Teams/Meet para o
+  assistente entrar"), e a agenda e a página da reunião ganham o selo **Sem link** com **Adicionar link**. Importar o
+  `.ics` da mesma reunião completa o link na reunião que já existe (sem duplicar).
 - O projeto é **sugerido** pelas palavras-chave do título. Confirme-o em **Editar**.
 - **Não gravar**: disponível na tela ou no alerta do desktop; o assistente não entra.
 - **Enviar assistente agora**: manda o assistente antes do horário ou de novo depois de uma falha.
@@ -282,6 +287,7 @@ Cada usuário tem as próprias configurações:
 | `AGENT_TOKEN` | — | Segredo compartilhado com o host-agent (≥ 32 caracteres) |
 | `USER_DISPLAY_NAME` | `Sérgio` | Nome do canal do microfone |
 | `APP_TIMEZONE` | `America/Sao_Paulo` | Fuso da agenda e da ata |
+| `NO_LINK_ALERT_MINUTES` | `10` | Aviso no desktop de reunião da agenda sem link, tantos minutos antes do início (`0` desliga) |
 | `WORKING_DAYS` | `1,2,3,4,5` | Dias com agenda (ISO, 1 = segunda … 7 = domingo). Fora deles não há lembrete nem gravação automática |
 | `ASR_MODEL` / `ASR_COMPUTE_TYPE` | `large-v3-turbo` / `int8_float16` | Whisper no worker |
 | `HF_TOKEN` | vazio | Separação de falantes |

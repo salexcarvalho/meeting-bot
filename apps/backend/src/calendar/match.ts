@@ -126,3 +126,43 @@ export async function adoptExisting(client: PoolClient, o: Occurrence, ctx: Appl
   ctx.result.updated++;
   return true;
 }
+
+/** Reunião que uma importação automática (ex.: Aurora) criou, do mesmo dono, com mesmo título e início (±5 min). */
+async function findImported(client: PoolClient, o: Occurrence, userId: string): Promise<MeetingRow | null> {
+  const { rows } = await client.query(
+    `${meetingSelect}
+     WHERE m.created_by = $1 AND m.import_source IS NOT NULL AND m.status <> $2
+       AND m.scheduled_start >= $3 AND m.scheduled_start <= $4
+     ORDER BY m.scheduled_start, m.id FOR UPDATE OF m`,
+    [
+      userId, DISCARDED_STATUS,
+      new Date(o.start.getTime() - MATCH_TOLERANCE_MS), new Date(o.start.getTime() + MATCH_TOLERANCE_MS),
+    ],
+  );
+  return pickCandidate(rows as MeetingRow[], o);
+}
+
+/**
+ * Importação de .ics sobre reunião que a importação automática já criou (a Aurora não traz o link do Teams): em vez
+ * de duplicar, completa a existente com o que o convite traz (link, plataforma, organizador, local, descrição,
+ * participantes) só onde estava vazio. O uid e a origem da Aurora ficam como estão, para o próximo envio dela
+ * reconhecer a mesma linha. Devolve true quando o evento foi absorvido.
+ */
+export async function adoptImported(client: PoolClient, o: Occurrence, ctx: ApplyContext): Promise<boolean> {
+  const candidate = await findImported(client, o, ctx.userId);
+  if (!candidate) return false;
+  if (!LINKABLE_STATUSES.includes(candidate.status)) {
+    ctx.result.unchanged++;
+    return true;
+  }
+  const changes = linkedChanges(candidate, o);
+  if (!candidate.description && o.description) changes.description = o.description;
+  if (!candidate.attendees?.length && o.attendees.length) changes.attendees = JSON.stringify(o.attendees);
+  if (await applyChanges(client, candidate.id, changes)) {
+    ctx.touched.add(candidate.id);
+    ctx.result.updated++;
+  } else {
+    ctx.result.unchanged++;
+  }
+  return true;
+}

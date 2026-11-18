@@ -88,6 +88,16 @@ class Notifier:
             await _kill(proc)
             raise
 
+    async def no_link(self, alert: Alert) -> None:
+        """Aviso de reunião da agenda que vai começar sem link (o assistente não tem onde entrar)."""
+        m = alert.meeting
+        asyncio.create_task(play_sound())
+        await self.info(
+            "Reunião sem link",
+            f"Reunião {m.title} às {_when(alert)} está sem link — cole o link do Teams/Meet para o assistente entrar.",
+            "critical",
+        )
+
     async def notify(self, alert: Alert) -> str | None:
         """Notificação persistente com ações. Retorna 'entrar', 'nao_gravar' ou None."""
         m = alert.meeting

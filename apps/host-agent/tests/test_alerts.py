@@ -130,3 +130,53 @@ def test_missing_no_alerts_field_keeps_alerting(tmp_path):
     old = Meeting.from_api(_api())
     assert old.no_alerts is False
     assert s.due(old.start - timedelta(minutes=15), [old])
+
+
+def sem_link(**kw):
+    return meeting(url=None, **kw)
+
+
+def test_no_link_alert_fires_once_within_window(tmp_path):
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1], no_link_minutes=10)
+    m = [sem_link()]
+    assert s.due_no_link(T0 - timedelta(minutes=11), m) == []
+    fired = s.due_no_link(T0 - timedelta(minutes=10), m)
+    assert [(a.meeting.id, a.no_link, a.final) for a in fired] == [("m1", True, False)]
+    s.mark(fired[0])
+    # Não repete, nem recarregando o estado do disco (reinício do agente).
+    assert s.due_no_link(T0 - timedelta(minutes=9), m) == []
+    reloaded = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1], no_link_minutes=10)
+    assert reloaded.due_no_link(T0 - timedelta(minutes=2), m) == []
+
+
+def test_no_link_alert_for_meeting_that_arrives_late(tmp_path):
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1], no_link_minutes=10)
+    # Importada sem link já a 3 min do início: avisa; depois do início, não.
+    assert len(s.due_no_link(T0 - timedelta(minutes=3), [sem_link()])) == 1
+    assert s.due_no_link(T0, [sem_link()]) == []
+
+
+def test_no_link_alert_selection(tmp_path):
+    s = AlertScheduler(tmp_path / "alerts.json", minutes_before=[15, 5, 1], no_link_minutes=10)
+    now = T0 - timedelta(minutes=5)
+    ignored = [
+        meeting(id="com-link"),
+        sem_link(id="nao-gravar", skip_recording=True),
+        sem_link(id="pulada", status="skipped"),
+        sem_link(id="gravando", status="recording"),
+        sem_link(id="sem-agenda", no_alerts=True),
+        sem_link(id="longe", start=T0 + timedelta(hours=1), end=T0 + timedelta(hours=2)),
+    ]
+    assert [a.meeting.id for a in s.due_no_link(now, ignored + [sem_link(id="alvo")])] == ["alvo"]
+
+
+def test_no_link_alert_disabled_and_rescheduled(tmp_path):
+    off = AlertScheduler(tmp_path / "a.json", minutes_before=[15, 5, 1], no_link_minutes=0)
+    assert off.due_no_link(T0 - timedelta(minutes=5), [sem_link()]) == []
+
+    s = AlertScheduler(tmp_path / "b.json", minutes_before=[15, 5, 1], no_link_minutes=10)
+    first = s.due_no_link(T0 - timedelta(minutes=5), [sem_link()])
+    s.mark(first[0])
+    moved = sem_link(start=T0 + timedelta(hours=1), end=T0 + timedelta(hours=2))
+    # Remarcada: novo horário, novo aviso.
+    assert len(s.due_no_link(T0 + timedelta(minutes=55), [moved])) == 1
