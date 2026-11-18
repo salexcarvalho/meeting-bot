@@ -5,7 +5,9 @@ mantém o resumo da reunião, escreve a narrativa da ata e sugere ADRs.
 
 Três regras valem para tudo o que ele gera:
 
-- **LLM local:** roda no Ollama, com `qwen3.5:4b` como padrão.
+- **LLM externo e opt-in:** não há LLM local (o Ollama foi removido em 2026-11-18, constituição 3.0.0). Tudo exige
+  `ALLOW_EXTERNAL_LLM=true`; o provedor padrão é `claude` (assinatura do dono) e há `codex` e `openrouter`.
+  Sem a flag, a ata, os itens e os ADRs não são gerados (a gravação e a transcrição seguem).
 - **Humano no controle:** todo item nasce `proposto` (Constituição, princípio III).
 - **Rastreabilidade:** todo item cita um trecho real da transcrição (princípio IV).
 
@@ -30,13 +32,12 @@ Todos os caminhos são relativos a `apps/backend/src/`.
 | `agent/remap.ts` | Religa evidências ao vivo aos segmentos da transcrição final |
 | `agent/chunks.ts` | Divide a transcrição final em chunks de ~2.000 tokens com sobreposição |
 | `agent/text.ts` | Normalização de palavras (usada na validação de citações) |
-| `llm/provider.ts` | Interface `LLMProvider`, fila `LlmQueue` (ao vivo antes do pós-reunião) e bloqueio de provedor não local |
-| `llm/ollama.ts` | `OllamaProvider`: saída JSON por schema, `temperature: 0`, uma nova tentativa quando a resposta é inválida |
-| `llm/openrouter.ts` | `OpenRouterLlm` (opcional): `chat/completions` com `json_schema` estrito, nova tentativa quando a resposta é inválida, repetição em falha de rede/429/5xx, auditoria de tokens e custo |
-| `llm/hostCli.ts` | `HostCliLlm` (opcional): gera com a assinatura (claude/codex) mandando o pedido ao host-agent; valida e tenta de novo como o OpenRouter |
+| `llm/provider.ts` | Interface `LLMProvider`, fila `LlmQueue` (ao vivo antes do pós-reunião) e bloqueio de provedor externo sem `ALLOW_EXTERNAL_LLM` |
+| `llm/openrouter.ts` | `OpenRouterLlm`: `chat/completions` com `json_schema` estrito, nova tentativa quando a resposta é inválida, repetição em falha de rede/429/5xx, auditoria de tokens e custo |
+| `llm/hostCli.ts` | `HostCliLlm` (provedor padrão): gera com a assinatura (claude/codex) mandando o pedido ao host-agent; valida e tenta de novo como o OpenRouter |
 | `llm/hostJobs.ts` | Fila em memória dos pedidos do host-agent (long-poll, prazo para pegar e para responder) |
 | `llm/agentRoutes.ts` | `GET /api/agent/llm/next` e `POST /api/agent/llm/:id/result` (token do host-agent) |
-| `llm/index.ts` | `generate(prioridade, req, provedor)`, `parseLlmChoice`, `subscriptionUnavailable`, `automaticProvider`, `llmOptions`, `generationLabel`, `getLlm()` e `unloadLlm()` (libera VRAM antes da diarização) |
+| `llm/index.ts` | `generate(prioridade, req, provedor)`, `parseLlmChoice`, `subscriptionUnavailable`, `automaticProvider`, `llmOptions`, `generationLabel`, e `getLlm()` |
 | `items/service.ts` | Grava itens (`createAiItems`), mescla duplicados (`mergeInto`), revisão, histórico e ADRs |
 | `ata/render.ts` | Monta a ata final com os itens e a narrativa |
 | `pipeline.ts` | Fila pós-reunião: fecha o agente ao vivo → transcrição final → análise → concluída; passos `all`, `analysis` e `adrs` |
@@ -72,8 +73,11 @@ flowchart LR
   AN --> ATA
 ```
 
-Todas as chamadas passam por `generate()`, que usa uma fila única, porque a GPU de 6 GB comporta uma
-inferência por vez. Chamadas ao vivo (`"live"`) passam na frente das pós-reunião (`"post"`).
+Todas as chamadas passam por `generate()`, que usa uma fila. Chamadas ao vivo (`"live"`) passam na frente
+das pós-reunião (`"post"`). A fila não tem relação com a GPU, que só atende o Whisper.
+
+O LiveAgent só roda com a chave "Itens" ligada e com `ALLOW_EXTERNAL_LLM=true`, e usa o mesmo provedor da
+geração automática (`LLM_GENERATION_PROVIDER`).
 
 ## Durante a reunião (`LiveAgent`)
 
@@ -104,7 +108,7 @@ inferência por vez. Chamadas ao vivo (`"live"`) passam na frente das pós-reuni
    - Atualiza `meetings.live_summary` (até 1.200 caracteres) e publica o evento `summary` no WebSocket.
    - Mescla os grupos de `duplicados` do mesmo tipo.
 8. **Falhas e reinício:**
-   - Erro de rede ou do Ollama: nova tentativa em 60 s.
+   - Erro de rede ou do provedor: nova tentativa em 60 s.
    - Resposta inválida mesmo após a nova tentativa: a janela é descartada e o cursor avança.
    - Reinício do backend: `LiveAgent.restore()` reconstrói o estado a partir de `meeting_notes`.
 9. **Fim da gravação:** o pipeline chama `flushLiveAgent()`, que analisa o que faltou e consolida
@@ -131,7 +135,7 @@ sugeridos caem em cascata). Aprovados, rejeitados, editados e manuais ficam.
    - os resumos de cada chunk vão para `meeting_notes` (`kind='chunk'`).
 2. **Consolidação final:**
    - usa o resumo ao vivo e os resumos dos chunks (só no primeiro lote, que é o que grava o resumo);
-   - os propostos vão em lotes do mesmo tipo (`batchByType`: 60 no local, 200 fora da máquina);
+   - os propostos vão em lotes do mesmo tipo (`batchByType`: 200 por lote);
    - cada lote leva até 40 itens já revisados do mesmo tipo como âncoras `R<n>`: um proposto que
      repete um revisado é mesclado nele; o LLM nunca remove um `R<n>` e só propostos são removidos;
    - `mergeInto` com âncora aprovada move a evidência e registra "merged"; com âncora rejeitada só
@@ -174,8 +178,9 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
 | **Gerar ADRs** (aba ADRs) | `POST /meetings/:id/adrs/generate` `{llm}` | `runAdrGeneration` para todas as decisões arquiteturais não rejeitadas |
 | **Gerar ADR** (card da decisão) | `POST /meetings/:id/adrs/generate` `{llm, itemId}` | `runAdrGeneration` só para aquela decisão |
 
-- `llm` é `local`, `openrouter`, `claude` ou `codex`. Vazio usa `LLM_GENERATION_PROVIDER`.
-  - `openrouter` exige `ALLOW_EXTERNAL_LLM=true` e a chave; sem elas, a resposta é 400.
+- `llm` é `claude`, `codex` ou `openrouter`. Vazio usa `LLM_GENERATION_PROVIDER` (padrão `claude`).
+  - Sem `ALLOW_EXTERNAL_LLM=true`, a resposta é 400 (não há LLM local).
+  - `openrouter` exige a flag e a chave; sem elas, a resposta é 400.
   - `claude`/`codex` exigem a flag e `CLAUDE_CLI_ENABLED`/`CODEX_CLI_ENABLED` (400). Também precisam
     que a reunião seja do dono do host-agent, com o host-agent ligado e o CLI com login (409 com o motivo).
   - `GET /meetings/:id/llm-options` diz o que está disponível agora; o diálogo usa essa rota.
@@ -184,10 +189,9 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
   - usa o resumo executivo da análise (ou o resumo ao vivo);
   - pula ADR aprovado, rejeitado ou editado à mão (`adrLockReason`).
   - Pedido de um ADR travado recebe 409 com o motivo.
-- Fora da máquina (OpenRouter ou assinatura):
-  - a chamada não usa a fila da GPU;
-  - os chunks sobem para ~12.000 tokens, o que dá menos chamadas;
-  - a análise ao vivo recusa o provedor externo (sempre local).
+- Como todo LLM é externo:
+  - os chunks têm ~12.000 tokens, o que dá menos chamadas;
+  - a análise ao vivo usa o mesmo provedor da geração automática.
 - Na assinatura, o host-agent roda o CLI isolado, numa pasta temporária, com o texto por stdin:
   - `claude -p --restricted --tools "" --strict-mcp-config --no-session-persistence --output-format json --json-schema … --system-prompt …`
     (login normal do Claude Code; o `--restricted` ignora hooks e configurações do usuário);
@@ -199,11 +203,11 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
   depois da transcrição final.
   - Host-agent desligado ou CLI sem login: espera até `SUBSCRIPTION_WAIT_MINUTES` (passo
     `aguardando_assinatura`). Se não voltar, a reunião fica com erro e a ata sai pelo botão. Nunca
-    troca para o modelo local (decisão do usuário em 2026-09-17, depois de um reinício do PC ter
-    gerado uma ata no local).
-  - Reunião de outra pessoa: a assinatura é pessoal, então a análise roda no modelo local e o aviso
-    final diz o motivo.
-- **Quem gerou:** `local:<modelo>` ou `openrouter:<modelo>`, gravado em `meetings.analysis_provider`,
+    troca de provedor (decisão do usuário em 2026-09-17, depois de um reinício do PC ter gerado uma
+    ata por outro caminho).
+  - Reunião de outra pessoa: a assinatura é pessoal, então a análise só roda se houver outro provedor
+    permitido (OpenRouter); sem ele, fica sem ata e sem itens e o aviso final diz o motivo.
+- **Quem gerou:** `claude:<modelo>`, `codex:<modelo>` ou `openrouter:<modelo>` (registros antigos podem ter `local:<modelo>`), gravado em `meetings.analysis_provider`,
   `meeting_items.generated_by` e `adrs.generated_by`. A interface marca o que veio de fora.
 - O evento final `processing` (`step: null`) traz `done` (ex.: "1 ADR gerado.") ou `error`. A tela
   mostra esse texto como aviso.
@@ -240,7 +244,7 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
 | `meeting_notes` | Resumos por janela (`window`), consolidações (`consolidation`) e chunks finais (`chunk`) |
 | `meetings.live_summary` / `live_summary_at` | Resumo corrente (ao vivo e depois o final) |
 | `meetings.analysis` / `analyzed_at` | Narrativa da ata |
-| `meetings.analysis_provider`, `meeting_items.generated_by`, `adrs.generated_by` | Quem gerou (`local:<modelo>`, `openrouter:<modelo>`, `claude:<modelo>` ou `codex:<modelo>`) |
+| `meetings.analysis_provider`, `meeting_items.generated_by`, `adrs.generated_by` | Quem gerou (`claude:<modelo>`, `codex:<modelo>`, `openrouter:<modelo>` ou `local:<modelo>` em registros antigos) |
 | `audit_log` (`external_llm`, `generation_requested`) | Chamada externa (modelo, tokens, custo, sem conteúdo) e pedido feito na interface |
 
 **Eventos no WebSocket:**
@@ -255,14 +259,11 @@ Só o dono da reunião, com `documents.generate`, pode pedir.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `LLM_PROVIDER` | `ollama` | Único valor aceito hoje; outros nomes são recusados e auditados (`llm_provider_blocked`) |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | Modelo usado em todas as etapas |
-| `OLLAMA_KEEP_ALIVE` | `30m` | Tempo que o modelo fica carregado na GPU |
 | `LIVE_EXTRACT_MIN_SPEECH_SECONDS` | 90 | Fala nova mínima para extrair |
 | `LIVE_EXTRACT_MAX_INTERVAL_SECONDS` | 180 | Tempo máximo entre extrações (se houver fala nova) |
 | `LIVE_CONSOLIDATE_INTERVAL_SECONDS` | 900 | Intervalo da consolidação ao vivo |
-| `ALLOW_EXTERNAL_LLM` | `false` | Libera o OpenRouter para ata e ADR (constituição 1.3.0) |
-| `LLM_GENERATION_PROVIDER` | `local` | Provedor da análise automática pós-reunião e padrão dos pedidos; `openrouter` exige a flag |
+| `ALLOW_EXTERNAL_LLM` | `false` | Liga o LLM (todo LLM é externo; constituição 3.0.0). Sem ela, não há ata, itens nem ADR |
+| `LLM_GENERATION_PROVIDER` | `claude` | Provedor da análise ao vivo e pós-reunião e padrão dos pedidos: `claude`, `codex` ou `openrouter` (todos exigem a flag) |
 | `OPENROUTER_LLM_MODEL` | `anthropic/claude-sonnet-5` | Modelo externo (precisa suportar structured outputs) |
 | `OPENROUTER_LLM_TIMEOUT_SECONDS` / `OPENROUTER_LLM_MAX_TOKENS` | 180 / 32000 | Limite por chamada externa |
 | `OPENROUTER_API_KEY` / `OPENROUTER_URL` | — / `https://openrouter.ai/api/v1` | Compartilhadas com o ASR externo |
@@ -286,7 +287,7 @@ As constantes de código (tamanho de janela, chunks, limites de itens e contexto
   2. ajuste `validateExtraction` e `createAiItems` (ou o `upsertAdr`);
   3. documente em `llm-schemas.md`;
   4. rode `npm run build -w @meeting-bot/contracts`.
-- **Outro modelo local:** mude `OLLAMA_MODEL` e rode `ollama pull`. Meça antes (tempo, VRAM, qualidade em pt-BR), como exige o princípio V.
+- **Outro modelo externo:** mude `OPENROUTER_LLM_MODEL` (OpenRouter) ou `CLAUDE_CLI_MODEL`/`CODEX_CLI_MODEL` (assinatura). Meça antes (qualidade em pt-BR e custo).
 - **Frequência ao vivo:** use as variáveis `LIVE_*` do `.env`.
 
 ## Testes
@@ -302,13 +303,13 @@ Todos em `apps/backend/test/`:
 | `evidence.test.ts` | `formatWindow` e validação de segmentos e citações |
 | `dedup.test.ts` | Normalização, Jaccard e plano de criação |
 | `remap.test.ts` | Evidência ao vivo → segmento final e `chunkSegments` |
-| `llm-provider.test.ts` | Bloqueio de provedor externo, schema do Ollama, nova tentativa e fila com prioridade |
+| `llm-provider.test.ts` | Bloqueio de provedor externo sem a flag, nova tentativa e fila com prioridade |
 | `subscription-llm.test.ts` | Fila do host-agent (entrega, prazos, conexão que cai), `HostCliLlm` (payload, auditoria, nova tentativa, erro do CLI) e regras da assinatura (dono, host-agent, fallback automático) |
 | `db/assinatura-llm.test.ts` | Host-agent falso por HTTP: disponibilidade, token, só o dono, CLI sem login e ADR gerado com `generated_by = claude:sonnet` |
 | `apps/host-agent/tests/test_llm_runner.py` | CLIs falsos: flags de isolamento, texto só por stdin, ambiente sem segredos, login ausente, erro e timeout |
 | `openrouter-llm.test.ts` | Corpo da requisição (schema estrito), auditoria sem conteúdo, novas tentativas, erros fatais × temporários e escolha do provedor pelo `.env` |
 | `db/multiusuario.test.ts` ("gerar ata e ADR sob demanda") | Rota de ADR contra o Postgres: só o dono, escolha inválida, externo desligado, item errado, ADR travado, auditoria e status intacto |
-| `e2e/plataforma.spec.ts` ("gerar ata e ADR…") | Botões e diálogo no navegador: local por padrão, aviso do OpenRouter, nada enviado ao cancelar, falha exibida |
+| `e2e/plataforma.spec.ts` ("gerar ata e ADR…") | Botões e diálogo no navegador: assinatura por padrão, aviso do OpenRouter, nada enviado ao cancelar, falha exibida |
 | `e2e/plataforma.spec.ts` ("ADRs: filtros…") | Aba ADRs: filtros e contagens, cartões recolhidos, data de revisão correta no rejeitado, aprovação com número novo, ida para a decisão de origem e histórico legível |
 | `e2e/plataforma.spec.ts` ("resumo para enviar…") | Ata na tela (ficha, índice, seções vazias) e diálogo do resumo: só aprovados, responsável e prazo, copiar |
 
@@ -323,4 +324,4 @@ contra o banco.
   - `AIProvider` com registro de uso e custo;
   - catálogo de modelos;
   - o OpenRouter e as assinaturas (Claude Code/Codex) já funcionam pela `.env` (acima); falta o cadastro de provedores com chave cifrada no banco, e depois a API da OpenAI;
-  - a análise ao vivo continua sempre local (Constituição 1.4.0).
+  - a análise ao vivo usa o mesmo provedor da geração (Constituição 3.0.0).

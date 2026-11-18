@@ -1,5 +1,9 @@
 # Contrato — Chamadas ao LLM local
 
+> **Atualização 2026-11-18:** o Ollama (LLM local) foi removido (constituição 3.0.0); todo LLM é externo e
+> exige `ALLOW_EXTERNAL_LLM=true`. As menções a Ollama, `qwen3.5:4b` e "LLM local" neste documento são o
+> histórico do MVP.
+
 Todas as chamadas passam por `LLMProvider`, e o único adaptador ativo é `ollama`.
 
 - Os schemas são definidos em zod (`packages/contracts/src/llm.ts`) e convertidos com

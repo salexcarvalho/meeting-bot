@@ -3,6 +3,8 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
+  AgentCalendarImportInput,
+  AgentMeetingsQuery,
   HeartbeatInput,
   ScheduledMeetingInput,
   ScheduledMeetingPatch,
@@ -18,6 +20,10 @@ import { toMeetingSummary } from "../meetings/summary";
 import { recordHeartbeat } from "../recording/hostAgentState";
 import { hostAgentOwner } from "../recording/owner";
 import { parseBody, wrap } from "../routes";
+import { audit } from "../security/audit";
+import { agentDayMeetings } from "./agentDay";
+import { importAgentCalendar } from "./agentImport";
+import { autoSuppressed } from "./offDay";
 import { startSeriesExtender, stopSeriesExtender } from "./seriesExtend";
 import {
   CalendarError,
@@ -25,10 +31,12 @@ import {
   createScheduled,
   getAgenda,
   importIcs,
+  setAutoOnOffDay,
   setSkip,
   todayIn,
   updateScheduled,
 } from "./service";
+import { markDirtyLater } from "../search/dirty";
 
 function handleError(res: Response, err: unknown): void {
   if (err instanceof CalendarError) {
@@ -36,6 +44,27 @@ function handleError(res: Response, err: unknown): void {
     return;
   }
   throw err;
+}
+
+// Falha do envio da agenda: só motivo e tamanhos, sem conteúdo (títulos, participantes, texto do .ics).
+function auditImportFailure(
+  reason: "invalid_body" | "no_owner" | "rejected",
+  body: unknown,
+  userId: string | null,
+  extra: Record<string, unknown> = {},
+): void {
+  const b = (body && typeof body === "object" ? body : {}) as { events?: unknown; ics?: unknown; date?: unknown };
+  audit(
+    "agent_calendar_import_failed",
+    {
+      reason,
+      mode: Array.isArray(b.events) ? "events" : typeof b.ics === "string" ? "ics" : "unknown",
+      events: Array.isArray(b.events) ? b.events.length : 0,
+      icsChars: typeof b.ics === "string" ? b.ics.length : 0,
+      ...extra,
+    },
+    userId,
+  );
 }
 
 const icsUpload = multer({
@@ -98,7 +127,9 @@ features.authedRouters.push((router) => {
       const patch = parseBody(ScheduledMeetingPatch, req, res);
       if (!patch) return;
       try {
-        res.json(toMeetingSummary(await updateScheduled(String(req.params.id), patch)));
+        const updated = await updateScheduled(String(req.params.id), patch);
+        markDirtyLater(updated.id);
+        res.json(toMeetingSummary(updated));
       } catch (err) {
         handleError(res, err);
       }
@@ -112,6 +143,19 @@ features.authedRouters.push((router) => {
       if (!body) return;
       try {
         res.json(toMeetingSummary(await setSkip(String(req.params.id), body.skip)));
+      } catch (err) {
+        handleError(res, err);
+      }
+    }),
+  );
+
+  router.post(
+    "/meetings/:id/auto-off-day",
+    wrap(async (req, res) => {
+      const body = parseBody(z.object({ enabled: z.boolean() }), req, res);
+      if (!body) return;
+      try {
+        res.json(toMeetingSummary(await setAutoOnOffDay(String(req.params.id), body.enabled, req.user!.id)));
       } catch (err) {
         handleError(res, err);
       }
@@ -140,7 +184,7 @@ features.stoppers.push(async () => stopSeriesExtender());
 
 async function agentMeetings(ownerId: string): Promise<AgentMeeting[]> {
   const { rows } = await pool.query(
-    `SELECT id, title, scheduled_start, scheduled_end, url, platform, skip_recording, status
+    `SELECT id, title, scheduled_start, scheduled_end, url, platform, skip_recording, auto_on_off_day, status
      FROM meetings
      WHERE source IN ('ics', 'manual') AND created_by = $1
        AND status IN ('scheduled', 'skipped', 'recording')
@@ -156,6 +200,7 @@ async function agentMeetings(ownerId: string): Promise<AgentMeeting[]> {
     url: r.url,
     platform: r.platform,
     skipRecording: r.skip_recording,
+    noAlerts: autoSuppressed(r.scheduled_start, r.auto_on_off_day),
     status: r.status,
   }));
 }
@@ -195,6 +240,21 @@ features.agentRouters.push((app) => {
     }),
   );
 
+  // Leitura da agenda de um dia (padrão hoje, fuso da aplicação). Sem efeito colateral: não registra heartbeat.
+  router.get(
+    "/meetings",
+    wrap(async (req: Request, res: Response) => {
+      const query = AgentMeetingsQuery.safeParse(req.query);
+      if (!query.success) {
+        const first = query.error.issues[0];
+        return res.status(400).json({ error: first ? `${first.path.join(".") || "consulta"}: ${first.message}` : "Consulta inválida." });
+      }
+      const owner = await hostAgentOwner();
+      if (!owner) return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      res.json(await agentDayMeetings(owner.id, query.data.date));
+    }),
+  );
+
   router.post(
     "/meetings/:id/skip",
     wrap(async (req: Request, res: Response) => {
@@ -208,6 +268,51 @@ features.agentRouters.push((app) => {
         await setSkip(String(req.params.id), true);
         res.json({ ok: true });
       } catch (err) {
+        handleError(res, err);
+      }
+    }),
+  );
+
+  // Agenda do dia enviada pela Aurora (assistente externo); grava no nome do dono do agente.
+  router.post(
+    "/calendar/import",
+    rateLimit({
+      windowMs: 60_000,
+      limit: 10,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: { error: "Muitos envios de agenda. Tente novamente em instantes." },
+    }),
+    wrap(async (req: Request, res: Response) => {
+      const parsed = AgentCalendarImportInput.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        // Só o caminho do campo e contagens: nunca o conteúdo enviado.
+        auditImportFailure("invalid_body", req.body, null, { field: first?.path.join(".") || "corpo" });
+        return res.status(400).json({ error: first ? `${first.path.join(".") || "corpo"}: ${first.message}` : "Corpo inválido." });
+      }
+      const input = parsed.data;
+      const owner = await hostAgentOwner();
+      if (!owner) {
+        auditImportFailure("no_owner", input, null);
+        return res.status(503).json({ error: "Dono do agente não definido (AGENT_OWNER)." });
+      }
+      try {
+        const result = await importAgentCalendar(input, owner.id);
+        // Só metadados: nunca títulos nem participantes.
+        audit(
+          "agent_calendar_import",
+          {
+            source: result.source, date: result.date, mode: input.events ? "events" : "ics",
+            created: result.created, updated: result.updated, cancelled: result.cancelled,
+            removed: result.removed, unchanged: result.unchanged, ignored: result.ignored,
+            ...(result.removalSkipped ? { removalSkipped: result.removalSkipped } : {}),
+          },
+          owner.id,
+        );
+        res.json(result);
+      } catch (err) {
+        if (err instanceof CalendarError) auditImportFailure("rejected", input, owner.id, { status: err.status });
         handleError(res, err);
       }
     }),

@@ -189,6 +189,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
         ["GET", `/meetings/${anaMeeting}/audio`],
         ["PATCH", `/meetings/${anaMeeting}`, { title: "hack" }],
         ["POST", `/meetings/${anaMeeting}/skip`, { skip: true }],
+        ["POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true }],
         ["DELETE", `/meetings/${anaMeeting}`],
         ["GET", `/items/${itemId}/history`],
         ["PATCH", `/items/${itemId}`, { description: "alterado por outra pessoa" }],
@@ -210,6 +211,10 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       }
       // nem o super administrador lê conteúdo alheio por padrão (Q2)
       expect((await call("mu-super", "GET", `/meetings/${anaMeeting}`)).status).toBe(404);
+      for (const who of ["mu-admin", "mu-super"]) {
+        const res = await call(who, "POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true });
+        expect(res.status, `${who} auto-off-day`).toBe(404);
+      }
       expect((await call("mu-ana", "GET", `/meetings/${anaMeeting}`)).status).toBe(200);
       const resumo = await call("mu-ana", "GET", `/meetings/${anaMeeting}/resumo`);
       expect(resumo.status).toBe(200);
@@ -228,6 +233,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       const list = await call("mu-leitor", "GET", "/meetings?limit=200");
       expect(list.json.meetings.map((m: { id: string }) => m.id)).toContain(anaMeeting);
       expect((await call("mu-leitor", "PATCH", `/meetings/${anaMeeting}`, { title: "hack" })).status).toBe(403);
+      expect((await call("mu-leitor", "POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true })).status).toBe(403);
       expect((await call("mu-leitor", "POST", `/items/${itemId}/approve`)).status).toBe(403);
     });
 
@@ -239,6 +245,7 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       for (const [method, url, body] of [
         ["PATCH", `/meetings/${anaMeeting}`, { title: "Ajustado pela Bia" }],
         ["POST", `/meetings/${anaMeeting}/skip`, { skip: true }],
+        ["POST", `/meetings/${anaMeeting}/auto-off-day`, { enabled: true }],
         ["POST", `/meetings/${anaMeeting}/record`],
         ["POST", `/meetings/${anaMeeting}/end`],
         ["POST", `/meetings/${anaMeeting}/reprocess`, { step: "all" }],
@@ -677,12 +684,13 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       expect((await call("mu-admin", "POST", adrUrl(), {})).status).toBe(404);
     });
 
-    it("recusa escolha inválida, externo desligado, item errado e ADR já revisado", async () => {
+    it("recusa escolha inválida, assinatura desligada, item errado e ADR já revisado", async () => {
       expect((await call("mu-ana", "POST", adrUrl(), { llm: "gpt" })).status).toBe(400);
-      const external = await call("mu-ana", "POST", adrUrl(), { llm: "openrouter" });
+      expect((await call("mu-ana", "POST", adrUrl(), { llm: "local" })).status).toBe(400);
+      const external = await call("mu-ana", "POST", adrUrl(), { llm: "claude" });
       expect(external.status).toBe(400);
-      expect(external.json.error).toMatch(/ALLOW_EXTERNAL_LLM/);
-      const reprocess = await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "openrouter" });
+      expect(external.json.error).toMatch(/CLAUDE_CLI_ENABLED/);
+      const reprocess = await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "claude" });
       expect(reprocess.status).toBe(400);
       expect((await call("mu-ana", "POST", `/meetings/${id}/reprocess`, { step: "analysis", llm: "x" })).status).toBe(400);
 
@@ -712,9 +720,9 @@ describe.skipIf(!enabled)("plataforma multiusuário (HTTP + Postgres)", async ()
       });
       const res = await call("mu-ana", "POST", adrUrl(), { itemId: decision.livre });
       expect(res.status).toBe(202);
-      expect(res.json).toMatchObject({ status: "queued", provider: expect.stringMatching(/^local:/) });
+      expect(res.json).toMatchObject({ status: "queued", provider: expect.stringMatching(/^openrouter:/) });
       await expect.poll(() => isProcessing(id)).toBe(false);
-      expect(runs).toEqual([{ meetingId: id, provider: "local", itemId: decision.livre }]);
+      expect(runs).toEqual([{ meetingId: id, provider: "openrouter", itemId: decision.livre }]);
 
       const rows = (await audit("generation_requested")).filter((r) => r.detail.meetingId === id);
       expect(rows).toEqual([

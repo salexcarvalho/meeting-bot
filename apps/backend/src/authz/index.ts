@@ -152,9 +152,13 @@ export function childParamGuard() {
   };
 }
 
-/** Filtro SQL de reuniões visíveis; `alias` é o alias da tabela meetings e `param` o índice do user id. */
+/**
+ * Filtro SQL de reuniões visíveis; `alias` é o alias da tabela meetings e `param` o índice do user id.
+ * Com `meetings.read_all` o filtro é sempre verdadeiro, mas o parâmetro continua no texto (tipado como uuid):
+ * o Postgres rejeita a consulta se um valor enviado não for referenciado ("could not determine data type").
+ */
 export function visibleMeetingsSql(user: User, alias: string, param: number): string {
-  if (can(user, "meetings.read_all")) return "TRUE";
+  if (can(user, "meetings.read_all")) return `($${param}::uuid IS NOT NULL OR TRUE)`;
   return `(${alias}.created_by = $${param} OR EXISTS (
             SELECT 1 FROM meeting_shares ms WHERE ms.meeting_id = ${alias}.id AND ms.user_id = $${param}))`;
 }

@@ -118,6 +118,33 @@ class LiveHub {
     this.audiences.delete(meetingId);
   }
 
+  /** Envia só às conexões (abas) de um usuário, inscritas ou não. Nunca difundido. */
+  publishToUser(userId: string, msg: LiveServerMessage): void {
+    this.broadcast(msg, (c) => c.userId === userId);
+  }
+
+  /** Tira a reunião das assinaturas de todas as conexões do usuário (revogação imediata, sem esperar o sweep). */
+  revokeUser(meetingId: string, userId: string): void {
+    for (const state of this.clients.values()) if (state.userId === userId) state.meetings.delete(meetingId);
+    // Um subscribe que começou antes da revogação pode terminar depois dela (a checagem de acesso é assíncrona):
+    // a marca faz esse subscribe atrasado ser descartado em vez de reabrir a assinatura até a próxima varredura.
+    this.revokedAt.set(`${userId}:${meetingId}`, ++this.seq);
+    if (this.revokedAt.size > 1000) this.revokedAt.delete(this.revokedAt.keys().next().value!);
+  }
+
+  private seq = 0;
+  private readonly revokedAt = new Map<string, number>();
+
+  /**
+   * Ordem do revoke (pesquisa D11): audiência invalidada, assinatura removida e só então o aviso.
+   * Depois disso nenhum evento da reunião chega ao usuário; o aviso é o último que ele recebe dela.
+   */
+  revokeAccess(meetingId: string, userId: string, msg: LiveServerMessage): void {
+    this.invalidateAudience(meetingId);
+    this.revokeUser(meetingId, userId);
+    this.publishToUser(userId, msg);
+  }
+
   private readonly audiences = new Map<string, { at: number; users: Promise<Set<string>> }>();
 
   private audienceOf(meetingId: string): Promise<Set<string>> {
@@ -164,8 +191,10 @@ class LiveHub {
       } else if (msg.type === "subscribe" && msg.topic === "meeting" && UUID_RE.test(msg.meetingId)) {
         const meetingId = msg.meetingId;
         if (state.meetings.size >= 20) return;
+        const startedAt = ++this.seq;
         void meetingAccess(state.user, meetingId)
           .then((access) => {
+            if ((this.revokedAt.get(`${state.userId}:${meetingId}`) ?? 0) > startedAt) return;
             if (access && ws.readyState === WebSocket.OPEN && state.meetings.size < 20) state.meetings.add(meetingId);
           })
           .catch((err) => console.error(`[live] falha ao checar acesso à reunião ${meetingId}:`, err));

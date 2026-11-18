@@ -9,12 +9,14 @@ import type {
 } from "@meeting-bot/contracts";
 import { visibleMeetingsSql } from "../authz";
 import { config } from "../config";
-import { emitMeetingChanged, getMeeting, meetingSelect, MeetingRow, pool, withTransaction } from "../db";
-import { toMeetingSummary } from "../meetings/summary";
+import { emitMeetingChanged, getMeeting, meetingSelectFor, MeetingRow, pool, withTransaction } from "../db";
+import { toMeetingListItem } from "../meetings/summary";
 import { hostAgentStatusFor } from "../recording/hostAgentState";
 import type { User } from "../types";
-import { detectMeetingUrl, parseIcs, type Occurrence } from "./ics";
-import { dayRange, decideUpsert, EDITABLE_STATUSES, localMidnight, suggestProject, todayIn } from "./rules";
+import { detectMeetingUrl, parseIcs } from "./ics";
+import { isAgendaWorkingDay } from "./offDay";
+import { dayRange, EDITABLE_STATUSES, localMidnight, suggestProject, todayIn } from "./rules";
+import { applyOccurrence } from "./upsert";
 
 export class CalendarError extends Error {
   constructor(
@@ -31,7 +33,7 @@ interface ProjectRow {
   keywords: string[];
 }
 
-async function listProjectMatchers(): Promise<ProjectRow[]> {
+export async function listProjectMatchers(): Promise<ProjectRow[]> {
   const { rows } = await pool.query(`SELECT id, name, keywords FROM projects ORDER BY name`);
   return rows;
 }
@@ -41,19 +43,6 @@ export function importRange(now = new Date()): { from: Date; to: Date } {
   const [y, m, d] = today.split("-").map(Number);
   const iso = (days: number) => new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
   return { from: localMidnight(iso(-1), config.appTimezone), to: localMidnight(iso(31), config.appTimezone) };
-}
-
-function sameData(row: MeetingRow, o: Occurrence): boolean {
-  return (
-    row.title === o.title &&
-    row.scheduled_start?.getTime() === o.start.getTime() &&
-    row.scheduled_end?.getTime() === o.end.getTime() &&
-    (row.url ?? null) === o.url &&
-    (row.organizer ?? null) === o.organizer &&
-    (row.location ?? null) === o.location &&
-    (row.description ?? null) === o.description &&
-    JSON.stringify(row.attendees ?? []) === JSON.stringify(o.attendees)
-  );
 }
 
 export async function importIcs(files: { name: string; text: string }[], userId: string): Promise<ImportResult> {
@@ -69,7 +58,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
   for (const file of files) {
     let parsed;
     try {
-      parsed = parseIcs(file.text, range);
+      parsed = parseIcs(file.text, range, isAgendaWorkingDay);
     } catch (err) {
       result.errors.push({ file: file.name, message: (err as Error).message });
       continue;
@@ -77,73 +66,9 @@ export async function importIcs(files: { name: string; text: string }[], userId:
     result.ignored += parsed.ignored;
     parsed.partialSeries.forEach((title) => partialSeries.add(title));
 
+    const ctx = { userId, projects, now, result, touched };
     await withTransaction(async (client) => {
-      for (const o of parsed.occurrences) {
-        if (o.cancelsSeries) {
-          const { rows } = await client.query(
-            `UPDATE meetings SET status = 'cancelled', ical_sequence = GREATEST(ical_sequence, $2)
-             WHERE ical_uid = $1 AND created_by = $4 AND status = ANY($3) AND status <> 'cancelled' RETURNING id`,
-            [o.uid, o.sequence, EDITABLE_STATUSES, userId],
-          );
-          result.cancelled += rows.length;
-          rows.forEach((r) => touched.add(r.id));
-          continue;
-        }
-
-        const { rows } = await client.query(
-          `${meetingSelect} WHERE m.ical_uid = $1 AND m.recurrence_key = $2 AND m.created_by = $3 FOR UPDATE OF m`,
-          [o.uid, o.recurrenceKey, userId],
-        );
-        const existing = (rows[0] as MeetingRow | undefined) ?? null;
-        const decision = decideUpsert(
-          existing && { status: existing.status, ical_sequence: existing.ical_sequence, changed: !sameData(existing, o) },
-          { sequence: o.sequence, cancelled: o.cancelled },
-        );
-
-        const ended = o.end.getTime() <= now;
-        if (decision === "create") {
-          const project = suggestProject(o.title, projects);
-          const { rows: created } = await client.query(
-            `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
-               organizer, attendees, description, location, ical_uid, recurrence_key, ical_sequence,
-               project_id, project_suggested)
-             VALUES ($1, $2, $3, $4, $5, 'ics', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
-            [
-              o.title, o.platform, o.url, ended ? "missed" : "scheduled", userId, o.start, o.end,
-              o.organizer, JSON.stringify(o.attendees), o.description, o.location, o.uid, o.recurrenceKey,
-              o.sequence, project?.id ?? null, Boolean(project),
-            ],
-          );
-          touched.add(created[0].id);
-          result.created++;
-        } else if (decision === "update" && existing) {
-          const status =
-            existing.status === "skipped" ? "skipped" : ended ? "missed" : "scheduled";
-          await client.query(
-            `UPDATE meetings SET title = $2, platform = $3, url = $4, status = $5, scheduled_start = $6,
-               scheduled_end = $7, organizer = $8, attendees = $9, description = $10, location = $11,
-               ical_sequence = $12
-             WHERE id = $1`,
-            [
-              existing.id, o.title, o.platform, o.url, status, o.start, o.end, o.organizer,
-              JSON.stringify(o.attendees), o.description, o.location, o.sequence,
-            ],
-          );
-          touched.add(existing.id);
-          result.updated++;
-        } else if (decision === "cancel" && existing) {
-          await client.query(`UPDATE meetings SET status = 'cancelled', ical_sequence = $2 WHERE id = $1`, [
-            existing.id,
-            o.sequence,
-          ]);
-          touched.add(existing.id);
-          result.cancelled++;
-        } else if (decision === "ignore") {
-          result.ignored++;
-        } else {
-          result.unchanged++;
-        }
-      }
+      for (const o of parsed.occurrences) await applyOccurrence(client, o, ctx);
     }).catch((err) => {
       result.errors.push({ file: file.name, message: `Falha ao salvar: ${(err as Error).message}` });
     });
@@ -157,7 +82,7 @@ export async function importIcs(files: { name: string; text: string }[], userId:
 export async function getAgenda(date: string, user: User): Promise<AgendaResponse> {
   const { start, end } = dayRange(date, config.appTimezone);
   const { rows } = await pool.query(
-    `${meetingSelect}
+    `${meetingSelectFor(3)}
      WHERE COALESCE(m.scheduled_start, m.started_at, m.created_at) >= $1
        AND COALESCE(m.scheduled_start, m.started_at, m.created_at) < $2
        AND ${visibleMeetingsSql(user, "m", 3)}
@@ -174,7 +99,7 @@ export async function getAgenda(date: string, user: User): Promise<AgendaRespons
   return {
     date,
     timezone: config.appTimezone,
-    meetings: (rows as MeetingRow[]).map(toMeetingSummary),
+    meetings: (rows as MeetingRow[]).map((m) => toMeetingListItem(m, user.id)),
     hostAgent: await hostAgentStatusFor(user),
     recordingMeetingId: rec[0]?.id ?? null,
   };
@@ -215,7 +140,14 @@ export function addInterval(d: Date, freq: RecurrenceRule["freq"], interval: num
 
 // Recorrência já nasce materializada em uma linha por ocorrência (mesmo padrão do import .ics),
 // então lembrete e entrada automática do bot funcionam de graça em cada uma.
-export function generateOccurrenceStarts(start: Date, rule: RecurrenceRule, horizonEnd: Date): Date[] {
+// Ocorrência que cai em dia não útil (WORKING_DAYS, no fuso da agenda) não é gerada: a série não se
+// espalha pelo fim de semana. Reunião avulsa em dia não útil continua valendo (createScheduled).
+export function generateOccurrenceStarts(
+  start: Date,
+  rule: RecurrenceRule,
+  horizonEnd: Date,
+  isWorking: (d: Date) => boolean = isAgendaWorkingDay,
+): Date[] {
   const until = rule.until ? new Date(rule.until) : null;
   if (until && (Number.isNaN(until.getTime()) || until.getTime() <= start.getTime())) {
     throw new CalendarError("Data final da recorrência precisa ser depois do início.");
@@ -224,9 +156,10 @@ export function generateOccurrenceStarts(start: Date, rule: RecurrenceRule, hori
   const starts: Date[] = [];
   let cursor = start;
   while (cursor.getTime() <= cap && starts.length < RECURRENCE_MAX_OCCURRENCES) {
-    starts.push(cursor);
+    if (isWorking(cursor)) starts.push(cursor);
     cursor = addInterval(cursor, rule.freq, rule.interval);
   }
+  if (!starts.length) throw new CalendarError("A recorrência só cairia em dias sem agenda (fim de semana).");
   return starts;
 }
 
@@ -251,13 +184,14 @@ export async function createScheduled(input: ScheduledMeetingInput, userId: stri
   await withTransaction(async (client) => {
     for (const s of starts) {
       const end = new Date(s.getTime() + input.durationMinutes * 60_000);
+      const status = input.skipRecording ? "skipped" : end.getTime() <= Date.now() ? "missed" : "scheduled";
       const { rows } = await client.query(
         `INSERT INTO meetings (title, platform, url, status, created_by, source, scheduled_start, scheduled_end,
-           project_id, project_suggested, series_id, recurrence_rule)
-         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11) RETURNING id`,
+           project_id, project_suggested, series_id, recurrence_rule, skip_recording)
+         VALUES ($1, $2, $3, $4, $5, 'manual', $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [
-          input.title, platform, url, end.getTime() <= Date.now() ? "missed" : "scheduled", userId, s, end,
-          projectId, suggested, seriesId, recurrenceRule,
+          input.title, platform, url, status, userId, s, end,
+          projectId, suggested, seriesId, recurrenceRule, input.skipRecording,
         ],
       );
       createdIds.push(rows[0].id);
@@ -350,6 +284,19 @@ export async function setSkip(id: string, skip: boolean): Promise<MeetingRow> {
   const ended = (meeting.scheduled_end?.getTime() ?? 0) <= Date.now();
   const status = skip ? "skipped" : ended ? "missed" : "scheduled";
   await pool.query(`UPDATE meetings SET skip_recording = $2, status = $3 WHERE id = $1`, [id, skip, status]);
+  emitMeetingChanged(id);
+  return (await getMeeting(id))!;
+}
+
+// Reunião em dia não útil não tem lembrete nem entrada automática; aqui o usuário pede que tenha.
+// Só o dono pede isso (defesa em profundidade: a rota também é owner-only).
+export async function setAutoOnOffDay(id: string, enabled: boolean, userId: string): Promise<MeetingRow> {
+  const meeting = await getMeeting(id);
+  if (meeting?.created_by !== userId) throw new CalendarError("Reunião não encontrada.", 404);
+  if (!["scheduled", "skipped"].includes(meeting.status)) {
+    throw new CalendarError("Não é possível mudar o lembrete desta reunião agora.", 409);
+  }
+  await pool.query(`UPDATE meetings SET auto_on_off_day = $2 WHERE id = $1`, [id, enabled]);
   emitMeetingChanged(id);
   return (await getMeeting(id))!;
 }

@@ -163,6 +163,10 @@ export interface MeetingSummary {
   endedAt: string | null;
   project: ProjectRef | null;
   skipRecording: boolean;
+  /** cai em dia sem agenda (WORKING_DAYS, no fuso da agenda): sem lembrete nem entrada automática, salvo `autoOnOffDay` */
+  offDay: boolean;
+  /** o usuário pediu lembrete e gravação automática mesmo em dia sem agenda */
+  autoOnOffDay: boolean;
   /** gera decisões, pendências, riscos etc. nesta reunião (padrão: desligado) */
   itemsEnabled: boolean;
   organizer: string | null;
@@ -179,6 +183,23 @@ export interface MeetingSummary {
   seriesId: string | null;
   recurrence: RecurrenceRule | null;
 }
+
+/**
+ * Item de lista por espectador: `MeetingSummary` mais o que depende de quem pergunta.
+ * Estes campos NUNCA vão no evento difundido `meeting` (igual para todos).
+ */
+export interface MeetingListItem extends MeetingSummary {
+  access: "owner" | "edit" | "read";
+  /** nome do dono quando o espectador não é o dono */
+  ownerName: string | null;
+  /** quantas pessoas têm acesso; só para o dono */
+  shareCount: number | null;
+  /** compartilhada com o espectador e ainda não aberta ("Nova") */
+  shareUnseen: boolean;
+}
+
+export const MEETING_LIST_SCOPES = ["all", "mine", "shared", "shared_by_me"] as const;
+export type MeetingListScope = (typeof MEETING_LIST_SCOPES)[number];
 
 export interface Segment {
   id: number;
@@ -305,7 +326,26 @@ export interface AgentMeeting {
   url: string | null;
   platform: Platform;
   skipRecording: boolean;
+  /** dia sem agenda e sem pedido do usuário: o host-agent não faz lembrete desta reunião */
+  noAlerts: boolean;
   status: MeetingStatus;
+}
+
+/** Reunião da agenda do dia vista pelo agente externo (leitura). */
+export interface AgentDayMeeting {
+  id: string;
+  /** uid do evento de origem (.ics/Aurora); null em reunião cadastrada à mão */
+  icalUid: string | null;
+  title: string;
+  start: string;
+  end: string;
+  url: string | null;
+  /** null quando não há link reconhecido */
+  platform: Platform | null;
+  skipRecording: boolean;
+  status: MeetingStatus;
+  /** ocorrência de série (ou de recorrência manual) */
+  recurring: boolean;
 }
 
 export interface MeetingDetail {
@@ -324,15 +364,17 @@ export interface MeetingDetail {
   asrProvider: string | null;
   /** acesso de quem pediu: dono, compartilhada com edição ou só leitura */
   access: "owner" | "edit" | "read";
-  /** quem gerou a análise da ata: "local:<modelo>", "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
+  /** nome do dono quando a reunião foi compartilhada com quem pediu; null para o dono */
+  ownerName: string | null;
+  /** quem gerou a análise da ata: "openrouter:<modelo>", "claude:<modelo>" ou "codex:<modelo>" */
   analysisProvider: string | null;
 }
 
 export type AsrProvider = "local" | "openrouter";
 
-// LLM das gerações (ata, itens pós-reunião, ADR). Ao vivo é sempre local (Constituição 1.4.0).
+// LLM das gerações (ata, itens ao vivo e pós-reunião, ADR). Sempre externo: não há modelo local.
 // claude/codex: CLI oficial com a assinatura do dono do host-agent, executado pelo host-agent.
-export const LLM_CHOICES = ["local", "openrouter", "claude", "codex"] as const;
+export const LLM_CHOICES = ["openrouter", "claude", "codex"] as const;
 export type LlmChoice = (typeof LLM_CHOICES)[number];
 export const SUBSCRIPTION_LLMS = ["claude", "codex"] as const;
 export type SubscriptionLlm = (typeof SUBSCRIPTION_LLMS)[number];
@@ -348,7 +390,6 @@ export interface SubscriptionLlmOption {
 export interface LlmOptions {
   /** provedor da geração automática ao fim da reunião (LLM_GENERATION_PROVIDER) */
   default: LlmChoice;
-  local: { model: string };
   external: { model: string; available: boolean } | null;
   /** assinaturas habilitadas no .env (a disponibilidade depende da reunião e do host-agent) */
   subscriptions: SubscriptionLlmOption[];
@@ -372,7 +413,7 @@ export interface AsrOptions {
 export interface AgendaResponse {
   date: string;
   timezone: string;
-  meetings: MeetingSummary[];
+  meetings: MeetingListItem[];
   hostAgent: HostAgentStatus;
   recordingMeetingId: string | null;
 }
@@ -386,6 +427,83 @@ export interface ImportResult {
   /** Reuniões que vieram só com a ocorrência do dia, sem a regra de repetição da série. */
   partialSeries: string[];
   errors: { file: string; message: string }[];
+}
+
+// ---------- importação da agenda por assistente externo (Aurora) ----------
+
+export const AGENT_CALENDAR_SOURCE = "aurora-outlook";
+export const AGENT_CALENDAR_MAX_EVENTS = 100;
+export const AGENT_CALENDAR_MAX_ICS_CHARS = 150_000;
+
+const INVALID_DATE = "data inválida";
+
+// Instante com fuso explícito (Z ou ±hh:mm): sem ele o horário seria ambíguo.
+const isoWithOffset = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/, "use ISO 8601 com fuso (ex.: 2026-11-14T09:00:00-03:00)")
+  .refine((v) => !Number.isNaN(Date.parse(v)), INVALID_DATE);
+
+export const AgentCalendarEvent = z.object({
+  uid: z.string().trim().min(1, "Informe o uid.").max(500),
+  title: z.string().trim().max(300),
+  start: isoWithOffset,
+  end: isoWithOffset,
+  organizer: z.string().trim().max(200).nullish(),
+  location: z.string().trim().max(500).nullish(),
+  /** link da reunião no Teams (https) */
+  teams: z.string().trim().max(2000).nullish(),
+  /** "cancelled"/"canceled" cancela o evento; qualquer outro valor é só informativo */
+  status: z.string().trim().max(40).nullish(),
+  /** ocorrência de série: cada uma vem como evento próprio, com o mesmo uid; a identidade passa a ser uid + início */
+  recurring: z.boolean().nullish(),
+});
+export type AgentCalendarEvent = z.infer<typeof AgentCalendarEvent>;
+
+/** dia civil AAAA-MM-DD, existente no calendário */
+const CalendarDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "use AAAA-MM-DD")
+  .refine((v) => {
+    const day = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(day.getTime()) && day.toISOString().startsWith(v);
+  }, INVALID_DATE);
+
+export const AgentCalendarImportInput = z
+  .object({
+    source: z.literal(AGENT_CALENDAR_SOURCE),
+    /** dia da agenda (AAAA-MM-DD) no fuso da aplicação; só reuniões desse dia são tocadas */
+    date: CalendarDay,
+    events: z.array(AgentCalendarEvent).max(AGENT_CALENDAR_MAX_EVENTS, `Máximo de ${AGENT_CALENDAR_MAX_EVENTS} eventos por envio.`).optional(),
+    ics: z.string().min(1).max(AGENT_CALENDAR_MAX_ICS_CHARS, "Arquivo .ics grande demais.").optional(),
+    /** lista vazia só cancela as reuniões do dia com esta confirmação explícita (padrão false: evita apagar a agenda por engano) */
+    confirmEmpty: z.boolean().optional(),
+  })
+  .refine((v) => (v.events === undefined) !== (v.ics === undefined), "envie 'events' ou 'ics' (um dos dois)");
+export type AgentCalendarImportInput = z.infer<typeof AgentCalendarImportInput>;
+
+/** Consulta de leitura da agenda do dia pelo agente externo (GET /api/agent/meetings); sem `date` vale hoje. */
+export const AgentMeetingsQuery = z.object({ date: CalendarDay.optional() });
+export type AgentMeetingsQuery = z.infer<typeof AgentMeetingsQuery>;
+
+export interface AgentMeetingsResponse {
+  /** dia consultado (AAAA-MM-DD) no fuso da aplicação */
+  date: string;
+  meetings: AgentDayMeeting[];
+}
+
+export interface AgentCalendarImportResult extends ImportResult {
+  source: string;
+  date: string;
+  /** reuniões da mesma origem e do mesmo dia que sumiram da lista e foram canceladas */
+  removed: number;
+  /** presente quando a remoção por sumiço foi pulada (lista vazia sem confirmEmpty) */
+  removalSkipped?: "empty_without_confirm";
+  /**
+   * eventos enviados que não foram aplicados (até 20); seus uids nunca causam remoção.
+   * outside_date = fora do dia do envio; non_working_day = ocorrência de série em dia sem agenda (WORKING_DAYS)
+   */
+  ignoredEvents: { uid: string; reason: "outside_date" | "non_working_day" }[];
 }
 
 // ---------- consumo de LLM (só leitura, vem do audit_log) ----------
@@ -448,6 +566,8 @@ export const ScheduledMeetingInput = z.object({
   url: z.string().trim().max(2000).nullish(),
   projectId: z.uuid().nullish(),
   recurrence: RecurrenceRule.nullish(),
+  /** true = só lembrete, o assistente não entra sozinho (dono entra pelo link) */
+  skipRecording: z.boolean().default(false),
 });
 export type ScheduledMeetingInput = z.infer<typeof ScheduledMeetingInput>;
 

@@ -3,16 +3,17 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
-import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import {
   CHANNELS,
   ExtractItemsRequest,
   GenerateAdrsRequest,
   IDLE_STATUSES,
+  MEETING_LIST_SCOPES,
   MEETING_STATUSES,
   IdentityChoice,
   type AsrOptions,
+  type MeetingListScope,
   type LlmChoice,
   type MeetingDetail,
   type MeetingStatus,
@@ -45,19 +46,21 @@ import {
 import { enqueueProcessing, isProcessing } from "./pipeline";
 import { adrLockReason, getItem, listItems } from "./items/service";
 import { generationLabel, isSubscription, llmOptions, parseLlmChoice, subscriptionUnavailable } from "./llm";
-import { currentMonth, llmUsage } from "./llm/usage";
 import { audit } from "./security/audit";
+import { createLoginLimiter } from "./security/loginLimiter";
 import { activeBotCount, audioDir, isBotActive, screenshotPath, startBot, stopBot } from "./bot/runner";
 import { AssistantError, sendAssistantNow } from "./bot/autoJoin";
 import { detectPlatform } from "./bot/link";
 import { botForUrl, botUrlKey, releaseBotUrl, reserveBotUrl } from "./bot/state";
-import { meetingAccess, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
+import { meetingAccess, meetingAudience, meetingParamGuard, requirePermission, visibleMeetingsSql } from "./authz";
+import { extraPermissionsFor, isOwnerOnlyRoute } from "./authz/ownerOnly";
 import { resolveBotIdentity } from "./users/identity";
-import { getAgent, getProfile } from "./users/repo";
+import { getAgent, getProfile, getSelf } from "./users/repo";
 import type { User } from "./types";
-import { toMeetingSummary } from "./meetings/summary";
+import { toMeetingListItem, toMeetingSummary } from "./meetings/summary";
 import { countFinalSegments, getSegments, getSpeakers, speakerNameResolver, toSegmentJson } from "./repo/transcripts";
 import { features } from "./features";
+import { hub } from "./live/hub";
 import { EXTERNAL_ASR_ID, externalAsrStatus } from "./asr/openrouter";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,6 +76,11 @@ export const wrap =
   (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>
   (req: Request, res: Response, next: NextFunction) =>
     fn(req, res, next).catch(next);
+
+/** Entrada recusada: guarda só o IP (Q5-A: IP apenas nas falhas) e nunca o nome digitado nem a senha. */
+function auditLoginFailed(ip: string | undefined, userId: string | null, extra: Record<string, unknown>): void {
+  audit("auth_login_failed", { ip: ip ?? null, usernameKnown: userId !== null, ...extra }, userId);
+}
 
 export function parseBody<T>(schema: z.ZodType<T>, req: Request, res: Response): T | null {
   const result = schema.safeParse(req.body ?? {});
@@ -126,6 +134,11 @@ async function requestedLlm(
   return llm;
 }
 
+/** Nome de exibição do dono (só vai a quem recebeu o compartilhamento). */
+async function ownerNameOf(ownerId: string | null): Promise<string | null> {
+  return (await getSelf(ownerId))?.name ?? null;
+}
+
 export async function loadMeetingDetail(meetingId: string, user: User): Promise<MeetingDetail | null> {
   const [meeting, myAccess] = await Promise.all([getMeeting(meetingId), meetingAccess(user, meetingId)]);
   if (!meeting || !myAccess) return null;
@@ -152,36 +165,24 @@ export async function loadMeetingDetail(meetingId: string, user: User): Promise<
     transcriptionProvider: meeting.transcription_provider,
     asrProvider: meeting.asr_provider,
     access: myAccess,
+    ownerName: myAccess === "owner" ? null : await ownerNameOf(meeting.created_by),
     analysisProvider: meeting.analysis_provider,
   };
 }
 
-const TRANSCRIPT_ROUTES = new Set(["/meetings/:id", "/meetings/:id/audio"]);
-// Compartilhamento "edit" mexe no conteúdo (itens, falantes); agenda, gravação, link e envio de áudio são do dono.
-const OWNER_ONLY_ROUTES = new Set([
-  "/meetings/:id",
-  "/meetings/:id/record",
-  "/meetings/:id/end",
-  "/meetings/:id/assistant",
-  "/meetings/:id/reprocess",
-  "/meetings/:id/skip",
-  "/meetings/:id/cancel",
-  "/meetings/:id/extract-items",
-  "/meetings/:id/adrs/generate",
-]);
+const TRANSCRIPT_ROUTES: ReadonlySet<string> = new Set(["/meetings/:id", "/meetings/:id/audio"]);
 
 export function buildRouter(): Router {
   const router = Router({ caseSensitive: true });
 
   // ---------- auth ----------
 
-  const loginLimiter = rateLimit({
-    windowMs: 15 * 60_000,
-    limit: 10,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    skipSuccessfulRequests: true,
-    message: { error: "Muitas tentativas de login. Tente de novo em alguns minutos." },
+  // Bloqueio por limite de taxa também é tentativa de entrada recusada (a conta alvo vê na auditoria),
+  // mas só a primeira requisição bloqueada da janela é auditada.
+  const loginLimiter = createLoginLimiter(async (req) => {
+    const username = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
+    const known = username ? await findUserByUsername(username) : null;
+    auditLoginFailed(req.ip, known?.id ?? null, { rateLimited: true });
   });
 
   router.post(
@@ -193,13 +194,16 @@ export function buildRouter(): Router {
       const user = username ? await findUserByUsername(username) : null;
       const ok = await verifyPassword(password, user?.password_hash ?? (await getDummyHash()));
       if (!user || !ok) {
+        auditLoginFailed(req.ip, user?.id ?? null, {});
         return res.status(401).json({ error: "Usuário ou senha inválidos." });
       }
       if (!user.active) {
+        auditLoginFailed(req.ip, user.id, { inactive: true });
         return res.status(403).json({ error: "Usuário desativado. Fale com um administrador." });
       }
       const authz = await findUserAuthz(user.id);
       await startSession(res, user.id);
+      audit("auth_login", {}, user.id);
       res.json(await sessionPayload(authz!));
     }),
   );
@@ -207,7 +211,8 @@ export function buildRouter(): Router {
   router.post(
     "/auth/logout",
     wrap(async (req, res) => {
-      await endSession(req, res);
+      const owner = await endSession(req, res);
+      if (owner) audit("auth_logout", {}, owner);
       res.status(204).end();
     }),
   );
@@ -232,21 +237,9 @@ export function buildRouter(): Router {
         return res.status(400).json({ error: "Senha atual incorreta." });
       }
       await updatePassword(req.user!.id, await hashPassword(newPassword));
-      await deleteUserSessions(req.user!.id, req.sessionTokenHash);
+      const revoked = await deleteUserSessions(req.user!.id, req.sessionTokenHash);
+      audit("auth_password_changed", { sessionsRevoked: revoked }, req.user!.id);
       res.status(204).end();
-    }),
-  );
-
-  // Consumo de LLM do mês (só leitura, agregado do audit_log; cada um vê o que enxerga).
-  router.get(
-    "/llm/usage",
-    wrap(async (req, res) => {
-      const month = typeof req.query.month === "string" && req.query.month ? req.query.month : currentMonth();
-      try {
-        res.json(await llmUsage(req.user!, month));
-      } catch (err) {
-        res.status(400).json({ error: (err as Error).message });
-      }
     }),
   );
 
@@ -254,12 +247,8 @@ export function buildRouter(): Router {
   router.param(
     "id",
     meetingParamGuard({
-      extraFor: (req, pattern) => {
-        if (req.method === "DELETE") return ["transcripts.delete"];
-        if (req.method === "GET" && TRANSCRIPT_ROUTES.has(pattern)) return ["transcripts.read"];
-        return [];
-      },
-      ownerOnly: (req, pattern) => req.method !== "GET" && OWNER_ONLY_ROUTES.has(pattern),
+      extraFor: (req, pattern) => extraPermissionsFor(req.method, pattern, TRANSCRIPT_ROUTES),
+      ownerOnly: (req, pattern) => isOwnerOnlyRoute(req.method, pattern),
     }),
   );
 
@@ -275,14 +264,20 @@ export function buildRouter(): Router {
         typeof req.query.status === "string"
           ? req.query.status.split(",").filter((v): v is MeetingStatus => (MEETING_STATUSES as readonly string[]).includes(v))
           : null;
+      const rawScope = req.query.scope ?? "all";
+      if (typeof rawScope !== "string" || !(MEETING_LIST_SCOPES as readonly string[]).includes(rawScope)) {
+        return res.status(400).json({ error: "Escopo inválido." });
+      }
+      const viewerId = req.user!.id;
       const meetings = await listMeetings({
-        visibleTo: { userId: req.user!.id, sql: visibleMeetingsSql(req.user!, "m", 1) },
+        visibleTo: { userId: viewerId, sql: visibleMeetingsSql(req.user!, "m", 1) },
         limit: Number(req.query.limit) || 50,
         before: before && !Number.isNaN(before.getTime()) ? before : null,
         projectId,
         status,
+        scope: rawScope as MeetingListScope,
       });
-      res.json({ meetings: meetings.map(toMeetingSummary) });
+      res.json({ meetings: meetings.map((m) => toMeetingListItem(m, viewerId)) });
     }),
   );
 
@@ -542,7 +537,19 @@ export function buildRouter(): Router {
         return res.status(409).json({ error: "Encerre a gravação e aguarde o processamento antes de excluir." });
       }
       const audio = await listAudio(meeting.id);
+      const recipients = [...(await meetingAudience(meeting.id))].filter((id) => id !== req.user!.id);
       await deleteMeeting(meeting.id);
+      for (const userId of recipients) {
+        hub.revokeAccess(meeting.id, userId, {
+          type: "meeting_access",
+          meetingId: meeting.id,
+          change: "deleted",
+          access: null,
+          by: null,
+          title: null,
+          meeting: null,
+        });
+      }
       for (const a of audio) await rm(a.path, { force: true });
       if (meeting.audio_path) await rm(meeting.audio_path, { force: true });
       await rm(path.join(audioDir, meeting.id), { recursive: true, force: true });

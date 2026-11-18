@@ -54,6 +54,9 @@ export function MeetingForm({
       body.durationMinutes = Number(form.get("duration"));
       body.url = String(form.get("url") ?? "").trim() || null;
     }
+    if (!editing) {
+      body.skipRecording = form.get("skipRecording") === "on";
+    }
     if (!editing && repeat !== "none") {
       const until = String(form.get("recurrenceUntil") ?? "");
       body.recurrence = {
@@ -112,6 +115,12 @@ export function MeetingForm({
             disabled={scheduleLocked}
           />
         </label>
+        {!editing && (
+          <label className="checkbox">
+            <input name="skipRecording" type="checkbox" />
+            Não gravar automaticamente (só lembrete — eu entro pelo link)
+          </label>
+        )}
         {!editing && (
           <div className="grid-2">
             <label>

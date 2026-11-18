@@ -4,6 +4,7 @@ import { pool } from "../db";
 import type { User } from "../types";
 import { features } from "../features";
 import { parseBody, wrap } from "../routes";
+import { markProjectDirty } from "../search/dirty";
 
 function cleanKeywords(keywords: string[] | undefined): string[] {
   return [...new Set((keywords ?? []).map((k) => k.trim()).filter(Boolean))];
@@ -83,6 +84,7 @@ features.authedRouters.push((router) => {
         if (isUniqueViolation(err)) return res.status(409).json({ error: "Já existe um projeto com esse nome." });
         throw err;
       }
+      if (input.name) await markProjectDirty(current.id);
       res.json(await getProject(current.id, req.user!));
     }),
   );
@@ -91,6 +93,7 @@ features.authedRouters.push((router) => {
     "/projects/:id",
     requirePermission("projects.manage"),
     wrap(async (req, res) => {
+      await markProjectDirty(String(req.params.id));
       const { rowCount } = await pool.query(`DELETE FROM projects WHERE id = $1`, [String(req.params.id)]);
       if (!rowCount) return res.status(404).json({ error: "Projeto não encontrado." });
       res.status(204).end();

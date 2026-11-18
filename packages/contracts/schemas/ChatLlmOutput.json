@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "answered": {
+      "type": "boolean"
+    },
+    "answer": {
+      "type": "string",
+      "maxLength": 2500
+    },
+    "citations": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "quote": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "ref",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "answered",
+    "answer",
+    "citations"
+  ],
+  "additionalProperties": false
+}

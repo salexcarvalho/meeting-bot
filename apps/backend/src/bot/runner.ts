@@ -12,7 +12,8 @@ import { dropRuntime } from "../recording/runtime";
 import { markTeamsSessionExpired, MAX_SESSION_BYTES, parseSession, refreshTeamsSession } from "../users/teamsAccount";
 import { createSink, removeSink, startRecording, stopRecording } from "./audio";
 import { launchBrowser } from "./browser";
-import { createCameraCard, type CameraCard } from "./card";
+import { createBlankCard, createCameraCard, type CameraCard } from "./card";
+import { createCameraWatch } from "./cameraWatch";
 import type { BotAccount, BotIdentity } from "./identity";
 import { LeaveDecider } from "./leave";
 import { drivers } from "./platforms";
@@ -132,6 +133,7 @@ async function runBot(
   let browser: Browser | null = null;
   let page: Page | null = null;
   let card: CameraCard | null = null;
+  let blank: CameraCard | null = null;
   let recorder: ChildProcessWithoutNullStreams | null = null;
   let failure: string | null = null;
   let signedIn = false;
@@ -144,9 +146,16 @@ async function runBot(
         return null;
       });
     }
+    // Câmera desligada: mesmo assim a câmera falsa ganha um quadro preto, para o padrão verde do Chromium nunca aparecer se o Teams ligá-la.
+    if (!card) {
+      blank = await createBlankCard().catch((err) => {
+        log(`quadro preto da câmera não gerado: ${(err as Error).message}`);
+        return null;
+      });
+    }
     sinkModule = await createSink(sinkName);
     setBotStage(meetingId, "launching");
-    ({ browser, page } = await launchBrowser(sinkName, card?.file, identity.account?.state));
+    ({ browser, page } = await launchBrowser(sinkName, (card ?? blank)?.file, identity.account?.state));
     if (signal.aborted) throw new BotError("Cancelado antes de entrar na reunião.");
 
     log(`entrando (${platform}) como "${identity.name}"${identity.account ? " (conta conectada)" : ""}${card ? " com o ícone na câmera" : ""}`);
@@ -237,7 +246,7 @@ async function runBot(
       stayUntil: launch.stayUntil?.getTime() ?? null,
     });
     let missingChecks = 0;
-    let cameraRetries = 0;
+    const cameraWatch = createCameraWatch({ icon: card !== null, iconOn: joined.camera, retries: CAMERA_RETRIES, log });
     while (true) {
       await sleep(5000, signal);
       if (signal.aborted) {
@@ -269,13 +278,7 @@ async function runBot(
         break;
       }
 
-      // O ícone some se a câmera cair: religa algumas vezes (o aviso de gravação continua no nome).
-      if (joined.camera && cameraRetries < CAMERA_RETRIES && (await driver.cameraState(page).catch(() => null)) === "off") {
-        cameraRetries++;
-        log("câmera desligada na chamada; religando o ícone");
-        await driver.setCamera(page, true).catch(() => {});
-      }
-
+      await cameraWatch.check(driver, page);
     }
   } catch (err) {
     failure = err instanceof BotError ? err.message : `Erro no bot: ${(err as Error).message}`;
@@ -290,6 +293,7 @@ async function runBot(
     }
     await browser?.close().catch(() => {});
     await card?.dispose().catch(() => {});
+    await blank?.dispose().catch(() => {});
     if (sinkModule) await removeSink(sinkModule);
     await markEnded(meetingId);
   }

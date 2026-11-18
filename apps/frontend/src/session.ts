@@ -45,15 +45,14 @@ export function asrLabel(provider: string | null | undefined): string {
 
 export type GenerationScope = "ata" | "adr";
 
-const DESTINATION: Record<Exclude<LlmChoice, "local">, string> = {
+const DESTINATION: Record<LlmChoice, string> = {
   openrouter: "ao OpenRouter",
   claude: "à Anthropic pela sua assinatura pessoal do Claude",
   codex: "à OpenAI pela sua assinatura pessoal do ChatGPT/Codex",
 };
 
-/** Aviso antes de mandar conteúdo para fora da máquina (null = geração local). */
-export function generationWarning(choice: LlmChoice, scope: GenerationScope): string | null {
-  if (choice === "local") return null;
+/** Aviso antes de mandar conteúdo para fora da máquina. */
+export function generationWarning(choice: LlmChoice, scope: GenerationScope): string {
   const what =
     scope === "ata"
       ? "A transcrição completa desta reunião será enviada"
@@ -77,13 +76,14 @@ export function isExternal(provider: string | null | undefined): boolean {
   return externalName(provider) !== null;
 }
 
-/** "local:qwen3.5:4b" → "qwen3.5:4b (local)"; "claude:sonnet" → "sonnet via assinatura Claude (externo)" */
+/** "claude:sonnet" → "sonnet via assinatura Claude (externo)" */
 export function llmLabel(provider: string | null | undefined): string {
   if (!provider) return "—";
   const [prefix] = provider.split(":", 1);
   const model = provider.slice(prefix.length + 1);
   if (prefix === "openrouter") return `${model} via OpenRouter (externo)`;
   if (prefix === "claude" || prefix === "codex") return `${model} via assinatura ${PROVIDER_NAMES[prefix]} (externo)`;
+  // rótulos antigos ("local:<modelo>", de quando havia modelo local) seguem aparecendo como texto
   if (prefix === "local") return `${model} (local)`;
   return provider;
 }
