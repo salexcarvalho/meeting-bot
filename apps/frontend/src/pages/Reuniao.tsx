@@ -684,7 +684,7 @@ export function Reuniao() {
             <aside className="aside-stack">
               <section className="card">
                 <h2>Falantes</h2>
-                <Speakers meetingId={m.id} speakers={detail.speakers} readOnly={!writable} onRenamed={load} />
+                <Speakers meetingId={m.id} speakers={detail.speakers} readOnly={!writable} onRenamed={load} timeline={detail.speakerTimeline} />
               </section>
               {detail.liveSummary && (
                 <section className="card">
@@ -803,6 +803,7 @@ export function Reuniao() {
       <Dialog open={confirm === "reprocess"} onClose={() => setConfirm(null)} label="Reprocessar reunião">
         <h2>Reprocessar reunião?</h2>
         <p className="muted">A transcrição final e a análise serão refeitas. Itens já aprovados são mantidos.</p>
+        <p className="muted small">Nomes de falantes dados à mão são mantidos por rótulo, mas a numeração dos “Speaker N” pode mudar ao retranscrever.</p>
         {asr.external && (
           <label>
             Transcrição
